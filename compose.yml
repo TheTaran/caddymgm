@@ -1,5 +1,6 @@
 services:
   caddymgm:
+    image: ghcr.io/thetaran/caddymgm:latest
     build: .
     container_name: caddymgm
     restart: unless-stopped

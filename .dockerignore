@@ -1,0 +1,7 @@
+.git
+.github
+.env
+AGENTS.md
+config/Caddyfile
+config/caddymgm-settings.json
+README.md

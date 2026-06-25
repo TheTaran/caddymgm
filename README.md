@@ -160,6 +160,20 @@ or the Docker socket for the current scope.
 
 ## Docker
 
+GitHub Actions builds the Docker image on every push to `main` and pushes it to
+GitHub Container Registry:
+
+```text
+ghcr.io/thetaran/caddymgm:latest
+```
+
+To use the image without building locally:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
 Environment variables:
 
 | Name | Default | Description |

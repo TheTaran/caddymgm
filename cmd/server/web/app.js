@@ -19,7 +19,7 @@ const els = {
   extra: document.querySelector("#extra"),
   enabled: document.querySelector("#enabled"),
   logsEnabled: document.querySelector("#logs-enabled"),
-  tlsMode: document.querySelector("#tls-mode"),
+  tlsEnabled: document.querySelector("#tls-enabled"),
   acmeIssuerRow: document.querySelector("#acme-issuer-row"),
   acmeIssuer: document.querySelector("#acme-issuer"),
   delete: document.querySelector("#delete"),
@@ -28,6 +28,7 @@ const els = {
   proxySites: document.querySelector("#proxy-sites"),
   staticSites: document.querySelector("#static-sites"),
   logSiteFilter: document.querySelector("#log-site-filter"),
+  logStreamLabel: document.querySelector("#log-stream-label"),
   logList: document.querySelector("#log-list"),
   settingsForm: document.querySelector("#settings-form"),
   settingsUsername: document.querySelector("#settings-username"),
@@ -36,6 +37,7 @@ const els = {
   settingsCaddyMode: document.querySelector("#settings-caddy-mode"),
   settingsCaddyAPIURL: document.querySelector("#settings-caddy-api-url"),
   certificateForm: document.querySelector("#certificate-form"),
+  issuerNew: document.querySelector("#issuer-new"),
   issuerId: document.querySelector("#issuer-id"),
   issuerName: document.querySelector("#issuer-name"),
   issuerDirectory: document.querySelector("#issuer-directory"),
@@ -43,18 +45,25 @@ const els = {
   issuerReset: document.querySelector("#issuer-reset"),
   issuerDelete: document.querySelector("#issuer-delete"),
   issuerList: document.querySelector("#issuer-list"),
+  certificateList: document.querySelector("#certificate-list"),
+  acmeDialog: document.querySelector("#acme-dialog"),
+  acmeDialogClose: document.querySelector("#acme-dialog-close"),
+  acmeDomain: document.querySelector("#acme-domain"),
+  acmeAuthority: document.querySelector("#acme-authority"),
+  acmeSteps: document.querySelector("#acme-steps"),
 };
 
 const viewTitles = {
-  dashboard: ["Dashboard", "Proxy Hosts Übersicht"],
-  "proxy-hosts": ["Proxy Hosts", "Konfiguration der einzelnen Webseiten"],
-  certificates: ["Certificates", "TLS-Zertifikate"],
-  logs: ["Logs", "Logs der einzelnen Webseiten"],
-  settings: ["Settings", "CaddyMGM Einstellungen"],
+  dashboard: ["Dashboard", "Web Hosts Overview"],
+  "proxy-hosts": ["Web Hosts", "Website Configuration"],
+  certificates: ["Certificates", "TLS Certificates"],
+  logs: ["Logs", "Website Logs"],
+  settings: ["Settings", "CaddyMGM Settings"],
 };
 
 let sites = [];
 let settings = null;
+let logPollTimer = null;
 
 document.querySelector("#logout").addEventListener("click", logout);
 document.querySelector("#new-site").addEventListener("click", () => {
@@ -64,12 +73,17 @@ document.querySelector("#new-site").addEventListener("click", () => {
 document.querySelector("#cancel").addEventListener("click", closeEditor);
 els.form.addEventListener("submit", saveSite);
 els.delete.addEventListener("click", deleteSite);
-els.logSiteFilter.addEventListener("change", loadLogs);
+els.logSiteFilter.addEventListener("change", () => {
+  loadLogs();
+  syncLogPolling();
+});
 els.settingsForm.addEventListener("submit", saveSettings);
 els.certificateForm.addEventListener("submit", saveIssuer);
-els.issuerReset.addEventListener("click", () => editIssuer());
+els.issuerNew.addEventListener("click", () => editIssuer({}));
+els.issuerReset.addEventListener("click", closeIssuerForm);
 els.issuerDelete.addEventListener("click", deleteIssuer);
-els.tlsMode.addEventListener("change", syncTLSMode);
+els.tlsEnabled.addEventListener("change", syncTLSMode);
+els.acmeDialogClose.addEventListener("click", () => els.acmeDialog.close());
 els.navItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
 document.querySelectorAll("input[name='mode']").forEach((input) => {
   input.addEventListener("change", syncMode);
@@ -79,7 +93,7 @@ init();
 
 async function init() {
   await Promise.all([loadSites(), loadSettings()]);
-  await loadLogs();
+  renderLogs([]);
 }
 
 function showView(view) {
@@ -89,20 +103,27 @@ function showView(view) {
   els.pageTitle.textContent = title;
   els.sectionTitle.textContent = section;
 
-  if (view === "logs") loadLogs();
+  if (view === "proxy-hosts") closeEditor();
+  if (view === "logs") {
+    loadLogs();
+    syncLogPolling();
+  } else {
+    stopLogPolling();
+  }
   if (view === "settings") loadSettings();
-  if (view === "certificates") renderIssuers();
+  if (view === "certificates") renderCertificatesView();
 }
 
 async function loadSites() {
-  setStatus("Lade Websites...");
+  setStatus("Loading websites...");
   try {
     const data = await request("/api/sites");
     sites = data.sites || [];
     renderMetrics();
     renderHostLists();
     renderLogFilter();
-    setStatus(`${sites.length} Host${sites.length === 1 ? "" : "s"} verwaltet`);
+    renderCertificatesView();
+    setStatus(`${sites.length} host${sites.length === 1 ? "" : "s"} managed`);
   } catch (err) {
     setStatus(err.message);
   }
@@ -116,7 +137,7 @@ async function loadSettings() {
     els.settingsLogRetention.value = settings.logRetention || 100;
     els.settingsCaddyMode.value = settings.caddyMode || "file";
     els.settingsCaddyAPIURL.value = settings.caddyApiUrl || "";
-    renderIssuers();
+    renderCertificatesView();
     renderIssuerOptions();
   } catch (err) {
     setStatus(err.message);
@@ -139,8 +160,8 @@ async function saveSettings(event) {
       body: JSON.stringify(payload),
     });
     els.settingsPassword.value = "";
-    setStatus("Settings gespeichert");
-    renderIssuers();
+    setStatus("Settings saved");
+    renderCertificatesView();
     renderIssuerOptions();
   } catch (err) {
     setStatus(err.message);
@@ -162,16 +183,21 @@ async function saveIssuer(event) {
   } else {
     issuers.push(issuer);
   }
-  await saveIssuers(issuers, "Zertifizierungsstelle gespeichert");
-  editIssuer();
+  await saveIssuers(issuers, "Authority saved");
+  closeIssuerForm();
 }
 
 async function deleteIssuer() {
   const id = els.issuerId.value;
-  if (!id || !confirm("Zertifizierungsstelle wirklich löschen?")) return;
+  const issuer = (settings?.acmeIssuers || []).find((item) => item.id === id);
+  if (issuer?.builtIn) {
+    setStatus("Built-in authorities cannot be deleted");
+    return;
+  }
+  if (!id || !confirm("Delete this ACME authority?")) return;
   const issuers = (settings?.acmeIssuers || []).filter((issuer) => issuer.id !== id);
-  await saveIssuers(issuers, "Zertifizierungsstelle gelöscht");
-  editIssuer();
+  await saveIssuers(issuers, "Authority deleted");
+  closeIssuerForm();
 }
 
 async function saveIssuers(issuers, message) {
@@ -188,7 +214,7 @@ async function saveIssuers(issuers, message) {
       method: "PUT",
       body: JSON.stringify(payload),
     });
-    renderIssuers();
+    renderCertificatesView();
     renderIssuerOptions();
     setStatus(message);
   } catch (err) {
@@ -202,7 +228,7 @@ function renderIssuers() {
   if (!issuers.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Noch keine ACME Zertifizierungsstellen hinterlegt.";
+    empty.textContent = "No ACME authorities configured.";
     els.issuerList.append(empty);
     return;
   }
@@ -212,13 +238,60 @@ function renderIssuers() {
     row.innerHTML = `
       <strong></strong>
       <span></span>
-      <button class="secondary" type="button">Bearbeiten</button>
+      <span class="badge"></span>
+      <button class="secondary" type="button">Edit</button>
     `;
     row.children[0].textContent = issuer.name;
     row.children[1].textContent = issuer.directoryUrl;
-    row.children[2].addEventListener("click", () => editIssuer(issuer));
+    row.children[2].textContent = issuer.builtIn ? "Built-in" : "Custom";
+    row.children[3].addEventListener("click", () => editIssuer(issuer));
     els.issuerList.append(row);
   }
+}
+
+function renderCertificatesView() {
+  renderIssuers();
+  renderIssuedCertificates();
+}
+
+function renderIssuedCertificates() {
+  els.certificateList.innerHTML = "";
+  const tlsSites = sites.filter((site) => site.tlsMode && site.tlsMode !== "off");
+  if (!tlsSites.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No issued certificates known yet.";
+    els.certificateList.append(empty);
+    return;
+  }
+  for (const site of tlsSites) {
+    const row = document.createElement("div");
+    row.className = "certificate-row";
+    row.innerHTML = `
+      <strong></strong>
+      <span></span>
+      <span></span>
+      <span class="badge"></span>
+    `;
+    row.children[0].textContent = site.address;
+    row.children[1].textContent = certificateIssuerName(site);
+    row.children[2].textContent = formatCertificateExpiry(site.certificateExpiresAt);
+    row.children[3].textContent = site.enabled ? "Active" : "Disabled";
+    row.children[3].classList.toggle("off", !site.enabled);
+    els.certificateList.append(row);
+  }
+}
+
+function formatCertificateExpiry(value) {
+  if (!value) return "Unknown";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return date.toLocaleDateString();
+}
+
+function certificateIssuerName(site) {
+  const issuer = (settings?.acmeIssuers || []).find((item) => item.id === site.acmeIssuerId);
+  return issuer?.name || "ACME Authority";
 }
 
 function renderIssuerOptions() {
@@ -234,12 +307,24 @@ function renderIssuerOptions() {
 }
 
 function editIssuer(issuer = null) {
+  els.certificateForm.hidden = false;
   els.issuerId.value = issuer?.id || "";
   els.issuerName.value = issuer?.name || "";
   els.issuerDirectory.value = issuer?.directoryUrl || "";
   els.issuerEmail.value = issuer?.email || "";
-  els.issuerDelete.hidden = !issuer;
-  els.issuerName.focus();
+  els.issuerDelete.hidden = !issuer?.id || issuer.builtIn;
+  els.issuerName.readOnly = !!issuer?.builtIn;
+  els.issuerDirectory.readOnly = !!issuer?.builtIn;
+  els.issuerName.focus({ preventScroll: true });
+}
+
+function closeIssuerForm() {
+  els.certificateForm.hidden = true;
+  els.certificateForm.reset();
+  els.issuerId.value = "";
+  els.issuerName.readOnly = false;
+  els.issuerDirectory.readOnly = false;
+  els.issuerDelete.hidden = true;
 }
 
 function renderMetrics() {
@@ -259,7 +344,7 @@ function renderSiteList(container, editable) {
   if (!sites.length) {
     const empty = document.createElement("div");
     empty.className = "site-row empty";
-    empty.textContent = "Noch keine Proxy Hosts angelegt.";
+    empty.textContent = "No web hosts configured yet.";
     container.append(empty);
     return;
   }
@@ -277,9 +362,9 @@ function renderSiteList(container, editable) {
     row.children[0].textContent = site.address;
     row.children[1].textContent = site.mode === "static" ? "Static" : "Proxy";
     row.children[2].textContent = site.mode === "static" ? site.root : site.upstream;
-    row.children[3].textContent = site.enabled ? "Aktiv" : "Inaktiv";
+    row.children[3].textContent = site.enabled ? "Active" : "Inactive";
     row.children[3].classList.toggle("off", !site.enabled);
-    row.children[4].textContent = editable ? "Bearbeiten" : "Öffnen";
+    row.children[4].textContent = editable ? "Edit" : "Open";
     row.children[4].addEventListener("click", () => {
       showView("proxy-hosts");
       editSite(site);
@@ -290,7 +375,7 @@ function renderSiteList(container, editable) {
 
 function renderLogFilter() {
   const current = els.logSiteFilter.value;
-  els.logSiteFilter.innerHTML = `<option value="">Alle Hosts</option>`;
+  els.logSiteFilter.innerHTML = `<option value="">Select Web Host</option>`;
   for (const site of sites) {
     const option = document.createElement("option");
     option.value = site.id;
@@ -298,10 +383,19 @@ function renderLogFilter() {
     els.logSiteFilter.append(option);
   }
   els.logSiteFilter.value = current;
+  syncLogPolling();
 }
 
 async function loadLogs() {
-  const query = els.logSiteFilter.value ? `?siteId=${encodeURIComponent(els.logSiteFilter.value)}` : "";
+  const siteID = els.logSiteFilter.value;
+  const selectedSite = sites.find((site) => site.id === siteID);
+  els.logStreamLabel.hidden = !selectedSite;
+  els.logStreamLabel.querySelector("strong").textContent = selectedSite?.address || "";
+  if (!siteID) {
+    renderLogs([]);
+    return;
+  }
+  const query = `?siteId=${encodeURIComponent(siteID)}`;
   try {
     const data = await request(`/api/logs${query}`);
     renderLogs(data.logs || []);
@@ -312,10 +406,17 @@ async function loadLogs() {
 
 function renderLogs(logs) {
   els.logList.innerHTML = "";
+  if (!els.logSiteFilter.value) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Select a web host to view realtime logs.";
+    els.logList.append(empty);
+    return;
+  }
   if (!logs.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Noch keine Logs vorhanden.";
+    empty.textContent = "No log lines for this web host yet.";
     els.logList.append(empty);
     return;
   }
@@ -325,14 +426,32 @@ function renderLogs(logs) {
     row.className = "log-row";
     row.innerHTML = `
       <time></time>
-      <strong></strong>
-      <span></span>
+      <span class="log-method"></span>
+      <span class="log-path"></span>
+      <span class="log-status badge"></span>
     `;
-    row.children[0].textContent = new Date(entry.time).toLocaleString();
-    row.children[1].textContent = entry.site || "CaddyMGM";
-    row.children[2].textContent = `${entry.action}: ${entry.message}`;
+    row.children[0].textContent = new Date(entry.time).toLocaleTimeString();
+    row.children[0].title = new Date(entry.time).toLocaleString();
+    row.children[1].textContent = entry.method || "-";
+    row.children[2].textContent = entry.path || entry.message || "-";
+    row.children[2].title = entry.path || entry.message || "";
+    row.children[3].textContent = entry.status || "-";
+    row.children[3].classList.toggle("off", !String(entry.status || "").startsWith("2"));
     els.logList.append(row);
   }
+}
+
+function syncLogPolling() {
+  stopLogPolling();
+  const logsViewActive = document.querySelector("#view-logs").classList.contains("active");
+  if (!logsViewActive || !els.logSiteFilter.value) return;
+  logPollTimer = window.setInterval(loadLogs, 2500);
+}
+
+function stopLogPolling() {
+  if (!logPollTimer) return;
+  window.clearInterval(logPollTimer);
+  logPollTimer = null;
 }
 
 function editSite(site = null) {
@@ -340,14 +459,14 @@ function editSite(site = null) {
   els.proxyGrid.classList.add("editor-open");
   els.form.reset();
   els.id.value = site?.id || "";
-  els.formTitle.textContent = site ? "Website bearbeiten" : "Website anlegen";
+  els.formTitle.textContent = site ? "Edit Website" : "Create Website";
   els.address.value = site?.address || "";
   els.upstream.value = site?.upstream || "";
   els.root.value = site?.root || "";
   els.extra.value = site?.extraDirectives || "";
   els.enabled.checked = site?.enabled ?? true;
   els.logsEnabled.checked = site?.logsEnabled ?? true;
-  els.tlsMode.value = site?.tlsMode || "off";
+  els.tlsEnabled.checked = !!site && site?.tlsMode !== "off";
   renderIssuerOptions();
   els.acmeIssuer.value = site?.acmeIssuerId || "";
   const mode = site?.mode || "proxy";
@@ -355,7 +474,8 @@ function editSite(site = null) {
   els.delete.hidden = !site;
   syncMode();
   syncTLSMode();
-  els.address.focus();
+  els.editor.scrollIntoView({ behavior: "smooth", block: "start" });
+  els.address.focus({ preventScroll: true });
 }
 
 function closeEditor() {
@@ -369,12 +489,23 @@ function syncMode() {
   els.rootRow.hidden = mode !== "static";
   els.upstream.required = mode === "proxy";
   els.root.required = mode === "static";
+  if (mode === "proxy") {
+    els.root.value = "";
+  } else {
+    els.upstream.value = "";
+  }
 }
 
 function syncTLSMode() {
-  const acme = els.tlsMode.value === "acme";
-  els.acmeIssuerRow.hidden = !acme;
-  els.acmeIssuer.required = acme;
+  const enabled = els.tlsEnabled.checked;
+  els.acmeIssuerRow.hidden = !enabled;
+  els.acmeIssuer.required = enabled;
+  els.acmeIssuer.disabled = !enabled;
+  if (!enabled) {
+    els.acmeIssuer.value = "";
+  } else if (!els.acmeIssuer.value && els.acmeIssuer.options.length > 0) {
+    els.acmeIssuer.value = els.acmeIssuer.options[0].value;
+  }
 }
 
 async function saveSite(event) {
@@ -386,27 +517,48 @@ async function saveSite(event) {
     root: els.root.value,
     extraDirectives: els.extra.value,
     logsEnabled: els.logsEnabled.checked,
-    tlsMode: els.tlsMode.value,
-    acmeIssuerId: els.tlsMode.value === "acme" ? els.acmeIssuer.value : "",
+    tlsMode: els.tlsEnabled.checked ? "acme" : "off",
+    acmeIssuerId: els.tlsEnabled.checked ? els.acmeIssuer.value : "",
     enabled: els.enabled.checked,
   };
   const id = els.id.value;
   try {
-    await request(id ? `/api/sites/${id}` : "/api/sites", {
+    const saved = await request(id ? `/api/sites/${id}` : "/api/sites", {
       method: id ? "PUT" : "POST",
       body: JSON.stringify(payload),
     });
     closeEditor();
     await loadSites();
     await loadLogs();
+    if (payload.tlsMode === "acme") {
+      showACMEStatus(saved || payload);
+    }
   } catch (err) {
     setStatus(err.message);
   }
 }
 
+function showACMEStatus(site) {
+  const issuer = (settings?.acmeIssuers || []).find((item) => item.id === site.acmeIssuerId);
+  els.acmeDomain.textContent = site.address;
+  els.acmeAuthority.textContent = issuer ? issuer.name : "Selected ACME Authority";
+  els.acmeSteps.innerHTML = "";
+  [
+    `Saved web host ${site.address}.`,
+    "Generated Caddy TLS configuration with the selected ACME authority.",
+    "Loaded the updated Caddyfile through the Caddy Admin API.",
+    "Caddy now performs the ACME order and certificate validation in the background.",
+  ].forEach((step) => {
+    const item = document.createElement("li");
+    item.textContent = step;
+    els.acmeSteps.append(item);
+  });
+  els.acmeDialog.showModal();
+}
+
 async function deleteSite() {
   const id = els.id.value;
-  if (!id || !confirm("Website wirklich löschen?")) return;
+  if (!id || !confirm("Delete this website?")) return;
   try {
     await request(`/api/sites/${id}`, { method: "DELETE" });
     closeEditor();
@@ -442,5 +594,7 @@ function getMode() {
 }
 
 function setStatus(message) {
-  els.status.textContent = message;
+  const text = String(message || "");
+  els.status.textContent = text.length > 96 ? `${text.slice(0, 93)}...` : text;
+  els.status.title = text;
 }

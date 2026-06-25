@@ -17,7 +17,7 @@ form.addEventListener("submit", async (event) => {
       body: JSON.stringify(payload),
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Login fehlgeschlagen");
+    if (!response.ok) throw new Error(data.error || "Login failed");
     window.location.assign("/");
   } catch (err) {
     errorBox.textContent = err.message;

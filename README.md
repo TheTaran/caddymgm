@@ -94,6 +94,20 @@ volumes:
   - ./config:/config
 ```
 
+Caddy access logs are stored outside the containers:
+
+```text
+./logs
+```
+
+Docker Compose mounts this directory into CaddyMGM and the optional Docker Caddy
+service:
+
+```yaml
+volumes:
+  - ./logs:/logs
+```
+
 Caddy receives the same Caddyfile as read-only configuration:
 
 ```yaml
@@ -143,11 +157,12 @@ id -g
 
 ## Configuration
 
-CaddyMGM manages proxy host entries in the configured Caddyfile.
+CaddyMGM manages web host entries in the configured Caddyfile.
 
 Access logs are enabled by default for newly created sites by writing Caddy's
-`log` directive into the site block. They can be disabled manually per site in
-the proxy host editor.
+`log` directive into the site block. CaddyMGM writes one JSON access-log file per
+site under `/logs/<domain>.access.log`. They can be disabled manually per site in
+the web host editor.
 
 TLS is disabled by default for newly created sites. CaddyMGM writes these sites
 as `http://example.com` blocks so Caddy does not request Let's Encrypt
@@ -155,11 +170,17 @@ certificates automatically.
 
 TLS can be enabled per site:
 
-- `Internes Zertifikat` writes `tls internal`.
-- `ACME Zertifizierungsstelle` writes a Caddy ACME issuer block for the selected
-  certificate authority.
+- Enable `TLS enabled` in the web host editor.
+- Select an ACME authority. CaddyMGM writes a Caddy ACME issuer block for the
+  selected certificate authority.
 
 Custom ACME certificate authorities can be managed in `Certificates`.
+`Let's Encrypt` is available as a built-in ACME authority.
+
+The `Certificates` view contains:
+
+- `ACME Authorities` for built-in and custom ACME issuers.
+- `Issued Certificates` for managed hosts with TLS enabled.
 
 ## Caddy Integration
 
@@ -210,6 +231,15 @@ caddy_data
 caddy_config
 ```
 
+CaddyMGM mounts Caddy's data volume at `/caddy-data` so it can show certificate
+expiration dates in the `Issued Certificates` view and remove a deleted web
+host's managed certificate files.
+For the optional Docker Caddy service, Compose runs Caddy with the same
+`PUID`/`PGID` as CaddyMGM so generated certificate metadata can be read by the
+management interface.
+The `caddy-init` service prepares ownership for `./config`, `./logs` and the
+Caddy named volumes before the optional Caddy container starts.
+
 To start CaddyMGM with the optional Docker Caddy service:
 
 ```bash
@@ -238,11 +268,10 @@ CADDY_IMAGE=caddy:2-alpine
 
 ## Views
 
-- `Dashboard` lists all proxy hosts.
-- `Proxy Hosts` shows and edits the configuration of individual websites.
-- `Certificates` is reserved for TLS certificate management.
-- `Logs` shows CaddyMGM host events. Real Caddy access log ingestion is not
-  connected yet.
+- `Dashboard` lists all web hosts.
+- `Web Hosts` shows and edits the configuration of individual websites.
+- `Certificates` manages ACME authorities and lists managed TLS certificates.
+- `Logs` shows website access logs from Caddy.
 - `Settings` shows and updates CaddyMGM settings, including authentication.
 
 ## Docker
@@ -280,6 +309,9 @@ Environment variables:
 | `CADDYMGM_SETTINGS_PATH` | `/config/caddymgm-settings.json` | Path to the mounted CaddyMGM settings file |
 | `CADDYMGM_CADDY_MODE` | `file` | Caddy integration mode: `file`, `native`, `docker`, or `api` |
 | `CADDYMGM_CADDY_API_URL` | empty | Caddy Admin API base URL for `native`, `docker`, or `api` mode |
+| `CADDYMGM_ACCESS_LOG_DIR` | `/logs` | Directory where CaddyMGM reads website access logs |
+| `CADDYMGM_CADDY_DATA_DIR` | `/caddy-data` | Caddy data directory used for certificate metadata and cleanup |
+| `CADDY_ACCESS_LOG_DIR` | `/logs` | Directory written into generated Caddy log directives |
 | `COMPOSE_PROFILES` | empty | Set to `docker-caddy` to start the optional Compose Caddy service |
 | `CADDY_IMAGE` | `caddy:2-alpine` | Caddy Docker image used by the separate Caddy service |
 | `CADDY_HTTP_PORT` | `80` | Host HTTP port forwarded to the Caddy container |
@@ -291,6 +323,7 @@ Environment variables:
 - Add, edit, enable, disable and delete sites
 - Generate reverse proxy and static file Caddy blocks
 - Enable Caddy access logs by default for new sites, with a per-site toggle
+- Store website access logs outside Docker under `./logs`
 - Keep TLS disabled by default so Caddy does not request public certificates
   unless enabled per site
 - Manage custom ACME certificate authorities under Certificates
@@ -298,4 +331,5 @@ Environment variables:
   Caddy deployments
 - Login page with session-cookie authentication for the management interface
 - Editable CaddyMGM settings
-- In-memory CaddyMGM host event logs
+- Website access log viewer backed by Caddy JSON log files
+- `acme.sh` is installed in the CaddyMGM image for future certificate workflows

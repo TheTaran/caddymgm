@@ -333,10 +333,6 @@ h2 {
   margin-top: 16px;
 }
 
-.dashboard-grid.editor-open {
-  grid-template-columns: minmax(0, 1fr) 410px;
-}
-
 .panel-card {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -452,6 +448,10 @@ h2 {
   padding: 16px;
 }
 
+#proxy-hosts-grid .editor-card {
+  width: 100%;
+}
+
 .panel-title {
   justify-content: space-between;
   margin-bottom: 18px;
@@ -528,44 +528,71 @@ legend {
 
 .log-list {
   display: grid;
-  gap: 8px;
+  gap: 4px;
   padding: 0 14px 14px;
 }
 
 .log-row {
   display: grid;
-  grid-template-columns: 170px 130px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 86px 64px minmax(0, 1fr) 68px;
+  gap: 8px;
   align-items: center;
-  min-height: 48px;
-  border-radius: 8px;
-  padding: 8px 10px;
+  min-height: 30px;
+  border-radius: 6px;
+  padding: 4px 8px;
   background: var(--panel-soft);
+  font-size: 12px;
 }
 
 .log-row time,
 .log-row span {
   color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.log-row strong {
+.log-row .log-method {
   color: var(--text);
+  font-weight: 650;
 }
 
-.settings-card,
-.certificates-card {
+.log-row .log-status {
+  justify-self: start;
+  min-height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.settings-card {
   max-width: 680px;
+}
+
+.certificates-grid {
+  display: grid;
+  gap: 16px;
 }
 
 .issuer-list {
   display: grid;
   gap: 8px;
+  margin-top: 8px;
+}
+
+.issuer-form {
   margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.issuer-form[hidden] {
+  display: none;
 }
 
 .issuer-row {
   display: grid;
-  grid-template-columns: minmax(150px, 0.7fr) minmax(0, 1fr) 120px;
+  grid-template-columns: minmax(130px, 0.6fr) minmax(0, 1fr) 90px 100px;
   gap: 12px;
   align-items: center;
   min-height: 52px;
@@ -586,6 +613,48 @@ legend {
   color: var(--muted);
 }
 
+.certificate-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.certificate-head,
+.certificate-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) 120px 100px;
+  gap: 12px;
+  align-items: center;
+  margin: 0 14px;
+}
+
+.certificate-head {
+  min-height: 36px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.certificate-row {
+  min-height: 52px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--panel-soft);
+}
+
+.certificate-row strong,
+.certificate-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.certificate-row span {
+  color: var(--muted);
+}
+
 dialog {
   width: min(960px, calc(100vw - 32px));
   border: 1px solid var(--line);
@@ -599,6 +668,33 @@ dialog {
   justify-content: space-between;
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
+}
+
+.acme-status {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.acme-target {
+  display: grid;
+  gap: 4px;
+}
+
+.acme-target strong {
+  font-size: 15px;
+}
+
+.acme-target span {
+  color: var(--muted);
+}
+
+.acme-status ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
 }
 
 pre {
@@ -669,8 +765,7 @@ pre {
 }
 
 @media (max-width: 1100px) {
-  .dashboard-grid,
-  .dashboard-grid.editor-open {
+  .dashboard-grid {
     grid-template-columns: 1fr;
   }
 
@@ -719,8 +814,14 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .issuer-row {
+  .issuer-row,
+  .certificate-head,
+  .certificate-row {
     grid-template-columns: 1fr;
+  }
+
+  .certificate-head {
+    display: none;
   }
 
   .site-row button {

@@ -1,4 +1,21 @@
 services:
+  caddy-init:
+    image: alpine:3.20
+    container_name: caddy-init
+    profiles:
+      - docker-caddy
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - |
+        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /caddy-config
+    volumes:
+      - ./config:/config
+      - ./logs:/logs
+      - caddy_data:/data
+      - caddy_config:/caddy-config
+
   caddymgm:
     image: ghcr.io/thetaran/caddymgm:latest
     build: .
@@ -15,10 +32,15 @@ services:
       CADDYMGM_ADMIN_PASSWORD: ${CADDYMGM_ADMIN_PASSWORD:-changeme}
       CADDYMGM_CADDY_MODE: ${CADDYMGM_CADDY_MODE:-file}
       CADDYMGM_CADDY_API_URL: ${CADDYMGM_CADDY_API_URL:-}
+      CADDYMGM_ACCESS_LOG_DIR: ${CADDYMGM_ACCESS_LOG_DIR:-/logs}
+      CADDYMGM_CADDY_DATA_DIR: /caddy-data
+      CADDY_ACCESS_LOG_DIR: ${CADDY_ACCESS_LOG_DIR:-/logs}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./config:/config
+      - ./logs:/logs
+      - caddy_data:/caddy-data
 
   caddy:
     image: ${CADDY_IMAGE:-caddy:2-alpine}
@@ -26,6 +48,10 @@ services:
     profiles:
       - docker-caddy
     restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    depends_on:
+      caddy-init:
+        condition: service_completed_successfully
     environment:
       CADDY_ADMIN: 0.0.0.0:2019
     ports:
@@ -34,6 +60,7 @@ services:
       - "${CADDY_HTTPS_PORT:-443}:443/udp"
     volumes:
       - ./config:/etc/caddy:ro
+      - ./logs:/logs
       - caddy_data:/data
       - caddy_config:/config
 

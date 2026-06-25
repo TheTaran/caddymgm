@@ -6,21 +6,25 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/x509"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -33,16 +37,17 @@ const (
 var webFS embed.FS
 
 type Site struct {
-	ID              string `json:"id"`
-	Address         string `json:"address"`
-	Mode            string `json:"mode"`
-	Upstream        string `json:"upstream,omitempty"`
-	Root            string `json:"root,omitempty"`
-	ExtraDirectives string `json:"extraDirectives,omitempty"`
-	LogsEnabled     bool   `json:"logsEnabled"`
-	TLSMode         string `json:"tlsMode"`
-	ACMEIssuerID    string `json:"acmeIssuerId,omitempty"`
-	Enabled         bool   `json:"enabled"`
+	ID                   string `json:"id"`
+	Address              string `json:"address"`
+	Mode                 string `json:"mode"`
+	Upstream             string `json:"upstream,omitempty"`
+	Root                 string `json:"root,omitempty"`
+	ExtraDirectives      string `json:"extraDirectives,omitempty"`
+	LogsEnabled          bool   `json:"logsEnabled"`
+	TLSMode              string `json:"tlsMode"`
+	ACMEIssuerID         string `json:"acmeIssuerId,omitempty"`
+	CertificateExpiresAt string `json:"certificateExpiresAt,omitempty"`
+	Enabled              bool   `json:"enabled"`
 }
 
 type sitePayload struct {
@@ -81,6 +86,7 @@ type ACMEIssuer struct {
 	Name         string `json:"name"`
 	DirectoryURL string `json:"directoryUrl"`
 	Email        string `json:"email,omitempty"`
+	BuiltIn      bool   `json:"builtIn,omitempty"`
 }
 
 type Settings struct {
@@ -102,6 +108,9 @@ type LogEntry struct {
 	Site    string `json:"site,omitempty"`
 	Action  string `json:"action"`
 	Message string `json:"message"`
+	Method  string `json:"method,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Status  string `json:"status,omitempty"`
 }
 
 type App struct {
@@ -110,6 +119,9 @@ type App struct {
 	settingsPath string
 	caddyMode    string
 	caddyAPIURL  string
+	accessLogDir string
+	caddyLogDir  string
+	caddyDataDir string
 	httpClient   *http.Client
 	settings     Settings
 	logs         []LogEntry
@@ -122,12 +134,18 @@ func main() {
 	addr := env("CADDYMGM_LISTEN", ":8080")
 	caddyMode := normalizeCaddyMode(env("CADDYMGM_CADDY_MODE", "file"))
 	caddyAPIURL := env("CADDYMGM_CADDY_API_URL", defaultCaddyAPIURL(caddyMode))
+	accessLogDir := env("CADDYMGM_ACCESS_LOG_DIR", "/logs")
+	caddyLogDir := env("CADDY_ACCESS_LOG_DIR", accessLogDir)
+	caddyDataDir := env("CADDYMGM_CADDY_DATA_DIR", "/caddy-data")
 
 	app := &App{
 		configPath:   configPath,
 		settingsPath: settingsPath,
 		caddyMode:    caddyMode,
 		caddyAPIURL:  strings.TrimRight(caddyAPIURL, "/"),
+		accessLogDir: accessLogDir,
+		caddyLogDir:  caddyLogDir,
+		caddyDataDir: caddyDataDir,
 		httpClient:   &http.Client{Timeout: 15 * time.Second},
 		sessions:     make(map[string]time.Time),
 	}
@@ -157,7 +175,7 @@ func main() {
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
 	mux.HandleFunc("GET /api/auth/me", app.handleMe)
 
-	log.Printf("caddymgm listening on %s, config=%s, settings=%s, caddy_mode=%s, caddy_api=%s", addr, configPath, settingsPath, app.caddyMode, app.caddyAPIURL)
+	log.Printf("caddymgm listening on %s, config=%s, settings=%s, caddy_mode=%s, caddy_api=%s, access_logs=%s", addr, configPath, settingsPath, app.caddyMode, app.caddyAPIURL, app.accessLogDir)
 	log.Fatal(http.ListenAndServe(addr, logRequest(app.requireAuth(mux))))
 }
 
@@ -167,6 +185,7 @@ func (a *App) handleListSites(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	a.populateCertificateMetadata(sites)
 	writeJSON(w, http.StatusOK, map[string]any{"sites": sites})
 }
 
@@ -194,6 +213,7 @@ func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	site.ID = uniqueSiteID(site.Address, sites, "")
 	sites = append(sites, site)
 	if err := a.save(head, sites, tail); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -240,7 +260,13 @@ func (a *App) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range sites {
 		if sites[i].ID == id {
+			oldID := sites[i].ID
+			updated.ID = uniqueSiteID(updated.Address, sites, oldID)
 			sites[i] = updated
+			if err := a.renameAccessLog(oldID, updated.ID); err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
 			if err := a.save(head, sites, tail); err != nil {
 				writeError(w, http.StatusInternalServerError, err)
 				return
@@ -298,6 +324,9 @@ func (a *App) handleDeleteSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
 		return
 	}
+	if err := a.deleteSiteArtifacts(removed); err != nil {
+		a.addLogLocked(removed, "cleanup warning", err.Error())
+	}
 	a.addLogLocked(removed, "deleted", "Proxy host deleted")
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -342,10 +371,12 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if next.ACMEIssuers == nil {
 		next.ACMEIssuers = a.settings.ACMEIssuers
 	}
-	if err := normalizeACMEIssuers(next.ACMEIssuers); err != nil {
+	issuers, err := normalizeACMEIssuers(next.ACMEIssuers)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	next.ACMEIssuers = issuers
 
 	next.ConfigPath = a.configPath
 	next.AuthEnabled = authEnabledFromEnv()
@@ -380,18 +411,23 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 	siteID := strings.TrimSpace(r.URL.Query().Get("siteId"))
+	if siteID == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"logs": []LogEntry{}})
+		return
+	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	entries := make([]LogEntry, 0, len(a.logs))
-	for i := len(a.logs) - 1; i >= 0; i-- {
-		entry := a.logs[i]
-		if siteID != "" && entry.SiteID != siteID {
-			continue
-		}
-		entries = append(entries, entry)
+	sites, _, _, err := a.load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
 	}
+	entries := a.readAccessLogsLocked(siteID, sites)
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].Time > entries[j].Time
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"logs": entries})
 }
 
@@ -447,6 +483,9 @@ func (a *App) ensureConfig() error {
 	if err := os.MkdirAll(filepath.Dir(a.configPath), 0o755); err != nil {
 		return err
 	}
+	if err := os.MkdirAll(a.accessLogDir, 0o755); err != nil {
+		return err
+	}
 	if _, err := os.Stat(a.configPath); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -478,6 +517,7 @@ func (a *App) ensureSettings() error {
 		if a.settings.LogRetention == 0 {
 			a.settings.LogRetention = 100
 		}
+		a.settings.ACMEIssuers = ensureBuiltInACMEIssuers(a.settings.ACMEIssuers)
 		return a.saveSettingsLocked()
 	}
 	if !errors.Is(err, os.ErrNotExist) {
@@ -491,6 +531,7 @@ func (a *App) ensureSettings() error {
 		PasswordHash: hashPassword(env("CADDYMGM_ADMIN_PASSWORD", "changeme")),
 		ConfigPath:   a.configPath,
 		LogRetention: 100,
+		ACMEIssuers:  ensureBuiltInACMEIssuers(nil),
 	}
 	return a.saveSettingsLocked()
 }
@@ -541,12 +582,13 @@ func (a *App) load() ([]Site, string, string, error) {
 }
 
 func (a *App) save(head string, sites []Site, tail string) error {
+	normalizeSiteIDs(sites)
 	var out bytes.Buffer
 	out.WriteString(strings.TrimRight(head, "\n"))
 	if out.Len() > 0 {
 		out.WriteString("\n\n")
 	}
-	out.WriteString(renderManaged(sites, a.settings.ACMEIssuers))
+	out.WriteString(renderManaged(sites, a.settings.ACMEIssuers, a.caddyLogDir))
 	if strings.TrimSpace(tail) != "" {
 		out.WriteString("\n")
 		out.WriteString(strings.TrimLeft(tail, "\n"))
@@ -689,9 +731,18 @@ func parseSite(id string, lines []string) (Site, error) {
 
 	var extra []string
 	inTLS := false
+	inLog := false
+	logDepth := 0
 	for _, raw := range lines[1:] {
 		line := strings.TrimSpace(strings.TrimPrefix(raw, "#"))
 		line = strings.TrimSpace(line)
+		if inLog {
+			logDepth += braceDelta(line)
+			if logDepth <= 0 {
+				inLog = false
+			}
+			continue
+		}
 		if inTLS {
 			switch {
 			case strings.HasPrefix(line, "dir "):
@@ -725,6 +776,10 @@ func parseSite(id string, lines []string) (Site, error) {
 			}
 		case line == "log":
 			site.LogsEnabled = true
+		case line == "log {" || strings.HasPrefix(line, "log {"):
+			site.LogsEnabled = true
+			inLog = true
+			logDepth = braceDelta(line)
 		default:
 			extra = append(extra, line)
 		}
@@ -736,19 +791,19 @@ func parseSite(id string, lines []string) (Site, error) {
 	return site, nil
 }
 
-func renderManaged(sites []Site, issuers []ACMEIssuer) string {
+func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string) string {
 	var out strings.Builder
 	out.WriteString(managedStart + "\n")
 	for _, site := range sites {
 		out.WriteString("# caddymgm:site " + site.ID + "\n")
-		out.WriteString(renderSite(site, issuers))
+		out.WriteString(renderSite(site, issuers, logDir))
 		out.WriteString("# caddymgm:end-site\n")
 	}
 	out.WriteString(managedEnd + "\n")
 	return out.String()
 }
 
-func renderSite(site Site, issuers []ACMEIssuer) string {
+func renderSite(site Site, issuers []ACMEIssuer, logDir string) string {
 	var out strings.Builder
 	prefix := ""
 	if !site.Enabled {
@@ -782,7 +837,12 @@ func renderSite(site Site, issuers []ACMEIssuer) string {
 		}
 	}
 	if site.LogsEnabled {
-		out.WriteString(prefix + "\tlog\n")
+		out.WriteString(prefix + "\tlog {\n")
+		out.WriteString(prefix + "\t\toutput file " + accessLogPath(logDir, site.ID) + " {\n")
+		out.WriteString(prefix + "\t\t\tmode 0644\n")
+		out.WriteString(prefix + "\t\t}\n")
+		out.WriteString(prefix + "\t\tformat json\n")
+		out.WriteString(prefix + "\t}\n")
 	}
 	for _, line := range strings.Split(site.ExtraDirectives, "\n") {
 		line = strings.TrimSpace(line)
@@ -802,7 +862,7 @@ func normalizeSite(site *Site) error {
 	site.Mode = strings.TrimSpace(site.Mode)
 	site.Upstream = strings.TrimSpace(site.Upstream)
 	site.Root = strings.TrimSpace(site.Root)
-	site.ExtraDirectives = strings.TrimSpace(site.ExtraDirectives)
+	site.ExtraDirectives = cleanExtraDirectives(site.ExtraDirectives)
 	site.TLSMode = strings.TrimSpace(site.TLSMode)
 	site.ACMEIssuerID = strings.TrimSpace(site.ACMEIssuerID)
 	if site.Address == "" {
@@ -820,6 +880,11 @@ func normalizeSite(site *Site) error {
 		if site.Upstream == "" {
 			return errors.New("upstream is required")
 		}
+		upstream, err := normalizeProxyUpstream(site.Upstream)
+		if err != nil {
+			return err
+		}
+		site.Upstream = upstream
 	case "static":
 		if site.Root == "" {
 			return errors.New("root path is required")
@@ -857,23 +922,46 @@ func (a *App) validateSiteTLSLocked(site Site) error {
 	return nil
 }
 
-func normalizeACMEIssuers(issuers []ACMEIssuer) error {
+func normalizeACMEIssuers(issuers []ACMEIssuer) ([]ACMEIssuer, error) {
+	issuers = ensureBuiltInACMEIssuers(issuers)
 	for i := range issuers {
 		issuers[i].ID = strings.TrimSpace(issuers[i].ID)
 		issuers[i].Name = strings.TrimSpace(issuers[i].Name)
 		issuers[i].DirectoryURL = strings.TrimSpace(issuers[i].DirectoryURL)
 		issuers[i].Email = strings.TrimSpace(issuers[i].Email)
+		if issuers[i].ID == "letsencrypt" {
+			issuers[i].Name = "Let's Encrypt"
+			issuers[i].DirectoryURL = "https://acme-v02.api.letsencrypt.org/directory"
+			issuers[i].BuiltIn = true
+		}
 		if issuers[i].ID == "" {
 			issuers[i].ID = newID()
 		}
 		if issuers[i].Name == "" {
-			return errors.New("certificate authority name is required")
+			return nil, errors.New("certificate authority name is required")
 		}
 		if !strings.HasPrefix(issuers[i].DirectoryURL, "https://") {
-			return errors.New("certificate authority directory URL must start with https://")
+			return nil, errors.New("certificate authority directory URL must start with https://")
 		}
 	}
-	return nil
+	return issuers, nil
+}
+
+func ensureBuiltInACMEIssuers(issuers []ACMEIssuer) []ACMEIssuer {
+	for i := range issuers {
+		if issuers[i].ID == "letsencrypt" {
+			issuers[i].Name = "Let's Encrypt"
+			issuers[i].DirectoryURL = "https://acme-v02.api.letsencrypt.org/directory"
+			issuers[i].BuiltIn = true
+			return issuers
+		}
+	}
+	return append([]ACMEIssuer{{
+		ID:           "letsencrypt",
+		Name:         "Let's Encrypt",
+		DirectoryURL: "https://acme-v02.api.letsencrypt.org/directory",
+		BuiltIn:      true,
+	}}, issuers...)
 }
 
 func findACMEIssuer(issuers []ACMEIssuer, id string) (ACMEIssuer, bool) {
@@ -883,6 +971,368 @@ func findACMEIssuer(issuers []ACMEIssuer, id string) (ACMEIssuer, bool) {
 		}
 	}
 	return ACMEIssuer{}, false
+}
+
+func (a *App) readAccessLogsLocked(siteID string, sites []Site) []LogEntry {
+	limit := a.settings.LogRetention
+	if limit <= 0 {
+		limit = 100
+	}
+	entries := make([]LogEntry, 0)
+	for _, site := range sites {
+		if !site.LogsEnabled {
+			continue
+		}
+		if siteID != "" && site.ID != siteID {
+			continue
+		}
+		lines, err := readLastLines(accessLogPath(a.accessLogDir, site.ID), limit)
+		if err != nil {
+			continue
+		}
+		for _, line := range lines {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			entries = append(entries, accessLogEntry(site, line))
+		}
+	}
+	return entries
+}
+
+func readLastLines(path string, limit int) ([]string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimRight(string(content), "\n"), "\n")
+	if limit > 0 && len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	return lines, nil
+}
+
+func accessLogEntry(site Site, line string) LogEntry {
+	entry := LogEntry{
+		Time:    time.Now().Format(time.RFC3339),
+		SiteID:  site.ID,
+		Site:    site.Address,
+		Action:  "access",
+		Message: line,
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(line), &payload); err != nil {
+		return entry
+	}
+	if ts, ok := payload["ts"].(float64); ok {
+		sec := int64(ts)
+		nsec := int64((ts - float64(sec)) * 1_000_000_000)
+		entry.Time = time.Unix(sec, nsec).Format(time.RFC3339)
+	}
+	req, _ := payload["request"].(map[string]any)
+	method, _ := req["method"].(string)
+	uri, _ := req["uri"].(string)
+	status := ""
+	switch value := payload["status"].(type) {
+	case float64:
+		status = fmt.Sprintf("%d", int(value))
+	case string:
+		status = value
+	}
+	parts := make([]string, 0, 3)
+	if method != "" || uri != "" {
+		parts = append(parts, strings.TrimSpace(method+" "+uri))
+	}
+	if status != "" {
+		parts = append(parts, "status "+status)
+	}
+	entry.Method = method
+	entry.Path = uri
+	entry.Status = status
+	if len(parts) > 0 {
+		entry.Message = strings.Join(parts, " - ")
+	}
+	return entry
+}
+
+func accessLogPath(dir, siteID string) string {
+	return filepath.Join(dir, siteID+".access.log")
+}
+
+func (a *App) populateCertificateMetadata(sites []Site) {
+	for i := range sites {
+		expiresAt, err := a.certificateExpiresAt(sites[i].Address)
+		if err == nil && !expiresAt.IsZero() {
+			sites[i].CertificateExpiresAt = expiresAt.Format(time.RFC3339)
+		}
+	}
+}
+
+func (a *App) certificateExpiresAt(domain string) (time.Time, error) {
+	domain = strings.ToLower(siteIDFromAddress(domain))
+	if domain == "" || a.caddyDataDir == "" {
+		return time.Time{}, os.ErrNotExist
+	}
+	var newest time.Time
+	err := filepath.WalkDir(filepath.Join(a.caddyDataDir, "caddy", "certificates"), func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".crt") {
+			return nil
+		}
+		if !strings.EqualFold(strings.TrimSuffix(entry.Name(), ".crt"), domain) {
+			return nil
+		}
+		expiresAt, err := certificateFileExpiresAt(path)
+		if err != nil {
+			return nil
+		}
+		if expiresAt.After(newest) {
+			newest = expiresAt
+		}
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	if newest.IsZero() {
+		return time.Time{}, os.ErrNotExist
+	}
+	return newest, nil
+}
+
+func certificateFileExpiresAt(path string) (time.Time, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	for {
+		block, rest := pem.Decode(content)
+		if block == nil {
+			break
+		}
+		content = rest
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			continue
+		}
+		return cert.NotAfter, nil
+	}
+	return time.Time{}, errors.New("certificate not found")
+}
+
+func (a *App) renameAccessLog(oldID, newID string) error {
+	if oldID == "" || newID == "" || oldID == newID {
+		return nil
+	}
+	oldPath := accessLogPath(a.accessLogDir, oldID)
+	newPath := accessLogPath(a.accessLogDir, newID)
+	if _, err := os.Stat(oldPath); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if _, err := os.Stat(newPath); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.Rename(oldPath, newPath)
+}
+
+func (a *App) deleteSiteArtifacts(site Site) error {
+	var failures []string
+	if err := removeIfExists(accessLogPath(a.accessLogDir, site.ID)); err != nil {
+		failures = append(failures, err.Error())
+	}
+	certificateFiles := a.certificateFiles(site.Address)
+	certificateDirs := make([]string, 0, len(certificateFiles))
+	for _, path := range certificateFiles {
+		if err := removeIfExists(path); err != nil {
+			failures = append(failures, err.Error())
+		}
+		certificateDirs = append(certificateDirs, filepath.Dir(path))
+	}
+	for _, dir := range uniqueStrings(certificateDirs) {
+		if err := removeEmptyDir(dir); err != nil {
+			failures = append(failures, err.Error())
+		}
+	}
+	if len(failures) > 0 {
+		return errors.New(strings.Join(failures, "; "))
+	}
+	return nil
+}
+
+func (a *App) certificateFiles(domain string) []string {
+	domain = strings.ToLower(siteIDFromAddress(domain))
+	if domain == "" || a.caddyDataDir == "" {
+		return nil
+	}
+	files := make([]string, 0)
+	_ = filepath.WalkDir(filepath.Join(a.caddyDataDir, "caddy", "certificates"), func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+		name := entry.Name()
+		base := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(name, ".crt"), ".key"), ".json")
+		if strings.EqualFold(base, domain) && (strings.HasSuffix(name, ".crt") || strings.HasSuffix(name, ".key") || strings.HasSuffix(name, ".json")) {
+			files = append(files, path)
+		}
+		return nil
+	})
+	return files
+}
+
+func removeIfExists(path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove %s: %w", path, err)
+	}
+	return nil
+}
+
+func removeEmptyDir(path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, syscall.ENOTEMPTY) {
+			return nil
+		}
+		return fmt.Errorf("remove %s: %w", path, err)
+	}
+	return nil
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		unique = append(unique, value)
+	}
+	return unique
+}
+
+func normalizeSiteIDs(sites []Site) {
+	used := make(map[string]int)
+	for i := range sites {
+		base := siteIDFromAddress(sites[i].Address)
+		if base == "" {
+			base = sites[i].ID
+		}
+		if base == "" {
+			base = newID()
+		}
+		used[base]++
+		if used[base] == 1 {
+			sites[i].ID = base
+			continue
+		}
+		sites[i].ID = fmt.Sprintf("%s-%d", base, used[base])
+	}
+}
+
+func uniqueSiteID(address string, sites []Site, currentID string) string {
+	base := siteIDFromAddress(address)
+	if base == "" {
+		base = currentID
+	}
+	if base == "" {
+		base = newID()
+	}
+	id := base
+	next := 2
+	for siteIDExists(id, sites, currentID) {
+		id = fmt.Sprintf("%s-%d", base, next)
+		next++
+	}
+	return id
+}
+
+func siteIDExists(id string, sites []Site, currentID string) bool {
+	for _, site := range sites {
+		if site.ID == currentID {
+			continue
+		}
+		if site.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func siteIDFromAddress(address string) string {
+	address = strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(address), "http://"), "https://")
+	address = strings.Trim(address, "[]")
+	if host, _, ok := strings.Cut(address, ":"); ok {
+		address = host
+	}
+	address = strings.Trim(address, "*.")
+	address = strings.ToLower(address)
+	var out strings.Builder
+	lastDash := false
+	for _, r := range address {
+		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '-'
+		if valid {
+			out.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			out.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(out.String(), ".-")
+}
+
+func cleanExtraDirectives(input string) string {
+	lines := make([]string, 0)
+	for _, line := range strings.Split(input, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || isManagedLogDirective(line) {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func braceDelta(line string) int {
+	return strings.Count(line, "{") - strings.Count(line, "}")
+}
+
+func isManagedLogDirective(line string) bool {
+	if line == "format json" || strings.HasPrefix(line, "output file ") {
+		return true
+	}
+	if strings.HasPrefix(line, "mode ") || strings.HasPrefix(line, "roll_") {
+		return true
+	}
+	return false
+}
+
+func normalizeProxyUpstream(upstream string) (string, error) {
+	parsed, err := url.Parse(upstream)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return upstream, nil
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("upstream URL must not include query or fragment")
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return "", errors.New("upstream URL must only include scheme, host and port")
+	}
+	parsed.Path = ""
+	return parsed.String(), nil
 }
 
 func normalizeCaddyMode(mode string) string {

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -16,7 +16,7 @@
 
         <nav class="nav">
           <button class="nav-item active" type="button" data-view="dashboard">Dashboard</button>
-          <button class="nav-item" type="button" data-view="proxy-hosts">Proxy Hosts</button>
+          <button class="nav-item" type="button" data-view="proxy-hosts">Web Hosts</button>
           <button class="nav-item" type="button" data-view="certificates">Certificates</button>
           <button class="nav-item" type="button" data-view="logs">Logs</button>
           <button class="nav-item" type="button" data-view="settings">Settings</button>
@@ -28,7 +28,7 @@
             <strong>admin@local</strong>
             <span>Caddy Management</span>
           </div>
-          <button id="logout" class="icon-button" type="button" title="Abmelden">⏻</button>
+          <button id="logout" class="icon-button" type="button" title="Sign out">⏻</button>
         </div>
       </aside>
 
@@ -39,15 +39,15 @@
             <h1 id="page-title">Dashboard</h1>
           </div>
           <div class="actions">
-            <button id="new-site" title="Website anlegen">Neue Website</button>
+            <button id="new-site" title="Create website">New Website</button>
           </div>
         </header>
 
         <section class="hero-line">
           <div class="section-title">
             <span class="shield">◆</span>
-            <h2 id="section-title">Proxy Hosts Übersicht</h2>
-            <span id="status" class="status-pill">Lade Websites...</span>
+            <h2 id="section-title">Web Hosts Overview</h2>
+            <span id="status" class="status-pill">Loading websites...</span>
           </div>
         </section>
 
@@ -57,7 +57,7 @@
             <strong id="total-sites">0</strong>
           </article>
           <article class="metric">
-            <span>Aktiv</span>
+            <span>Active</span>
             <strong id="active-sites">0</strong>
           </article>
           <article class="metric">
@@ -73,13 +73,13 @@
         <section id="view-dashboard" class="view active">
           <section class="panel-card">
             <div class="panel-heading">
-              <h2>Alle Proxy Hosts</h2>
-              <span>Dashboard Übersicht</span>
+              <h2>All Web Hosts</h2>
+              <span>Dashboard Overview</span>
             </div>
             <div class="table-head">
-              <span>Adresse</span>
-              <span>Typ</span>
-              <span>Ziel</span>
+              <span>Address</span>
+              <span>Type</span>
+              <span>Target</span>
               <span>Status</span>
               <span></span>
             </div>
@@ -91,13 +91,13 @@
           <div id="proxy-hosts-grid" class="dashboard-grid">
             <section class="sites panel-card">
               <div class="panel-heading">
-                <h2>Proxy Host Konfiguration</h2>
-                <span>Einzelne Webseiten verwalten</span>
+                <h2>Configuration</h2>
+                <span>Manage individual websites</span>
               </div>
               <div class="table-head">
-                <span>Adresse</span>
-                <span>Typ</span>
-                <span>Ziel</span>
+                <span>Address</span>
+                <span>Type</span>
+                <span>Target</span>
                 <span>Status</span>
                 <span></span>
               </div>
@@ -114,36 +114,32 @@
                   </div>
                   <label class="switch">
                     <input id="enabled" type="checkbox" checked />
-                    <span>Aktiv</span>
+                    <span>Active</span>
                   </label>
                 </div>
 
                 <label class="switch">
                   <input id="logs-enabled" type="checkbox" checked />
-                  <span>Logs aktiv</span>
+                  <span>Logs enabled</span>
                 </label>
 
-                <label>
-                  TLS
-                  <select id="tls-mode">
-                    <option value="off">Aus</option>
-                    <option value="internal">Internes Zertifikat</option>
-                    <option value="acme">ACME Zertifizierungsstelle</option>
-                  </select>
+                <label class="switch">
+                  <input id="tls-enabled" type="checkbox" />
+                  <span>TLS enabled</span>
                 </label>
 
                 <label id="acme-issuer-row" hidden>
-                  ACME Zertifizierungsstelle
+                  ACME Authority
                   <select id="acme-issuer"></select>
                 </label>
 
                 <label>
-                  Adresse
+                  Address
                   <input id="address" required placeholder="example.com" autocomplete="off" />
                 </label>
 
                 <fieldset>
-                  <legend>Typ</legend>
+                  <legend>Type</legend>
                   <label class="radio">
                     <input type="radio" name="mode" value="proxy" checked />
                     Reverse Proxy
@@ -165,14 +161,14 @@
                 </label>
 
                 <label>
-                  Zusätzliche Direktiven
+                  Additional settings
                   <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
                 </label>
 
                 <div class="form-actions">
-                  <button type="submit">Speichern</button>
-                  <button type="button" id="cancel" class="secondary">Schließen</button>
-                  <button type="button" id="delete" class="danger" hidden>Löschen</button>
+                  <button type="submit">Save</button>
+                  <button type="button" id="cancel" class="secondary">Close</button>
+                  <button type="button" id="delete" class="danger" hidden>Delete</button>
                 </div>
               </form>
             </aside>
@@ -181,47 +177,67 @@
         </section>
 
         <section id="view-certificates" class="view">
-          <section class="panel-card editor-card certificates-card">
-            <div class="panel-heading">
-              <h2>Certificates</h2>
-              <span>ACME Zertifizierungsstellen</span>
-            </div>
-            <form id="certificate-form">
-              <input type="hidden" id="issuer-id" />
-              <label>
-                Name
-                <input id="issuer-name" placeholder="Let's Encrypt Staging" autocomplete="off" />
-              </label>
-              <label>
-                ACME Directory URL
-                <input id="issuer-directory" placeholder="https://acme-staging-v02.api.letsencrypt.org/directory" autocomplete="off" />
-              </label>
-              <label>
-                E-Mail
-                <input id="issuer-email" type="email" placeholder="admin@example.com" autocomplete="off" />
-              </label>
-              <div class="form-actions">
-                <button type="submit">Zertifizierungsstelle speichern</button>
-                <button type="button" id="issuer-reset" class="secondary">Neu</button>
-                <button type="button" id="issuer-delete" class="danger" hidden>Löschen</button>
+          <div class="certificates-grid">
+            <section class="panel-card editor-card certificates-card">
+              <div class="panel-heading">
+                <h2>ACME Authorities</h2>
+                <button type="button" id="issuer-new" class="secondary">New</button>
               </div>
-            </form>
-            <div id="issuer-list" class="issuer-list"></div>
-          </section>
+              <div id="issuer-list" class="issuer-list"></div>
+              <form id="certificate-form" class="issuer-form" hidden>
+                <input type="hidden" id="issuer-id" />
+                <label>
+                  Name
+                  <input id="issuer-name" placeholder="Let's Encrypt Staging" autocomplete="off" />
+                </label>
+                <label>
+                  ACME Directory URL
+                  <input id="issuer-directory" placeholder="https://acme-staging-v02.api.letsencrypt.org/directory" autocomplete="off" />
+                </label>
+                <label>
+                  Email
+                  <input id="issuer-email" type="email" placeholder="admin@example.com" autocomplete="off" />
+                </label>
+                <div class="form-actions">
+                  <button type="submit">Save Authority</button>
+                  <button type="button" id="issuer-reset" class="secondary">Close</button>
+                  <button type="button" id="issuer-delete" class="danger" hidden>Delete</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="panel-card certificates-card">
+              <div class="panel-heading">
+                <h2>Issued Certificates</h2>
+                <span>Managed hosts with TLS enabled</span>
+              </div>
+              <div class="certificate-head">
+                <span>Domain</span>
+                <span>Issuer</span>
+                <span>Expires</span>
+                <span>Status</span>
+              </div>
+              <div id="certificate-list" class="certificate-list"></div>
+            </section>
+          </div>
         </section>
 
         <section id="view-logs" class="view">
           <section class="panel-card">
             <div class="panel-heading">
               <h2>Logs</h2>
-              <span>Ereignisse pro Proxy Host</span>
+              <span>Website access logs</span>
             </div>
             <label class="filter-row">
-              Proxy Host
+              Web Host
               <select id="log-site-filter">
-                <option value="">Alle Hosts</option>
+                <option value="">Select Web Host</option>
               </select>
             </label>
+            <div id="log-stream-label" class="log-stream-label" hidden>
+              <span>Realtime Logs</span>
+              <strong></strong>
+            </div>
             <div id="log-list" class="log-list"></div>
           </section>
         </section>
@@ -242,8 +258,8 @@
               </label>
 
               <label>
-                Neues Passwort
-                <input id="settings-password" type="password" placeholder="Leer lassen, um es nicht zu ändern" autocomplete="new-password" />
+                New Password
+                <input id="settings-password" type="password" placeholder="Leave empty to keep the current password" autocomplete="new-password" />
               </label>
 
               <label>
@@ -262,13 +278,27 @@
               </label>
 
               <div class="form-actions">
-                <button type="submit">Settings speichern</button>
+                <button type="submit">Save Settings</button>
               </div>
             </form>
           </section>
         </section>
       </main>
     </div>
+
+    <dialog id="acme-dialog">
+      <div class="dialog-head">
+        <h2>ACME Certificate Request</h2>
+        <button id="acme-dialog-close" class="secondary" type="button">Close</button>
+      </div>
+      <div class="acme-status">
+        <div class="acme-target">
+          <strong id="acme-domain"></strong>
+          <span id="acme-authority"></span>
+        </div>
+        <ol id="acme-steps"></ol>
+      </div>
+    </dialog>
 
     <script src="/app.js"></script>
   </body>

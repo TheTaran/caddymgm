@@ -6,6 +6,7 @@ const els = {
   views: document.querySelectorAll(".view"),
   dashboardSiteList: document.querySelector("#dashboard-site-list"),
   siteList: document.querySelector("#site-list"),
+  proxyGrid: document.querySelector("#proxy-hosts-grid"),
   inlineConfig: document.querySelector("#inline-config"),
   editor: document.querySelector("#editor"),
   form: document.querySelector("#site-form"),
@@ -53,7 +54,7 @@ document.querySelector("#new-site").addEventListener("click", () => {
   showView("proxy-hosts");
   editSite();
 });
-document.querySelector("#cancel").addEventListener("click", () => (els.editor.hidden = true));
+document.querySelector("#cancel").addEventListener("click", closeEditor);
 document.querySelector("#show-config").addEventListener("click", showConfig);
 document.querySelector("#close-config").addEventListener("click", () => els.configDialog.close());
 els.form.addEventListener("submit", saveSite);
@@ -237,6 +238,7 @@ function renderLogs(logs) {
 
 function editSite(site = null) {
   els.editor.hidden = false;
+  els.proxyGrid.classList.add("editor-open");
   els.form.reset();
   els.id.value = site?.id || "";
   els.formTitle.textContent = site ? "Website bearbeiten" : "Website anlegen";
@@ -250,6 +252,11 @@ function editSite(site = null) {
   els.delete.hidden = !site;
   syncMode();
   els.address.focus();
+}
+
+function closeEditor() {
+  els.editor.hidden = true;
+  els.proxyGrid.classList.remove("editor-open");
 }
 
 function syncMode() {
@@ -276,7 +283,7 @@ async function saveSite(event) {
       method: id ? "PUT" : "POST",
       body: JSON.stringify(payload),
     });
-    els.editor.hidden = true;
+    closeEditor();
     await loadSites();
     await loadConfigPreview();
     await loadLogs();
@@ -290,7 +297,7 @@ async function deleteSite() {
   if (!id || !confirm("Website wirklich löschen?")) return;
   try {
     await request(`/api/sites/${id}`, { method: "DELETE" });
-    els.editor.hidden = true;
+    closeEditor();
     await loadSites();
     await loadConfigPreview();
     await loadLogs();

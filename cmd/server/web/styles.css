@@ -52,9 +52,18 @@ button:hover {
 }
 
 button.secondary {
-  background: var(--panel-soft);
+  background: linear-gradient(180deg, #262832, #1d1f27);
   color: var(--text);
-  border-color: var(--line);
+  border-color: #333642;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 18px rgba(0, 0, 0, 0.22);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+button.secondary:hover {
+  background: linear-gradient(180deg, #303340, #222530);
+  border-color: #444857;
 }
 
 button.danger {

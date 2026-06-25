@@ -1,3 +1,4 @@
 .env
 config/Caddyfile
+config/caddymgm-settings.json
 AGENTS.md

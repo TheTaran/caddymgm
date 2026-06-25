@@ -31,6 +31,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -120,10 +121,14 @@ button.danger {
   display: flex;
   align-items: center;
   min-height: 38px;
+  width: 100%;
+  border: 0;
   border-radius: 8px;
   padding: 0 12px;
+  background: transparent;
   color: #c9d1df;
   font-weight: 800;
+  text-align: left;
   text-decoration: none;
 }
 
@@ -133,8 +138,9 @@ button.danger {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.nav-item.muted {
-  color: var(--muted);
+.nav-item:hover {
+  background: #1a1c22;
+  filter: none;
 }
 
 .profile {
@@ -292,10 +298,23 @@ h2 {
   color: var(--warning);
 }
 
+.view {
+  display: none;
+  margin-top: 16px;
+}
+
+.view.active {
+  display: block;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 410px;
   gap: 16px;
+  margin-top: 16px;
+}
+
+.config-panel {
   margin-top: 16px;
 }
 
@@ -363,8 +382,13 @@ h2 {
 }
 
 .target,
-.empty {
+.empty,
+.empty-state {
   color: var(--muted);
+}
+
+.empty-state {
+  padding: 20px 16px;
 }
 
 .badge {
@@ -411,6 +435,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -422,6 +447,10 @@ textarea {
 
 textarea {
   resize: vertical;
+}
+
+select {
+  appearance: none;
 }
 
 fieldset {
@@ -457,6 +486,61 @@ legend {
   flex-wrap: wrap;
 }
 
+.filter-row {
+  max-width: 320px;
+  margin: 0 16px 14px;
+}
+
+.log-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.log-row {
+  display: grid;
+  grid-template-columns: 170px 130px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 48px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--panel-soft);
+}
+
+.log-row time,
+.log-row span {
+  color: var(--muted);
+}
+
+.log-row strong {
+  color: var(--text);
+}
+
+.settings-card {
+  max-width: 680px;
+}
+
+.settings-facts {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #101116;
+}
+
+.settings-facts span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.settings-facts strong {
+  overflow-wrap: anywhere;
+}
+
 dialog {
   width: min(960px, calc(100vw - 32px));
   border: 1px solid var(--line);
@@ -479,6 +563,12 @@ pre {
   overflow: auto;
   background: #08090d;
   color: #dce5f3;
+}
+
+#inline-config {
+  max-height: 360px;
+  margin: 0 14px 14px;
+  border-radius: 8px;
 }
 
 @media (max-width: 1100px) {
@@ -526,6 +616,10 @@ pre {
     grid-template-columns: 1fr;
     gap: 6px;
     padding: 12px;
+  }
+
+  .log-row {
+    grid-template-columns: 1fr;
   }
 
   .site-row button {

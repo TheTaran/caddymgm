@@ -24,9 +24,15 @@ ports:
   - "8080:8080"
 ```
 
-At the moment there is no login layer. Put the interface behind a trusted
-network, VPN, reverse proxy authentication, or firewall rule before exposing it
-outside your local/admin network.
+The application now protects the web interface and API with HTTP Basic Auth.
+The initial credentials come from Docker Compose environment variables:
+
+```text
+CADDYMGM_ADMIN_USER=admin
+CADDYMGM_ADMIN_PASSWORD=changeme
+```
+
+Change the password after the first start in `Settings`.
 
 ## Config Access
 
@@ -53,6 +59,18 @@ The path can be changed with:
 
 ```text
 CADDY_CONFIG_PATH=/config/Caddyfile
+```
+
+CaddyMGM stores its own settings next to the Caddyfile:
+
+```text
+./config/caddymgm-settings.json
+```
+
+Inside the container this file is read and written at:
+
+```text
+/config/caddymgm-settings.json
 ```
 
 The container is started with the host user and group from `.env`:
@@ -129,6 +147,15 @@ Possible reload mechanisms:
 The management container does not need access to TLS certificates, Caddy data,
 or the Docker socket for the current scope.
 
+## Views
+
+- `Dashboard` lists all proxy hosts.
+- `Proxy Hosts` shows and edits the configuration of individual websites.
+- `Certificates` is reserved for TLS certificate management.
+- `Logs` shows CaddyMGM host events. Real Caddy access log ingestion is not
+  connected yet.
+- `Settings` shows and updates CaddyMGM settings, including authentication.
+
 ## Docker
 
 Environment variables:
@@ -137,8 +164,11 @@ Environment variables:
 | --- | --- | --- |
 | `PUID` | `1000` | User id used by Docker Compose for host file ownership |
 | `PGID` | `1000` | Group id used by Docker Compose for host file ownership |
+| `CADDYMGM_ADMIN_USER` | `admin` | Initial admin user when no settings file exists |
+| `CADDYMGM_ADMIN_PASSWORD` | `changeme` | Initial admin password when no settings file exists |
 | `CADDYMGM_LISTEN` | `:8080` | HTTP listen address inside the container |
 | `CADDY_CONFIG_PATH` | `/config/Caddyfile` | Path to the mounted Caddyfile |
+| `CADDYMGM_SETTINGS_PATH` | `/config/caddymgm-settings.json` | Path to the mounted CaddyMGM settings file |
 
 ## Current scope
 
@@ -146,6 +176,9 @@ Environment variables:
 - Add, edit, enable, disable and delete sites
 - Generate reverse proxy and static file Caddy blocks
 - Preserve manual config outside the managed block
+- HTTP Basic Auth for the management interface
+- Editable CaddyMGM settings
+- In-memory CaddyMGM host event logs
 
 Reloading Caddy is intentionally not automated yet. In a production setup this
 should be wired to the chosen Caddy deployment model, for example a shared

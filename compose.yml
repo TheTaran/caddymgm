@@ -8,5 +8,8 @@ services:
       - "8080:8080"
     environment:
       CADDY_CONFIG_PATH: /config/Caddyfile
+      CADDYMGM_SETTINGS_PATH: /config/caddymgm-settings.json
+      CADDYMGM_ADMIN_USER: ${CADDYMGM_ADMIN_USER:-admin}
+      CADDYMGM_ADMIN_PASSWORD: ${CADDYMGM_ADMIN_PASSWORD:-changeme}
     volumes:
       - ./config:/config

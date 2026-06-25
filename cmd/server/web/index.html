@@ -15,11 +15,11 @@
         </div>
 
         <nav class="nav">
-          <a class="nav-item" href="#">Dashboard</a>
-          <a class="nav-item active" href="#">Proxy Hosts</a>
-          <a class="nav-item" href="#">Certificates</a>
-          <a class="nav-item" href="#">Audit Logs</a>
-          <a class="nav-item" href="#">Settings</a>
+          <button class="nav-item active" type="button" data-view="dashboard">Dashboard</button>
+          <button class="nav-item" type="button" data-view="proxy-hosts">Proxy Hosts</button>
+          <button class="nav-item" type="button" data-view="certificates">Certificates</button>
+          <button class="nav-item" type="button" data-view="logs">Logs</button>
+          <button class="nav-item" type="button" data-view="settings">Settings</button>
         </nav>
 
         <div class="profile">
@@ -35,7 +35,7 @@
         <header class="topbar">
           <div>
             <span class="eyebrow">Reverse Proxy Control</span>
-            <h1>Caddy Websites</h1>
+            <h1 id="page-title">Dashboard</h1>
           </div>
           <div class="actions">
             <button id="refresh" class="secondary" title="Neu laden">Aktualisieren</button>
@@ -47,7 +47,7 @@
         <section class="hero-line">
           <div class="section-title">
             <span class="shield">◆</span>
-            <h2>Managed Sites</h2>
+            <h2 id="section-title">Proxy Hosts Übersicht</h2>
             <span id="status" class="status-pill">Lade Websites...</span>
           </div>
           <div class="signal-pills">
@@ -75,11 +75,11 @@
           </article>
         </section>
 
-        <section class="dashboard-grid">
-          <section class="sites panel-card">
+        <section id="view-dashboard" class="view active">
+          <section class="panel-card">
             <div class="panel-heading">
-              <h2>Website Regeln</h2>
-              <span>Reverse Proxy und Static Hosts</span>
+              <h2>Alle Proxy Hosts</h2>
+              <span>Dashboard Übersicht</span>
             </div>
             <div class="table-head">
               <span>Adresse</span>
@@ -88,62 +88,162 @@
               <span>Status</span>
               <span></span>
             </div>
-            <div id="site-list" class="site-list"></div>
+            <div id="dashboard-site-list" class="site-list"></div>
           </section>
+        </section>
 
-          <aside class="panel-card editor-card" id="editor" hidden>
-            <form id="site-form">
-              <input type="hidden" id="site-id" />
+        <section id="view-proxy-hosts" class="view">
+          <div class="dashboard-grid">
+            <section class="sites panel-card">
+              <div class="panel-heading">
+                <h2>Proxy Host Konfiguration</h2>
+                <span>Einzelne Webseiten verwalten</span>
+              </div>
+              <div class="table-head">
+                <span>Adresse</span>
+                <span>Typ</span>
+                <span>Ziel</span>
+                <span>Status</span>
+                <span></span>
+              </div>
+              <div id="site-list" class="site-list"></div>
+            </section>
+
+            <aside class="panel-card editor-card" id="editor" hidden>
+              <form id="site-form">
+                <input type="hidden" id="site-id" />
+                <div class="panel-title">
+                  <div>
+                    <span class="eyebrow">Rule Editor</span>
+                    <h2 id="form-title">Website</h2>
+                  </div>
+                  <label class="switch">
+                    <input id="enabled" type="checkbox" checked />
+                    <span>Aktiv</span>
+                  </label>
+                </div>
+
+                <label>
+                  Adresse
+                  <input id="address" required placeholder="example.com" autocomplete="off" />
+                </label>
+
+                <fieldset>
+                  <legend>Typ</legend>
+                  <label class="radio">
+                    <input type="radio" name="mode" value="proxy" checked />
+                    Reverse Proxy
+                  </label>
+                  <label class="radio">
+                    <input type="radio" name="mode" value="static" />
+                    Static Files
+                  </label>
+                </fieldset>
+
+                <label id="upstream-row">
+                  Upstream
+                  <input id="upstream" placeholder="http://app:3000" autocomplete="off" />
+                </label>
+
+                <label id="root-row" hidden>
+                  Root
+                  <input id="root" placeholder="/srv/www/example" autocomplete="off" />
+                </label>
+
+                <label>
+                  Zusätzliche Direktiven
+                  <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
+                </label>
+
+                <div class="form-actions">
+                  <button type="submit">Speichern</button>
+                  <button type="button" id="cancel" class="secondary">Schließen</button>
+                  <button type="button" id="delete" class="danger" hidden>Löschen</button>
+                </div>
+              </form>
+            </aside>
+          </div>
+
+          <section class="panel-card config-panel">
+            <div class="panel-heading">
+              <h2>Aktuelle Caddy-Konfiguration</h2>
+              <span>Generierter Management-Block</span>
+            </div>
+            <pre id="inline-config">Lade Caddyfile...</pre>
+          </section>
+        </section>
+
+        <section id="view-certificates" class="view">
+          <section class="panel-card">
+            <div class="panel-heading">
+              <h2>Certificates</h2>
+              <span>TLS-Zertifikate</span>
+            </div>
+            <div class="empty-state">Zertifikatsverwaltung ist noch nicht angebunden.</div>
+          </section>
+        </section>
+
+        <section id="view-logs" class="view">
+          <section class="panel-card">
+            <div class="panel-heading">
+              <h2>Logs</h2>
+              <span>Ereignisse pro Proxy Host</span>
+            </div>
+            <label class="filter-row">
+              Proxy Host
+              <select id="log-site-filter">
+                <option value="">Alle Hosts</option>
+              </select>
+            </label>
+            <div id="log-list" class="log-list"></div>
+          </section>
+        </section>
+
+        <section id="view-settings" class="view">
+          <section class="panel-card editor-card settings-card">
+            <form id="settings-form">
               <div class="panel-title">
                 <div>
-                  <span class="eyebrow">Rule Editor</span>
-                  <h2 id="form-title">Website</h2>
+                  <span class="eyebrow">CaddyMGM</span>
+                  <h2>Settings</h2>
                 </div>
-                <label class="switch">
-                  <input id="enabled" type="checkbox" checked />
-                  <span>Aktiv</span>
-                </label>
               </div>
 
               <label>
-                Adresse
-                <input id="address" required placeholder="example.com" autocomplete="off" />
+                App Name
+                <input id="settings-app-name" autocomplete="off" />
               </label>
 
-              <fieldset>
-                <legend>Typ</legend>
-                <label class="radio">
-                  <input type="radio" name="mode" value="proxy" checked />
-                  Reverse Proxy
-                </label>
-                <label class="radio">
-                  <input type="radio" name="mode" value="static" />
-                  Static Files
-                </label>
-              </fieldset>
-
-              <label id="upstream-row">
-                Upstream
-                <input id="upstream" placeholder="http://app:3000" autocomplete="off" />
-              </label>
-
-              <label id="root-row" hidden>
-                Root
-                <input id="root" placeholder="/srv/www/example" autocomplete="off" />
+              <label class="switch">
+                <input id="settings-auth-enabled" type="checkbox" />
+                <span>Authentisierung aktiv</span>
               </label>
 
               <label>
-                Zusätzliche Direktiven
-                <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
+                Admin User
+                <input id="settings-username" autocomplete="off" />
               </label>
+
+              <label>
+                Neues Passwort
+                <input id="settings-password" type="password" placeholder="Leer lassen, um es nicht zu ändern" autocomplete="new-password" />
+              </label>
+
+              <label>
+                Log Retention
+                <input id="settings-log-retention" type="number" min="25" step="25" />
+              </label>
+
+              <div class="settings-facts">
+                <span>Config Path</span>
+                <strong id="settings-config-path">/config/Caddyfile</strong>
+              </div>
 
               <div class="form-actions">
-                <button type="submit">Speichern</button>
-                <button type="button" id="cancel" class="secondary">Schließen</button>
-                <button type="button" id="delete" class="danger" hidden>Löschen</button>
+                <button type="submit">Settings speichern</button>
               </div>
             </form>
-          </aside>
+          </section>
         </section>
       </main>
     </div>

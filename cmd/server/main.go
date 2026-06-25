@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -39,18 +41,43 @@ type Site struct {
 	Enabled         bool   `json:"enabled"`
 }
 
+type Settings struct {
+	AppName      string `json:"appName"`
+	AuthEnabled  bool   `json:"authEnabled"`
+	Username     string `json:"username"`
+	Password     string `json:"password,omitempty"`
+	PasswordHash string `json:"passwordHash,omitempty"`
+	ConfigPath   string `json:"configPath"`
+	LogRetention int    `json:"logRetention"`
+}
+
+type LogEntry struct {
+	Time    string `json:"time"`
+	SiteID  string `json:"siteId,omitempty"`
+	Site    string `json:"site,omitempty"`
+	Action  string `json:"action"`
+	Message string `json:"message"`
+}
+
 type App struct {
-	mu         sync.Mutex
-	configPath string
+	mu           sync.Mutex
+	configPath   string
+	settingsPath string
+	settings     Settings
+	logs         []LogEntry
 }
 
 func main() {
 	configPath := env("CADDY_CONFIG_PATH", "/config/Caddyfile")
+	settingsPath := env("CADDYMGM_SETTINGS_PATH", "/config/caddymgm-settings.json")
 	addr := env("CADDYMGM_LISTEN", ":8080")
 
-	app := &App{configPath: configPath}
+	app := &App{configPath: configPath, settingsPath: settingsPath}
 	if err := app.ensureConfig(); err != nil {
 		log.Fatalf("prepare config: %v", err)
+	}
+	if err := app.ensureSettings(); err != nil {
+		log.Fatalf("prepare settings: %v", err)
 	}
 
 	webRoot, err := fs.Sub(webFS, "web")
@@ -65,9 +92,12 @@ func main() {
 	mux.HandleFunc("PUT /api/sites/", app.handleUpdateSite)
 	mux.HandleFunc("DELETE /api/sites/", app.handleDeleteSite)
 	mux.HandleFunc("GET /api/config", app.handleConfig)
+	mux.HandleFunc("GET /api/settings", app.handleGetSettings)
+	mux.HandleFunc("PUT /api/settings", app.handleUpdateSettings)
+	mux.HandleFunc("GET /api/logs", app.handleLogs)
 
-	log.Printf("caddymgm listening on %s, config=%s", addr, configPath)
-	log.Fatal(http.ListenAndServe(addr, logRequest(mux)))
+	log.Printf("caddymgm listening on %s, config=%s, settings=%s", addr, configPath, settingsPath)
+	log.Fatal(http.ListenAndServe(addr, logRequest(app.requireAuth(mux))))
 }
 
 func (a *App) handleListSites(w http.ResponseWriter, r *http.Request) {
@@ -104,6 +134,7 @@ func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	a.addLogLocked(site, "created", "Proxy host created")
 	writeJSON(w, http.StatusCreated, site)
 }
 
@@ -140,6 +171,7 @@ func (a *App) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusInternalServerError, err)
 				return
 			}
+			a.addLogLocked(updated, "updated", "Proxy host updated")
 			writeJSON(w, http.StatusOK, updated)
 			return
 		}
@@ -165,9 +197,11 @@ func (a *App) handleDeleteSite(w http.ResponseWriter, r *http.Request) {
 
 	next := sites[:0]
 	found := false
+	var removed Site
 	for _, site := range sites {
 		if site.ID == id {
 			found = true
+			removed = site
 			continue
 		}
 		next = append(next, site)
@@ -180,6 +214,7 @@ func (a *App) handleDeleteSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	a.addLogLocked(removed, "deleted", "Proxy host deleted")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -193,6 +228,66 @@ func (a *App) handleConfig(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(content)
 }
 
+func (a *App) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	settings := a.publicSettingsLocked()
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var next Settings
+	if err := json.NewDecoder(r.Body).Decode(&next); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid JSON body"))
+		return
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if strings.TrimSpace(next.AppName) == "" {
+		next.AppName = "CaddyMGM"
+	}
+	if strings.TrimSpace(next.Username) == "" {
+		writeError(w, http.StatusBadRequest, errors.New("username is required"))
+		return
+	}
+	if next.LogRetention < 25 {
+		next.LogRetention = 100
+	}
+
+	next.ConfigPath = a.configPath
+	next.PasswordHash = a.settings.PasswordHash
+	if strings.TrimSpace(next.Password) != "" {
+		next.PasswordHash = hashPassword(next.Password)
+	}
+	next.Password = ""
+	a.settings = next
+	if err := a.saveSettingsLocked(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	a.trimLogsLocked()
+	writeJSON(w, http.StatusOK, a.publicSettingsLocked())
+}
+
+func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
+	siteID := strings.TrimSpace(r.URL.Query().Get("siteId"))
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	entries := make([]LogEntry, 0, len(a.logs))
+	for i := len(a.logs) - 1; i >= 0; i-- {
+		entry := a.logs[i]
+		if siteID != "" && entry.SiteID != siteID {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"logs": entries})
+}
+
 func (a *App) ensureConfig() error {
 	if err := os.MkdirAll(filepath.Dir(a.configPath), 0o755); err != nil {
 		return err
@@ -203,6 +298,65 @@ func (a *App) ensureConfig() error {
 		return err
 	}
 	return os.WriteFile(a.configPath, []byte(managedStart+"\n"+managedEnd+"\n"), 0o644)
+}
+
+func (a *App) ensureSettings() error {
+	if err := os.MkdirAll(filepath.Dir(a.settingsPath), 0o755); err != nil {
+		return err
+	}
+	content, err := os.ReadFile(a.settingsPath)
+	if err == nil {
+		if err := json.Unmarshal(content, &a.settings); err != nil {
+			return err
+		}
+		a.settings.ConfigPath = a.configPath
+		if a.settings.AppName == "" {
+			a.settings.AppName = "CaddyMGM"
+		}
+		if a.settings.Username == "" {
+			a.settings.Username = "admin"
+		}
+		if a.settings.PasswordHash == "" {
+			a.settings.PasswordHash = hashPassword(env("CADDYMGM_ADMIN_PASSWORD", "changeme"))
+		}
+		if a.settings.LogRetention == 0 {
+			a.settings.LogRetention = 100
+		}
+		return a.saveSettingsLocked()
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	a.settings = Settings{
+		AppName:      "CaddyMGM",
+		AuthEnabled:  true,
+		Username:     env("CADDYMGM_ADMIN_USER", "admin"),
+		PasswordHash: hashPassword(env("CADDYMGM_ADMIN_PASSWORD", "changeme")),
+		ConfigPath:   a.configPath,
+		LogRetention: 100,
+	}
+	return a.saveSettingsLocked()
+}
+
+func (a *App) saveSettingsLocked() error {
+	content, err := json.MarshalIndent(a.settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := fmt.Sprintf("%s.tmp.%d", a.settingsPath, time.Now().UnixNano())
+	if err := os.WriteFile(tmp, append(content, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, a.settingsPath)
+}
+
+func (a *App) publicSettingsLocked() Settings {
+	settings := a.settings
+	settings.Password = ""
+	settings.PasswordHash = ""
+	settings.ConfigPath = a.configPath
+	return settings
 }
 
 func (a *App) readSites() ([]Site, error) {
@@ -433,6 +587,57 @@ func newID() string {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(b[:])
+}
+
+func hashPassword(password string) string {
+	sum := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(sum[:])
+}
+
+func (a *App) requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a.mu.Lock()
+		settings := a.settings
+		a.mu.Unlock()
+
+		if !settings.AuthEnabled {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		user, pass, ok := r.BasicAuth()
+		if ok && subtle.ConstantTimeCompare([]byte(user), []byte(settings.Username)) == 1 {
+			passHash := hashPassword(pass)
+			if subtle.ConstantTimeCompare([]byte(passHash), []byte(settings.PasswordHash)) == 1 {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		w.Header().Set("WWW-Authenticate", `Basic realm="CaddyMGM"`)
+		writeError(w, http.StatusUnauthorized, errors.New("authentication required"))
+	})
+}
+
+func (a *App) addLogLocked(site Site, action, message string) {
+	a.logs = append(a.logs, LogEntry{
+		Time:    time.Now().Format(time.RFC3339),
+		SiteID:  site.ID,
+		Site:    site.Address,
+		Action:  action,
+		Message: message,
+	})
+	a.trimLogsLocked()
+}
+
+func (a *App) trimLogsLocked() {
+	limit := a.settings.LogRetention
+	if limit <= 0 {
+		limit = 100
+	}
+	if len(a.logs) > limit {
+		a.logs = a.logs[len(a.logs)-limit:]
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

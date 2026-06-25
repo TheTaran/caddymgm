@@ -24,7 +24,8 @@ ports:
   - "8080:8080"
 ```
 
-The application now protects the web interface and API with HTTP Basic Auth.
+The application protects the web interface and API with a login page and
+HttpOnly session cookie.
 The initial credentials come from Docker Compose environment variables:
 
 ```text
@@ -33,6 +34,7 @@ CADDYMGM_ADMIN_PASSWORD=changeme
 ```
 
 Change the password after the first start in `Settings`.
+Authentication is mandatory and cannot be disabled from the UI.
 
 ## Config Access
 
@@ -176,7 +178,7 @@ Environment variables:
 - Add, edit, enable, disable and delete sites
 - Generate reverse proxy and static file Caddy blocks
 - Preserve manual config outside the managed block
-- HTTP Basic Auth for the management interface
+- Login page with session-cookie authentication for the management interface
 - Editable CaddyMGM settings
 - In-memory CaddyMGM host event logs
 

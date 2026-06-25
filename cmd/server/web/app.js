@@ -48,6 +48,7 @@ let sites = [];
 let settings = null;
 
 document.querySelector("#refresh").addEventListener("click", refreshCurrentView);
+document.querySelector("#logout").addEventListener("click", logout);
 document.querySelector("#new-site").addEventListener("click", () => {
   showView("proxy-hosts");
   editSite();
@@ -124,7 +125,7 @@ async function saveSettings(event) {
   event.preventDefault();
   const payload = {
     appName: els.settingsAppName.value,
-    authEnabled: els.settingsAuthEnabled.checked,
+    authEnabled: true,
     username: els.settingsUsername.value,
     password: els.settingsPassword.value,
     logRetention: Number(els.settingsLogRetention.value || 100),
@@ -319,10 +320,19 @@ async function request(url, options = {}) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
+  if (response.status === 401) {
+    window.location.assign("/login.html");
+    throw new Error("authentication required");
+  }
   if (response.status === 204) return null;
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Request failed");
   return data;
+}
+
+async function logout() {
+  await fetch("/api/auth/logout", { method: "POST" });
+  window.location.assign("/login.html");
 }
 
 function getMode() {

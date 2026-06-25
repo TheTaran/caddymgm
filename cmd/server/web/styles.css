@@ -152,6 +152,11 @@ button.danger {
   padding: 16px 8px 0;
 }
 
+.profile div {
+  min-width: 0;
+  flex: 1;
+}
+
 .profile strong,
 .profile span {
   display: block;
@@ -173,6 +178,21 @@ button.danger {
   color: #fff;
   font-size: 12px;
   font-weight: 900;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #262832, #1d1f27);
+  color: var(--text);
+  border-color: #333642;
 }
 
 .content {
@@ -569,6 +589,64 @@ pre {
   max-height: 360px;
   margin: 0 14px 14px;
   border-radius: 8px;
+}
+
+.login-body {
+  display: grid;
+  place-items: center;
+  padding: 22px;
+}
+
+.login-shell {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: calc(100vh - 44px);
+}
+
+.login-panel {
+  width: min(430px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+}
+
+.login-brand {
+  margin: 0 0 32px;
+  padding: 0;
+}
+
+.login-copy {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.login-copy h1 {
+  font-size: 28px;
+}
+
+.login-copy p {
+  color: var(--muted);
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.login-form button {
+  margin-top: 4px;
+}
+
+.login-error {
+  border: 1px solid rgba(255, 45, 99, 0.35);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 45, 99, 0.1);
+  color: #ffd8e2;
 }
 
 @media (max-width: 1100px) {

@@ -65,6 +65,7 @@ type App struct {
 	settingsPath string
 	settings     Settings
 	logs         []LogEntry
+	sessions     map[string]time.Time
 }
 
 func main() {
@@ -72,7 +73,7 @@ func main() {
 	settingsPath := env("CADDYMGM_SETTINGS_PATH", "/config/caddymgm-settings.json")
 	addr := env("CADDYMGM_LISTEN", ":8080")
 
-	app := &App{configPath: configPath, settingsPath: settingsPath}
+	app := &App{configPath: configPath, settingsPath: settingsPath, sessions: make(map[string]time.Time)}
 	if err := app.ensureConfig(); err != nil {
 		log.Fatalf("prepare config: %v", err)
 	}
@@ -95,6 +96,9 @@ func main() {
 	mux.HandleFunc("GET /api/settings", app.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", app.handleUpdateSettings)
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
+	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
+	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
+	mux.HandleFunc("GET /api/auth/me", app.handleMe)
 
 	log.Printf("caddymgm listening on %s, config=%s, settings=%s", addr, configPath, settingsPath)
 	log.Fatal(http.ListenAndServe(addr, logRequest(app.requireAuth(mux))))
@@ -257,6 +261,7 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	next.ConfigPath = a.configPath
+	next.AuthEnabled = true
 	next.PasswordHash = a.settings.PasswordHash
 	if strings.TrimSpace(next.Password) != "" {
 		next.PasswordHash = hashPassword(next.Password)
@@ -288,6 +293,54 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"logs": entries})
 }
 
+func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid JSON body"))
+		return
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.validCredentialsLocked(payload.Username, payload.Password) {
+		token := newSessionToken()
+		a.sessions[token] = time.Now().Add(12 * time.Hour)
+		http.SetCookie(w, sessionCookie(token, 12*time.Hour))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"authenticated": true,
+			"username":      a.settings.Username,
+		})
+		return
+	}
+	writeError(w, http.StatusUnauthorized, errors.New("invalid username or password"))
+}
+
+func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	if cookie, err := r.Cookie("caddymgm_session"); err == nil {
+		delete(a.sessions, cookie.Value)
+	}
+	a.mu.Unlock()
+
+	expired := sessionCookie("", -time.Hour)
+	http.SetCookie(w, expired)
+	writeJSON(w, http.StatusOK, map[string]bool{"loggedOut": true})
+}
+
+func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"authenticated": true,
+		"username":      a.settings.Username,
+		"appName":       a.settings.AppName,
+	})
+}
+
 func (a *App) ensureConfig() error {
 	if err := os.MkdirAll(filepath.Dir(a.configPath), 0o755); err != nil {
 		return err
@@ -309,6 +362,7 @@ func (a *App) ensureSettings() error {
 		if err := json.Unmarshal(content, &a.settings); err != nil {
 			return err
 		}
+		a.settings.AuthEnabled = true
 		a.settings.ConfigPath = a.configPath
 		if a.settings.AppName == "" {
 			a.settings.AppName = "CaddyMGM"
@@ -597,26 +651,75 @@ func hashPassword(password string) string {
 func (a *App) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
-		settings := a.settings
+		authenticated := a.hasValidSessionLocked(r)
 		a.mu.Unlock()
 
-		if !settings.AuthEnabled {
+		if authenticated || isPublicPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		user, pass, ok := r.BasicAuth()
-		if ok && subtle.ConstantTimeCompare([]byte(user), []byte(settings.Username)) == 1 {
-			passHash := hashPassword(pass)
-			if subtle.ConstantTimeCompare([]byte(passHash), []byte(settings.PasswordHash)) == 1 {
-				next.ServeHTTP(w, r)
-				return
-			}
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			writeError(w, http.StatusUnauthorized, errors.New("authentication required"))
+			return
 		}
 
-		w.Header().Set("WWW-Authenticate", `Basic realm="CaddyMGM"`)
-		writeError(w, http.StatusUnauthorized, errors.New("authentication required"))
+		http.Redirect(w, r, "/login.html", http.StatusFound)
 	})
+}
+
+func (a *App) validCredentialsLocked(username, password string) bool {
+	if subtle.ConstantTimeCompare([]byte(username), []byte(a.settings.Username)) != 1 {
+		return false
+	}
+	passHash := hashPassword(password)
+	return subtle.ConstantTimeCompare([]byte(passHash), []byte(a.settings.PasswordHash)) == 1
+}
+
+func (a *App) hasValidSessionLocked(r *http.Request) bool {
+	cookie, err := r.Cookie("caddymgm_session")
+	if err != nil || cookie.Value == "" {
+		return false
+	}
+	expires, ok := a.sessions[cookie.Value]
+	if !ok {
+		return false
+	}
+	if time.Now().After(expires) {
+		delete(a.sessions, cookie.Value)
+		return false
+	}
+	return true
+}
+
+func isPublicPath(path string) bool {
+	switch path {
+	case "/login.html", "/login.css", "/login.js", "/styles.css":
+		return true
+	case "/api/auth/login":
+		return true
+	default:
+		return false
+	}
+}
+
+func newSessionToken() string {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
+}
+
+func sessionCookie(value string, maxAge time.Duration) *http.Cookie {
+	return &http.Cookie{
+		Name:     "caddymgm_session",
+		Value:    value,
+		Path:     "/",
+		MaxAge:   int(maxAge.Seconds()),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
 }
 
 func (a *App) addLogLocked(site Site, action, message string) {

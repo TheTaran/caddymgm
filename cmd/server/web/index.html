@@ -39,8 +39,6 @@
             <h1 id="page-title">Dashboard</h1>
           </div>
           <div class="actions">
-            <button id="refresh" class="secondary" title="Neu laden">Aktualisieren</button>
-            <button id="show-config" class="secondary" title="Caddyfile anzeigen">Config</button>
             <button id="new-site" title="Website anlegen">Neue Website</button>
           </div>
         </header>
@@ -50,10 +48,6 @@
             <span class="shield">◆</span>
             <h2 id="section-title">Proxy Hosts Übersicht</h2>
             <span id="status" class="status-pill">Lade Websites...</span>
-          </div>
-          <div class="signal-pills">
-            <span>Config: extern</span>
-            <span>Port: 8080</span>
           </div>
         </section>
 
@@ -216,17 +210,6 @@
               </div>
 
               <label>
-                App Name
-                <input id="settings-app-name" autocomplete="off" />
-              </label>
-
-              <label class="switch">
-                <input id="settings-auth-enabled" type="checkbox" disabled />
-                <span>Authentisierung aktiv</span>
-              </label>
-              <p class="field-note">Authentisierung wird über <code>CADDYMGM_AUTH_ENABLED</code> in der <code>.env</code> gesteuert.</p>
-
-              <label>
                 Admin User
                 <input id="settings-username" autocomplete="off" />
               </label>
@@ -240,11 +223,6 @@
                 Log Retention
                 <input id="settings-log-retention" type="number" min="25" step="25" />
               </label>
-
-              <div class="settings-facts">
-                <span>Config Path</span>
-                <strong id="settings-config-path">/config/Caddyfile</strong>
-              </div>
 
               <div class="form-actions">
                 <button type="submit">Settings speichern</button>

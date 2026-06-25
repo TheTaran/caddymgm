@@ -252,8 +252,7 @@ h2 {
   margin-top: 28px;
 }
 
-.section-title,
-.signal-pills {
+.section-title {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -263,8 +262,7 @@ h2 {
   color: var(--blue);
 }
 
-.status-pill,
-.signal-pills span {
+.status-pill {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
@@ -475,15 +473,6 @@ label {
   font-weight: 500;
 }
 
-.field-note {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.field-note code {
-  color: var(--text);
-}
-
 input,
 select,
 textarea {
@@ -569,26 +558,6 @@ legend {
 
 .settings-card {
   max-width: 680px;
-}
-
-.settings-facts {
-  display: grid;
-  gap: 4px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 12px;
-  background: #101116;
-}
-
-.settings-facts span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.settings-facts strong {
-  overflow-wrap: anywhere;
 }
 
 dialog {
@@ -707,8 +676,7 @@ pre {
     flex-direction: column;
   }
 
-  .hero-line,
-  .signal-pills {
+  .hero-line {
     align-items: flex-start;
     flex-direction: column;
   }

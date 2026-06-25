@@ -30,12 +30,9 @@ const els = {
   logSiteFilter: document.querySelector("#log-site-filter"),
   logList: document.querySelector("#log-list"),
   settingsForm: document.querySelector("#settings-form"),
-  settingsAppName: document.querySelector("#settings-app-name"),
-  settingsAuthEnabled: document.querySelector("#settings-auth-enabled"),
   settingsUsername: document.querySelector("#settings-username"),
   settingsPassword: document.querySelector("#settings-password"),
   settingsLogRetention: document.querySelector("#settings-log-retention"),
-  settingsConfigPath: document.querySelector("#settings-config-path"),
 };
 
 const viewTitles = {
@@ -49,14 +46,12 @@ const viewTitles = {
 let sites = [];
 let settings = null;
 
-document.querySelector("#refresh").addEventListener("click", refreshCurrentView);
 document.querySelector("#logout").addEventListener("click", logout);
 document.querySelector("#new-site").addEventListener("click", () => {
   showView("proxy-hosts");
   editSite();
 });
 document.querySelector("#cancel").addEventListener("click", closeEditor);
-document.querySelector("#show-config").addEventListener("click", showConfig);
 document.querySelector("#close-config").addEventListener("click", () => els.configDialog.close());
 els.form.addEventListener("submit", saveSite);
 els.delete.addEventListener("click", deleteSite);
@@ -73,14 +68,6 @@ async function init() {
   await Promise.all([loadSites(), loadSettings()]);
   await loadConfigPreview();
   await loadLogs();
-}
-
-async function refreshCurrentView() {
-  await loadSites();
-  const current = document.querySelector(".view.active")?.id.replace("view-", "");
-  if (current === "proxy-hosts") await loadConfigPreview();
-  if (current === "logs") await loadLogs();
-  if (current === "settings") await loadSettings();
 }
 
 function showView(view) {
@@ -112,12 +99,9 @@ async function loadSites() {
 async function loadSettings() {
   try {
     settings = await request("/api/settings");
-    els.settingsAppName.value = settings.appName || "CaddyMGM";
-    els.settingsAuthEnabled.checked = Boolean(settings.authEnabled);
     els.settingsUsername.value = settings.username || "admin";
     els.settingsPassword.value = "";
     els.settingsLogRetention.value = settings.logRetention || 100;
-    els.settingsConfigPath.textContent = settings.configPath || "/config/Caddyfile";
   } catch (err) {
     setStatus(err.message);
   }
@@ -126,8 +110,8 @@ async function loadSettings() {
 async function saveSettings(event) {
   event.preventDefault();
   const payload = {
-    appName: els.settingsAppName.value,
-    authEnabled: els.settingsAuthEnabled.checked,
+    appName: settings?.appName || "CaddyMGM",
+    authEnabled: settings?.authEnabled ?? true,
     username: els.settingsUsername.value,
     password: els.settingsPassword.value,
     logRetention: Number(els.settingsLogRetention.value || 100),
@@ -317,12 +301,6 @@ async function loadConfigPreview() {
   } catch (err) {
     els.inlineConfig.textContent = err.message;
   }
-}
-
-async function showConfig() {
-  const response = await fetch("/api/config");
-  els.configContent.textContent = await response.text();
-  els.configDialog.showModal();
 }
 
 async function request(url, options = {}) {

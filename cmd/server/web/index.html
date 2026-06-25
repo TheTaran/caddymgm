@@ -124,6 +124,20 @@
                 </label>
 
                 <label>
+                  TLS
+                  <select id="tls-mode">
+                    <option value="off">Aus</option>
+                    <option value="internal">Internes Zertifikat</option>
+                    <option value="acme">ACME Zertifizierungsstelle</option>
+                  </select>
+                </label>
+
+                <label id="acme-issuer-row" hidden>
+                  ACME Zertifizierungsstelle
+                  <select id="acme-issuer"></select>
+                </label>
+
+                <label>
                   Adresse
                   <input id="address" required placeholder="example.com" autocomplete="off" />
                 </label>
@@ -167,12 +181,32 @@
         </section>
 
         <section id="view-certificates" class="view">
-          <section class="panel-card">
+          <section class="panel-card editor-card certificates-card">
             <div class="panel-heading">
               <h2>Certificates</h2>
-              <span>TLS-Zertifikate</span>
+              <span>ACME Zertifizierungsstellen</span>
             </div>
-            <div class="empty-state">Zertifikatsverwaltung ist noch nicht angebunden.</div>
+            <form id="certificate-form">
+              <input type="hidden" id="issuer-id" />
+              <label>
+                Name
+                <input id="issuer-name" placeholder="Let's Encrypt Staging" autocomplete="off" />
+              </label>
+              <label>
+                ACME Directory URL
+                <input id="issuer-directory" placeholder="https://acme-staging-v02.api.letsencrypt.org/directory" autocomplete="off" />
+              </label>
+              <label>
+                E-Mail
+                <input id="issuer-email" type="email" placeholder="admin@example.com" autocomplete="off" />
+              </label>
+              <div class="form-actions">
+                <button type="submit">Zertifizierungsstelle speichern</button>
+                <button type="button" id="issuer-reset" class="secondary">Neu</button>
+                <button type="button" id="issuer-delete" class="danger" hidden>Löschen</button>
+              </div>
+            </form>
+            <div id="issuer-list" class="issuer-list"></div>
           </section>
         </section>
 
@@ -215,6 +249,16 @@
               <label>
                 Log Retention
                 <input id="settings-log-retention" type="number" min="25" step="25" />
+              </label>
+
+              <label>
+                Caddy Mode
+                <input id="settings-caddy-mode" readonly />
+              </label>
+
+              <label>
+                Caddy API URL
+                <input id="settings-caddy-api-url" readonly />
               </label>
 
               <div class="form-actions">

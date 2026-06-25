@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -39,6 +40,8 @@ type Site struct {
 	Root            string `json:"root,omitempty"`
 	ExtraDirectives string `json:"extraDirectives,omitempty"`
 	LogsEnabled     bool   `json:"logsEnabled"`
+	TLSMode         string `json:"tlsMode"`
+	ACMEIssuerID    string `json:"acmeIssuerId,omitempty"`
 	Enabled         bool   `json:"enabled"`
 }
 
@@ -49,6 +52,8 @@ type sitePayload struct {
 	Root            string `json:"root,omitempty"`
 	ExtraDirectives string `json:"extraDirectives,omitempty"`
 	LogsEnabled     *bool  `json:"logsEnabled,omitempty"`
+	TLSMode         string `json:"tlsMode,omitempty"`
+	ACMEIssuerID    string `json:"acmeIssuerId,omitempty"`
 	Enabled         bool   `json:"enabled"`
 }
 
@@ -65,18 +70,30 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		Root:            p.Root,
 		ExtraDirectives: p.ExtraDirectives,
 		LogsEnabled:     logsEnabled,
+		TLSMode:         p.TLSMode,
+		ACMEIssuerID:    p.ACMEIssuerID,
 		Enabled:         p.Enabled,
 	}
 }
 
+type ACMEIssuer struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	DirectoryURL string `json:"directoryUrl"`
+	Email        string `json:"email,omitempty"`
+}
+
 type Settings struct {
-	AppName      string `json:"appName"`
-	AuthEnabled  bool   `json:"authEnabled"`
-	Username     string `json:"username"`
-	Password     string `json:"password,omitempty"`
-	PasswordHash string `json:"passwordHash,omitempty"`
-	ConfigPath   string `json:"configPath"`
-	LogRetention int    `json:"logRetention"`
+	AppName      string       `json:"appName"`
+	AuthEnabled  bool         `json:"authEnabled"`
+	Username     string       `json:"username"`
+	Password     string       `json:"password,omitempty"`
+	PasswordHash string       `json:"passwordHash,omitempty"`
+	ConfigPath   string       `json:"configPath"`
+	LogRetention int          `json:"logRetention"`
+	ACMEIssuers  []ACMEIssuer `json:"acmeIssuers,omitempty"`
+	CaddyMode    string       `json:"caddyMode"`
+	CaddyAPIURL  string       `json:"caddyApiUrl"`
 }
 
 type LogEntry struct {
@@ -91,6 +108,9 @@ type App struct {
 	mu           sync.Mutex
 	configPath   string
 	settingsPath string
+	caddyMode    string
+	caddyAPIURL  string
+	httpClient   *http.Client
 	settings     Settings
 	logs         []LogEntry
 	sessions     map[string]time.Time
@@ -100,8 +120,17 @@ func main() {
 	configPath := env("CADDY_CONFIG_PATH", "/config/Caddyfile")
 	settingsPath := env("CADDYMGM_SETTINGS_PATH", "/config/caddymgm-settings.json")
 	addr := env("CADDYMGM_LISTEN", ":8080")
+	caddyMode := normalizeCaddyMode(env("CADDYMGM_CADDY_MODE", "file"))
+	caddyAPIURL := env("CADDYMGM_CADDY_API_URL", defaultCaddyAPIURL(caddyMode))
 
-	app := &App{configPath: configPath, settingsPath: settingsPath, sessions: make(map[string]time.Time)}
+	app := &App{
+		configPath:   configPath,
+		settingsPath: settingsPath,
+		caddyMode:    caddyMode,
+		caddyAPIURL:  strings.TrimRight(caddyAPIURL, "/"),
+		httpClient:   &http.Client{Timeout: 15 * time.Second},
+		sessions:     make(map[string]time.Time),
+	}
 	if err := app.ensureConfig(); err != nil {
 		log.Fatalf("prepare config: %v", err)
 	}
@@ -128,7 +157,7 @@ func main() {
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
 	mux.HandleFunc("GET /api/auth/me", app.handleMe)
 
-	log.Printf("caddymgm listening on %s, config=%s, settings=%s", addr, configPath, settingsPath)
+	log.Printf("caddymgm listening on %s, config=%s, settings=%s, caddy_mode=%s, caddy_api=%s", addr, configPath, settingsPath, app.caddyMode, app.caddyAPIURL)
 	log.Fatal(http.ListenAndServe(addr, logRequest(app.requireAuth(mux))))
 }
 
@@ -161,9 +190,18 @@ func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if err := a.validateSiteTLSLocked(site); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	sites = append(sites, site)
 	if err := a.save(head, sites, tail); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := a.applyCaddyConfigLocked(); err != nil {
+		a.addLogLocked(site, "reload failed", err.Error())
+		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
 		return
 	}
 	a.addLogLocked(site, "created", "Proxy host created")
@@ -196,11 +234,20 @@ func (a *App) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if err := a.validateSiteTLSLocked(updated); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	for i := range sites {
 		if sites[i].ID == id {
 			sites[i] = updated
 			if err := a.save(head, sites, tail); err != nil {
 				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			if err := a.applyCaddyConfigLocked(); err != nil {
+				a.addLogLocked(updated, "reload failed", err.Error())
+				writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
 				return
 			}
 			a.addLogLocked(updated, "updated", "Proxy host updated")
@@ -246,6 +293,11 @@ func (a *App) handleDeleteSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if err := a.applyCaddyConfigLocked(); err != nil {
+		a.addLogLocked(removed, "reload failed", err.Error())
+		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
+		return
+	}
 	a.addLogLocked(removed, "deleted", "Proxy host deleted")
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -287,17 +339,39 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if next.LogRetention < 25 {
 		next.LogRetention = 100
 	}
+	if next.ACMEIssuers == nil {
+		next.ACMEIssuers = a.settings.ACMEIssuers
+	}
+	if err := normalizeACMEIssuers(next.ACMEIssuers); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 
 	next.ConfigPath = a.configPath
 	next.AuthEnabled = authEnabledFromEnv()
+	next.CaddyMode = a.caddyMode
+	next.CaddyAPIURL = a.caddyAPIURL
 	next.PasswordHash = a.settings.PasswordHash
 	if strings.TrimSpace(next.Password) != "" {
 		next.PasswordHash = hashPassword(next.Password)
 	}
 	next.Password = ""
+	sites, head, tail, err := a.load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	a.settings = next
 	if err := a.saveSettingsLocked(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := a.save(head, sites, tail); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := a.applyCaddyConfigLocked(); err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
 		return
 	}
 	a.trimLogsLocked()
@@ -438,6 +512,8 @@ func (a *App) publicSettingsLocked() Settings {
 	settings.Password = ""
 	settings.PasswordHash = ""
 	settings.ConfigPath = a.configPath
+	settings.CaddyMode = a.caddyMode
+	settings.CaddyAPIURL = a.caddyAPIURL
 	return settings
 }
 
@@ -470,7 +546,7 @@ func (a *App) save(head string, sites []Site, tail string) error {
 	if out.Len() > 0 {
 		out.WriteString("\n\n")
 	}
-	out.WriteString(renderManaged(sites))
+	out.WriteString(renderManaged(sites, a.settings.ACMEIssuers))
 	if strings.TrimSpace(tail) != "" {
 		out.WriteString("\n")
 		out.WriteString(strings.TrimLeft(tail, "\n"))
@@ -481,6 +557,46 @@ func (a *App) save(head string, sites []Site, tail string) error {
 		return err
 	}
 	return os.Rename(tmp, a.configPath)
+}
+
+func (a *App) applyCaddyConfigLocked() error {
+	switch a.caddyMode {
+	case "file", "none":
+		return nil
+	case "native", "docker", "api":
+	default:
+		return fmt.Errorf("unsupported caddy mode %q", a.caddyMode)
+	}
+	if a.caddyAPIURL == "" {
+		return errors.New("caddy api url is required")
+	}
+
+	content, err := os.ReadFile(a.configPath)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, a.caddyAPIURL+"/load", bytes.NewReader(content))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "text/caddyfile")
+	req.Header.Set("Cache-Control", "must-revalidate")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = resp.Status
+		}
+		return fmt.Errorf("caddy api %s: %s", resp.Status, msg)
+	}
+	return nil
 }
 
 func splitManaged(content string) (head, managed, tail string) {
@@ -549,7 +665,7 @@ func parseManaged(content string) ([]Site, error) {
 }
 
 func parseSite(id string, lines []string) (Site, error) {
-	site := Site{ID: id, Enabled: true}
+	site := Site{ID: id, Enabled: true, TLSMode: "off"}
 	if len(lines) == 0 {
 		return site, nil
 	}
@@ -563,14 +679,40 @@ func parseSite(id string, lines []string) (Site, error) {
 	first := strings.TrimSpace(strings.TrimPrefix(lines[0], "#"))
 	site.Enabled = !strings.HasPrefix(strings.TrimSpace(lines[0]), "#")
 	site.Address = strings.TrimSpace(strings.TrimSuffix(first, "{"))
+	if strings.HasPrefix(site.Address, "http://") {
+		site.Address = strings.TrimPrefix(site.Address, "http://")
+		site.TLSMode = "off"
+	} else if strings.HasPrefix(site.Address, "https://") {
+		site.Address = strings.TrimPrefix(site.Address, "https://")
+		site.TLSMode = "auto"
+	}
 
 	var extra []string
+	inTLS := false
 	for _, raw := range lines[1:] {
 		line := strings.TrimSpace(strings.TrimPrefix(raw, "#"))
 		line = strings.TrimSpace(line)
+		if inTLS {
+			switch {
+			case strings.HasPrefix(line, "dir "):
+				site.TLSMode = "acme"
+			case strings.HasPrefix(line, "# caddymgm:tls-issuer "):
+				site.ACMEIssuerID = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:tls-issuer "))
+			case line == "}":
+				inTLS = false
+			}
+			continue
+		}
 		switch {
 		case line == "" || line == "}":
 			continue
+		case strings.HasPrefix(line, "# caddymgm:tls-issuer "):
+			site.ACMEIssuerID = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:tls-issuer "))
+		case line == "tls internal":
+			site.TLSMode = "internal"
+		case line == "tls {" || strings.HasPrefix(line, "tls {"):
+			site.TLSMode = "acme"
+			inTLS = true
 		case strings.HasPrefix(line, "reverse_proxy "):
 			site.Mode = "proxy"
 			site.Upstream = strings.TrimSpace(strings.TrimPrefix(line, "reverse_proxy "))
@@ -594,30 +736,50 @@ func parseSite(id string, lines []string) (Site, error) {
 	return site, nil
 }
 
-func renderManaged(sites []Site) string {
+func renderManaged(sites []Site, issuers []ACMEIssuer) string {
 	var out strings.Builder
 	out.WriteString(managedStart + "\n")
 	for _, site := range sites {
 		out.WriteString("# caddymgm:site " + site.ID + "\n")
-		out.WriteString(renderSite(site))
+		out.WriteString(renderSite(site, issuers))
 		out.WriteString("# caddymgm:end-site\n")
 	}
 	out.WriteString(managedEnd + "\n")
 	return out.String()
 }
 
-func renderSite(site Site) string {
+func renderSite(site Site, issuers []ACMEIssuer) string {
 	var out strings.Builder
 	prefix := ""
 	if !site.Enabled {
 		prefix = "# "
 	}
-	out.WriteString(prefix + site.Address + " {\n")
+	address := site.Address
+	if site.TLSMode == "" || site.TLSMode == "off" {
+		address = "http://" + strings.TrimPrefix(strings.TrimPrefix(address, "http://"), "https://")
+	}
+	out.WriteString(prefix + address + " {\n")
 	if site.Mode == "static" {
 		out.WriteString(prefix + "\troot * " + site.Root + "\n")
 		out.WriteString(prefix + "\tfile_server\n")
 	} else {
 		out.WriteString(prefix + "\treverse_proxy " + site.Upstream + "\n")
+	}
+	switch site.TLSMode {
+	case "internal":
+		out.WriteString(prefix + "\ttls internal\n")
+	case "acme":
+		if issuer, ok := findACMEIssuer(issuers, site.ACMEIssuerID); ok {
+			out.WriteString(prefix + "\t# caddymgm:tls-issuer " + issuer.ID + "\n")
+			out.WriteString(prefix + "\ttls {\n")
+			out.WriteString(prefix + "\t\tissuer acme {\n")
+			out.WriteString(prefix + "\t\t\tdir " + issuer.DirectoryURL + "\n")
+			if issuer.Email != "" {
+				out.WriteString(prefix + "\t\t\temail " + issuer.Email + "\n")
+			}
+			out.WriteString(prefix + "\t\t}\n")
+			out.WriteString(prefix + "\t}\n")
+		}
 	}
 	if site.LogsEnabled {
 		out.WriteString(prefix + "\tlog\n")
@@ -641,9 +803,12 @@ func normalizeSite(site *Site) error {
 	site.Upstream = strings.TrimSpace(site.Upstream)
 	site.Root = strings.TrimSpace(site.Root)
 	site.ExtraDirectives = strings.TrimSpace(site.ExtraDirectives)
+	site.TLSMode = strings.TrimSpace(site.TLSMode)
+	site.ACMEIssuerID = strings.TrimSpace(site.ACMEIssuerID)
 	if site.Address == "" {
 		return errors.New("address is required")
 	}
+	site.Address = strings.TrimPrefix(strings.TrimPrefix(site.Address, "http://"), "https://")
 	if !addressPattern.MatchString(site.Address) {
 		return errors.New("address contains unsupported characters")
 	}
@@ -665,7 +830,79 @@ func normalizeSite(site *Site) error {
 	if site.ID == "" {
 		site.ID = newID()
 	}
+	if site.TLSMode == "" {
+		site.TLSMode = "off"
+	}
+	switch site.TLSMode {
+	case "off", "internal", "acme":
+	default:
+		return errors.New("tls mode must be off, internal or acme")
+	}
+	if site.TLSMode != "acme" {
+		site.ACMEIssuerID = ""
+	}
 	return nil
+}
+
+func (a *App) validateSiteTLSLocked(site Site) error {
+	if site.TLSMode != "acme" {
+		return nil
+	}
+	if site.ACMEIssuerID == "" {
+		return errors.New("acme certificate authority is required")
+	}
+	if _, ok := findACMEIssuer(a.settings.ACMEIssuers, site.ACMEIssuerID); !ok {
+		return errors.New("selected acme certificate authority was not found")
+	}
+	return nil
+}
+
+func normalizeACMEIssuers(issuers []ACMEIssuer) error {
+	for i := range issuers {
+		issuers[i].ID = strings.TrimSpace(issuers[i].ID)
+		issuers[i].Name = strings.TrimSpace(issuers[i].Name)
+		issuers[i].DirectoryURL = strings.TrimSpace(issuers[i].DirectoryURL)
+		issuers[i].Email = strings.TrimSpace(issuers[i].Email)
+		if issuers[i].ID == "" {
+			issuers[i].ID = newID()
+		}
+		if issuers[i].Name == "" {
+			return errors.New("certificate authority name is required")
+		}
+		if !strings.HasPrefix(issuers[i].DirectoryURL, "https://") {
+			return errors.New("certificate authority directory URL must start with https://")
+		}
+	}
+	return nil
+}
+
+func findACMEIssuer(issuers []ACMEIssuer, id string) (ACMEIssuer, bool) {
+	for _, issuer := range issuers {
+		if issuer.ID == id {
+			return issuer, true
+		}
+	}
+	return ACMEIssuer{}, false
+}
+
+func normalizeCaddyMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "native", "docker", "api", "none":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		return "file"
+	}
+}
+
+func defaultCaddyAPIURL(mode string) string {
+	switch mode {
+	case "docker":
+		return "http://caddy:2019"
+	case "native", "api":
+		return "http://host.docker.internal:2019"
+	default:
+		return ""
+	}
 }
 
 func newID() string {

@@ -5,9 +5,9 @@ Management web interface for Caddy websites.
 The container serves a small UI and API. The Caddy configuration stays outside
 the container and is mounted into `/config`.
 
-Docker Compose starts CaddyMGM and Caddy as separate services. This allows the
-Caddy reverse proxy to be updated independently from the CaddyMGM management
-interface.
+Docker Compose can run only CaddyMGM, or CaddyMGM plus a separate Caddy service.
+This allows the Caddy reverse proxy to be updated independently from the
+CaddyMGM management interface.
 
 ## Run
 
@@ -42,6 +42,27 @@ The host ports can be changed in `.env`:
 ```text
 CADDY_HTTP_PORT=80
 CADDY_HTTPS_PORT=443
+```
+
+By default CaddyMGM only writes the Caddyfile and does not reload Caddy:
+
+```text
+CADDYMGM_CADDY_MODE=file
+```
+
+For a native or remote Caddy server, enable the Caddy Admin API integration:
+
+```text
+CADDYMGM_CADDY_MODE=native
+CADDYMGM_CADDY_API_URL=http://192.0.2.10:2019
+```
+
+For the optional Docker Caddy service from this Compose file:
+
+```text
+COMPOSE_PROFILES=docker-caddy
+CADDYMGM_CADDY_MODE=docker
+CADDYMGM_CADDY_API_URL=http://caddy:2019
 ```
 
 The application protects the web interface and API with a login page and
@@ -128,9 +149,45 @@ Access logs are enabled by default for newly created sites by writing Caddy's
 `log` directive into the site block. They can be disabled manually per site in
 the proxy host editor.
 
+TLS is disabled by default for newly created sites. CaddyMGM writes these sites
+as `http://example.com` blocks so Caddy does not request Let's Encrypt
+certificates automatically.
+
+TLS can be enabled per site:
+
+- `Internes Zertifikat` writes `tls internal`.
+- `ACME Zertifizierungsstelle` writes a Caddy ACME issuer block for the selected
+  certificate authority.
+
+Custom ACME certificate authorities can be managed in `Certificates`.
+
 ## Caddy Integration
 
-Caddy runs as its own Docker Compose service:
+CaddyMGM supports three Caddy integration modes:
+
+| Mode | Behavior |
+| --- | --- |
+| `file` | Write `/config/Caddyfile` only, without reloading Caddy |
+| `native` | Write `/config/Caddyfile` and load it into a native or remote Caddy via Admin API |
+| `docker` | Write `/config/Caddyfile` and load it into the Compose Caddy service via Admin API |
+
+Caddy's Admin API exposes `POST /load`, which replaces the active configuration
+without downtime and rolls back if loading fails. CaddyMGM sends the generated
+Caddyfile to this endpoint with `Content-Type: text/caddyfile`.
+
+For native Caddy, the proxy server does not need Docker. It only needs Caddy's
+Admin API reachable from the CaddyMGM container:
+
+```text
+CADDYMGM_CADDY_MODE=native
+CADDYMGM_CADDY_API_URL=http://proxy.example.internal:2019
+```
+
+Protect the Caddy Admin API. It should only be reachable from trusted hosts or
+over a private management network.
+
+The optional Docker Caddy service is enabled with the `docker-caddy` Compose
+profile:
 
 ```yaml
 services:
@@ -139,6 +196,8 @@ services:
 
   caddy:
     image: ${CADDY_IMAGE:-caddy:2-alpine}
+    profiles:
+      - docker-caddy
 ```
 
 CaddyMGM reads and writes the external Caddyfile at `/config/Caddyfile`.
@@ -151,7 +210,13 @@ caddy_data
 caddy_config
 ```
 
-To update only Caddy:
+To start CaddyMGM with the optional Docker Caddy service:
+
+```bash
+COMPOSE_PROFILES=docker-caddy docker compose up -d
+```
+
+To update only the Docker Caddy service:
 
 ```bash
 docker compose pull caddy
@@ -163,13 +228,6 @@ To update only CaddyMGM:
 ```bash
 docker compose pull caddymgm
 docker compose up -d --no-deps caddymgm
-```
-
-Reloading Caddy after Caddyfile changes is not automated yet. Reload manually
-with:
-
-```bash
-docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 
 The Caddy image can be changed independently in `.env`:
@@ -220,6 +278,9 @@ Environment variables:
 | `CADDYMGM_LISTEN` | `:8080` | HTTP listen address inside the container |
 | `CADDY_CONFIG_PATH` | `/config/Caddyfile` | Path to the mounted Caddyfile |
 | `CADDYMGM_SETTINGS_PATH` | `/config/caddymgm-settings.json` | Path to the mounted CaddyMGM settings file |
+| `CADDYMGM_CADDY_MODE` | `file` | Caddy integration mode: `file`, `native`, `docker`, or `api` |
+| `CADDYMGM_CADDY_API_URL` | empty | Caddy Admin API base URL for `native`, `docker`, or `api` mode |
+| `COMPOSE_PROFILES` | empty | Set to `docker-caddy` to start the optional Compose Caddy service |
 | `CADDY_IMAGE` | `caddy:2-alpine` | Caddy Docker image used by the separate Caddy service |
 | `CADDY_HTTP_PORT` | `80` | Host HTTP port forwarded to the Caddy container |
 | `CADDY_HTTPS_PORT` | `443` | Host HTTPS port forwarded to the Caddy container |
@@ -230,10 +291,11 @@ Environment variables:
 - Add, edit, enable, disable and delete sites
 - Generate reverse proxy and static file Caddy blocks
 - Enable Caddy access logs by default for new sites, with a per-site toggle
+- Keep TLS disabled by default so Caddy does not request public certificates
+  unless enabled per site
+- Manage custom ACME certificate authorities under Certificates
+- Load generated Caddyfiles through the Caddy Admin API for native or Docker
+  Caddy deployments
 - Login page with session-cookie authentication for the management interface
 - Editable CaddyMGM settings
 - In-memory CaddyMGM host event logs
-
-Reloading Caddy is intentionally not automated yet. In a production setup this
-should be wired to the chosen reload model, for example `docker compose exec
-caddy caddy reload --config /etc/caddy/Caddyfile`, or the Caddy admin API.

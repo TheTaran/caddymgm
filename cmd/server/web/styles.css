@@ -552,8 +552,38 @@ legend {
   color: var(--text);
 }
 
-.settings-card {
+.settings-card,
+.certificates-card {
   max-width: 680px;
+}
+
+.issuer-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.issuer-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(0, 1fr) 120px;
+  gap: 12px;
+  align-items: center;
+  min-height: 52px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--panel-soft);
+}
+
+.issuer-row strong,
+.issuer-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.issuer-row span {
+  color: var(--muted);
 }
 
 dialog {
@@ -686,6 +716,10 @@ pre {
   }
 
   .log-row {
+    grid-template-columns: 1fr;
+  }
+
+  .issuer-row {
     grid-template-columns: 1fr;
   }
 

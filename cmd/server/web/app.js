@@ -19,6 +19,9 @@ const els = {
   extra: document.querySelector("#extra"),
   enabled: document.querySelector("#enabled"),
   logsEnabled: document.querySelector("#logs-enabled"),
+  tlsMode: document.querySelector("#tls-mode"),
+  acmeIssuerRow: document.querySelector("#acme-issuer-row"),
+  acmeIssuer: document.querySelector("#acme-issuer"),
   delete: document.querySelector("#delete"),
   totalSites: document.querySelector("#total-sites"),
   activeSites: document.querySelector("#active-sites"),
@@ -30,6 +33,16 @@ const els = {
   settingsUsername: document.querySelector("#settings-username"),
   settingsPassword: document.querySelector("#settings-password"),
   settingsLogRetention: document.querySelector("#settings-log-retention"),
+  settingsCaddyMode: document.querySelector("#settings-caddy-mode"),
+  settingsCaddyAPIURL: document.querySelector("#settings-caddy-api-url"),
+  certificateForm: document.querySelector("#certificate-form"),
+  issuerId: document.querySelector("#issuer-id"),
+  issuerName: document.querySelector("#issuer-name"),
+  issuerDirectory: document.querySelector("#issuer-directory"),
+  issuerEmail: document.querySelector("#issuer-email"),
+  issuerReset: document.querySelector("#issuer-reset"),
+  issuerDelete: document.querySelector("#issuer-delete"),
+  issuerList: document.querySelector("#issuer-list"),
 };
 
 const viewTitles = {
@@ -53,6 +66,10 @@ els.form.addEventListener("submit", saveSite);
 els.delete.addEventListener("click", deleteSite);
 els.logSiteFilter.addEventListener("change", loadLogs);
 els.settingsForm.addEventListener("submit", saveSettings);
+els.certificateForm.addEventListener("submit", saveIssuer);
+els.issuerReset.addEventListener("click", () => editIssuer());
+els.issuerDelete.addEventListener("click", deleteIssuer);
+els.tlsMode.addEventListener("change", syncTLSMode);
 els.navItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
 document.querySelectorAll("input[name='mode']").forEach((input) => {
   input.addEventListener("change", syncMode);
@@ -74,6 +91,7 @@ function showView(view) {
 
   if (view === "logs") loadLogs();
   if (view === "settings") loadSettings();
+  if (view === "certificates") renderIssuers();
 }
 
 async function loadSites() {
@@ -96,6 +114,10 @@ async function loadSettings() {
     els.settingsUsername.value = settings.username || "admin";
     els.settingsPassword.value = "";
     els.settingsLogRetention.value = settings.logRetention || 100;
+    els.settingsCaddyMode.value = settings.caddyMode || "file";
+    els.settingsCaddyAPIURL.value = settings.caddyApiUrl || "";
+    renderIssuers();
+    renderIssuerOptions();
   } catch (err) {
     setStatus(err.message);
   }
@@ -109,6 +131,7 @@ async function saveSettings(event) {
     username: els.settingsUsername.value,
     password: els.settingsPassword.value,
     logRetention: Number(els.settingsLogRetention.value || 100),
+    acmeIssuers: settings?.acmeIssuers || [],
   };
   try {
     settings = await request("/api/settings", {
@@ -117,9 +140,106 @@ async function saveSettings(event) {
     });
     els.settingsPassword.value = "";
     setStatus("Settings gespeichert");
+    renderIssuers();
+    renderIssuerOptions();
   } catch (err) {
     setStatus(err.message);
   }
+}
+
+async function saveIssuer(event) {
+  event.preventDefault();
+  const issuer = {
+    id: els.issuerId.value,
+    name: els.issuerName.value,
+    directoryUrl: els.issuerDirectory.value,
+    email: els.issuerEmail.value,
+  };
+  const issuers = [...(settings?.acmeIssuers || [])];
+  const index = issuers.findIndex((item) => item.id === issuer.id && issuer.id);
+  if (index >= 0) {
+    issuers[index] = issuer;
+  } else {
+    issuers.push(issuer);
+  }
+  await saveIssuers(issuers, "Zertifizierungsstelle gespeichert");
+  editIssuer();
+}
+
+async function deleteIssuer() {
+  const id = els.issuerId.value;
+  if (!id || !confirm("Zertifizierungsstelle wirklich löschen?")) return;
+  const issuers = (settings?.acmeIssuers || []).filter((issuer) => issuer.id !== id);
+  await saveIssuers(issuers, "Zertifizierungsstelle gelöscht");
+  editIssuer();
+}
+
+async function saveIssuers(issuers, message) {
+  const payload = {
+    appName: settings?.appName || "CaddyMGM",
+    authEnabled: settings?.authEnabled ?? true,
+    username: settings?.username || els.settingsUsername.value || "admin",
+    password: "",
+    logRetention: settings?.logRetention || Number(els.settingsLogRetention.value || 100),
+    acmeIssuers: issuers,
+  };
+  try {
+    settings = await request("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    renderIssuers();
+    renderIssuerOptions();
+    setStatus(message);
+  } catch (err) {
+    setStatus(err.message);
+  }
+}
+
+function renderIssuers() {
+  els.issuerList.innerHTML = "";
+  const issuers = settings?.acmeIssuers || [];
+  if (!issuers.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Noch keine ACME Zertifizierungsstellen hinterlegt.";
+    els.issuerList.append(empty);
+    return;
+  }
+  for (const issuer of issuers) {
+    const row = document.createElement("div");
+    row.className = "issuer-row";
+    row.innerHTML = `
+      <strong></strong>
+      <span></span>
+      <button class="secondary" type="button">Bearbeiten</button>
+    `;
+    row.children[0].textContent = issuer.name;
+    row.children[1].textContent = issuer.directoryUrl;
+    row.children[2].addEventListener("click", () => editIssuer(issuer));
+    els.issuerList.append(row);
+  }
+}
+
+function renderIssuerOptions() {
+  const current = els.acmeIssuer.value;
+  els.acmeIssuer.innerHTML = "";
+  for (const issuer of settings?.acmeIssuers || []) {
+    const option = document.createElement("option");
+    option.value = issuer.id;
+    option.textContent = issuer.name;
+    els.acmeIssuer.append(option);
+  }
+  els.acmeIssuer.value = current;
+}
+
+function editIssuer(issuer = null) {
+  els.issuerId.value = issuer?.id || "";
+  els.issuerName.value = issuer?.name || "";
+  els.issuerDirectory.value = issuer?.directoryUrl || "";
+  els.issuerEmail.value = issuer?.email || "";
+  els.issuerDelete.hidden = !issuer;
+  els.issuerName.focus();
 }
 
 function renderMetrics() {
@@ -227,10 +347,14 @@ function editSite(site = null) {
   els.extra.value = site?.extraDirectives || "";
   els.enabled.checked = site?.enabled ?? true;
   els.logsEnabled.checked = site?.logsEnabled ?? true;
+  els.tlsMode.value = site?.tlsMode || "off";
+  renderIssuerOptions();
+  els.acmeIssuer.value = site?.acmeIssuerId || "";
   const mode = site?.mode || "proxy";
   document.querySelector(`input[name='mode'][value='${mode}']`).checked = true;
   els.delete.hidden = !site;
   syncMode();
+  syncTLSMode();
   els.address.focus();
 }
 
@@ -247,6 +371,12 @@ function syncMode() {
   els.root.required = mode === "static";
 }
 
+function syncTLSMode() {
+  const acme = els.tlsMode.value === "acme";
+  els.acmeIssuerRow.hidden = !acme;
+  els.acmeIssuer.required = acme;
+}
+
 async function saveSite(event) {
   event.preventDefault();
   const payload = {
@@ -256,6 +386,8 @@ async function saveSite(event) {
     root: els.root.value,
     extraDirectives: els.extra.value,
     logsEnabled: els.logsEnabled.checked,
+    tlsMode: els.tlsMode.value,
+    acmeIssuerId: els.tlsMode.value === "acme" ? els.acmeIssuer.value : "",
     enabled: els.enabled.checked,
   };
   const id = els.id.value;

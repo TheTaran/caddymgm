@@ -1,0 +1,12 @@
+services:
+  caddymgm:
+    build: .
+    container_name: caddymgm
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    ports:
+      - "8080:8080"
+    environment:
+      CADDY_CONFIG_PATH: /config/Caddyfile
+    volumes:
+      - ./config:/config

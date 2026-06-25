@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CaddyMGM</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>CaddyMGM</h1>
+        <p id="status">Lade Websites...</p>
+      </div>
+      <div class="actions">
+        <button id="refresh" class="secondary" title="Neu laden">Refresh</button>
+        <button id="show-config" class="secondary" title="Caddyfile anzeigen">Config</button>
+        <button id="new-site" title="Website anlegen">Neu</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="sites">
+        <div class="table-head">
+          <span>Adresse</span>
+          <span>Typ</span>
+          <span>Ziel</span>
+          <span>Status</span>
+          <span></span>
+        </div>
+        <div id="site-list" class="site-list"></div>
+      </section>
+
+      <aside class="panel" id="editor" hidden>
+        <form id="site-form">
+          <input type="hidden" id="site-id" />
+          <div class="panel-title">
+            <h2 id="form-title">Website</h2>
+            <label class="switch">
+              <input id="enabled" type="checkbox" checked />
+              <span>Aktiv</span>
+            </label>
+          </div>
+
+          <label>
+            Adresse
+            <input id="address" required placeholder="example.com" autocomplete="off" />
+          </label>
+
+          <fieldset>
+            <legend>Typ</legend>
+            <label class="radio">
+              <input type="radio" name="mode" value="proxy" checked />
+              Reverse Proxy
+            </label>
+            <label class="radio">
+              <input type="radio" name="mode" value="static" />
+              Static Files
+            </label>
+          </fieldset>
+
+          <label id="upstream-row">
+            Upstream
+            <input id="upstream" placeholder="http://app:3000" autocomplete="off" />
+          </label>
+
+          <label id="root-row" hidden>
+            Root
+            <input id="root" placeholder="/srv/www/example" autocomplete="off" />
+          </label>
+
+          <label>
+            Zusätzliche Direktiven
+            <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
+          </label>
+
+          <div class="form-actions">
+            <button type="submit">Speichern</button>
+            <button type="button" id="cancel" class="secondary">Schließen</button>
+            <button type="button" id="delete" class="danger" hidden>Löschen</button>
+          </div>
+        </form>
+      </aside>
+    </main>
+
+    <dialog id="config-dialog">
+      <div class="dialog-head">
+        <h2>Caddyfile</h2>
+        <button id="close-config" class="secondary">Schließen</button>
+      </div>
+      <pre id="config-content"></pre>
+    </dialog>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

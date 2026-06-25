@@ -44,7 +44,7 @@ button {
   background: linear-gradient(180deg, #18b6a6, #0e8e82);
   color: #04110f;
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 650;
 }
 
 button:hover {
@@ -98,7 +98,7 @@ button.danger {
   margin-bottom: 24px;
   padding: 0 8px;
   font-size: 17px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .brand-mark {
@@ -127,7 +127,7 @@ button.danger {
   padding: 0 12px;
   background: transparent;
   color: #c9d1df;
-  font-weight: 800;
+  font-weight: 500;
   text-align: left;
   text-decoration: none;
 }
@@ -135,6 +135,7 @@ button.danger {
 .nav-item.active {
   background: #24252c;
   color: #fff;
+  font-weight: 650;
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
@@ -177,7 +178,7 @@ button.danger {
   background: var(--blue);
   color: #fff;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 650;
 }
 
 .icon-button {
@@ -216,12 +217,12 @@ p {
 
 h1 {
   font-size: 19px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 h2 {
   font-size: 17px;
-  font-weight: 900;
+  font-weight: 650;
 }
 
 .eyebrow,
@@ -229,7 +230,7 @@ h2 {
   display: block;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -272,7 +273,7 @@ h2 {
   background: var(--panel-soft);
   color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .metrics {
@@ -294,7 +295,7 @@ h2 {
   display: block;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -372,7 +373,7 @@ h2 {
   min-height: 36px;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -393,6 +394,7 @@ h2 {
 .site-row strong {
   color: #f7f9fd;
   font-size: 15px;
+  font-weight: 650;
 }
 
 .site-row button {
@@ -421,7 +423,7 @@ h2 {
   background: rgba(24, 182, 166, 0.12);
   color: var(--ok);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .badge.off {
@@ -451,7 +453,7 @@ label {
   display: grid;
   gap: 6px;
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 500;
 }
 
 input,
@@ -484,7 +486,7 @@ fieldset {
 
 legend {
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .radio,
@@ -494,7 +496,7 @@ legend {
   align-items: center;
   gap: 7px;
   color: var(--text);
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .radio input,
@@ -553,7 +555,7 @@ legend {
 .settings-facts span {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
   text-transform: uppercase;
 }
 

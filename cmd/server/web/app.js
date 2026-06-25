@@ -19,6 +19,7 @@ const els = {
   rootRow: document.querySelector("#root-row"),
   extra: document.querySelector("#extra"),
   enabled: document.querySelector("#enabled"),
+  logsEnabled: document.querySelector("#logs-enabled"),
   delete: document.querySelector("#delete"),
   configDialog: document.querySelector("#config-dialog"),
   configContent: document.querySelector("#config-content"),
@@ -126,7 +127,7 @@ async function saveSettings(event) {
   event.preventDefault();
   const payload = {
     appName: els.settingsAppName.value,
-    authEnabled: true,
+    authEnabled: els.settingsAuthEnabled.checked,
     username: els.settingsUsername.value,
     password: els.settingsPassword.value,
     logRetention: Number(els.settingsLogRetention.value || 100),
@@ -247,6 +248,7 @@ function editSite(site = null) {
   els.root.value = site?.root || "";
   els.extra.value = site?.extraDirectives || "";
   els.enabled.checked = site?.enabled ?? true;
+  els.logsEnabled.checked = site?.logsEnabled ?? true;
   const mode = site?.mode || "proxy";
   document.querySelector(`input[name='mode'][value='${mode}']`).checked = true;
   els.delete.hidden = !site;
@@ -275,6 +277,7 @@ async function saveSite(event) {
     upstream: els.upstream.value,
     root: els.root.value,
     extraDirectives: els.extra.value,
+    logsEnabled: els.logsEnabled.checked,
     enabled: els.enabled.checked,
   };
   const id = els.id.value;

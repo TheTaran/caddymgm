@@ -124,6 +124,11 @@
                   </label>
                 </div>
 
+                <label class="switch">
+                  <input id="logs-enabled" type="checkbox" checked />
+                  <span>Logs aktiv</span>
+                </label>
+
                 <label>
                   Adresse
                   <input id="address" required placeholder="example.com" autocomplete="off" />
@@ -219,6 +224,7 @@
                 <input id="settings-auth-enabled" type="checkbox" disabled />
                 <span>Authentisierung aktiv</span>
               </label>
+              <p class="field-note">Authentisierung wird über <code>CADDYMGM_AUTH_ENABLED</code> in der <code>.env</code> gesteuert.</p>
 
               <label>
                 Admin User

@@ -10,6 +10,7 @@ services:
     environment:
       CADDY_CONFIG_PATH: /config/Caddyfile
       CADDYMGM_SETTINGS_PATH: /config/caddymgm-settings.json
+      CADDYMGM_AUTH_ENABLED: ${CADDYMGM_AUTH_ENABLED:-true}
       CADDYMGM_ADMIN_USER: ${CADDYMGM_ADMIN_USER:-admin}
       CADDYMGM_ADMIN_PASSWORD: ${CADDYMGM_ADMIN_PASSWORD:-changeme}
     volumes:

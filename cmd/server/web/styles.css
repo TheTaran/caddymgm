@@ -475,6 +475,15 @@ label {
   font-weight: 500;
 }
 
+.field-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field-note code {
+  color: var(--text);
+}
+
 input,
 select,
 textarea {

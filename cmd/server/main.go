@@ -38,7 +38,35 @@ type Site struct {
 	Upstream        string `json:"upstream,omitempty"`
 	Root            string `json:"root,omitempty"`
 	ExtraDirectives string `json:"extraDirectives,omitempty"`
+	LogsEnabled     bool   `json:"logsEnabled"`
 	Enabled         bool   `json:"enabled"`
+}
+
+type sitePayload struct {
+	Address         string `json:"address"`
+	Mode            string `json:"mode"`
+	Upstream        string `json:"upstream,omitempty"`
+	Root            string `json:"root,omitempty"`
+	ExtraDirectives string `json:"extraDirectives,omitempty"`
+	LogsEnabled     *bool  `json:"logsEnabled,omitempty"`
+	Enabled         bool   `json:"enabled"`
+}
+
+func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
+	logsEnabled := defaultLogsEnabled
+	if p.LogsEnabled != nil {
+		logsEnabled = *p.LogsEnabled
+	}
+	return Site{
+		ID:              id,
+		Address:         p.Address,
+		Mode:            p.Mode,
+		Upstream:        p.Upstream,
+		Root:            p.Root,
+		ExtraDirectives: p.ExtraDirectives,
+		LogsEnabled:     logsEnabled,
+		Enabled:         p.Enabled,
+	}
 }
 
 type Settings struct {
@@ -114,12 +142,12 @@ func (a *App) handleListSites(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
-	var site Site
-	if err := json.NewDecoder(r.Body).Decode(&site); err != nil {
+	var payload sitePayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON body"))
 		return
 	}
-	site.ID = newID()
+	site := payload.site(newID(), true)
 	if err := normalizeSite(&site); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -149,12 +177,12 @@ func (a *App) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var updated Site
-	if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
+	var payload sitePayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON body"))
 		return
 	}
-	updated.ID = id
+	updated := payload.site(id, false)
 	if err := normalizeSite(&updated); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -261,7 +289,7 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	next.ConfigPath = a.configPath
-	next.AuthEnabled = true
+	next.AuthEnabled = authEnabledFromEnv()
 	next.PasswordHash = a.settings.PasswordHash
 	if strings.TrimSpace(next.Password) != "" {
 		next.PasswordHash = hashPassword(next.Password)
@@ -362,7 +390,7 @@ func (a *App) ensureSettings() error {
 		if err := json.Unmarshal(content, &a.settings); err != nil {
 			return err
 		}
-		a.settings.AuthEnabled = true
+		a.settings.AuthEnabled = authEnabledFromEnv()
 		a.settings.ConfigPath = a.configPath
 		if a.settings.AppName == "" {
 			a.settings.AppName = "CaddyMGM"
@@ -384,7 +412,7 @@ func (a *App) ensureSettings() error {
 
 	a.settings = Settings{
 		AppName:      "CaddyMGM",
-		AuthEnabled:  true,
+		AuthEnabled:  authEnabledFromEnv(),
 		Username:     env("CADDYMGM_ADMIN_USER", "admin"),
 		PasswordHash: hashPassword(env("CADDYMGM_ADMIN_PASSWORD", "changeme")),
 		ConfigPath:   a.configPath,
@@ -553,6 +581,8 @@ func parseSite(id string, lines []string) (Site, error) {
 			if site.Mode == "" {
 				site.Mode = "static"
 			}
+		case line == "log":
+			site.LogsEnabled = true
 		default:
 			extra = append(extra, line)
 		}
@@ -588,6 +618,9 @@ func renderSite(site Site) string {
 		out.WriteString(prefix + "\tfile_server\n")
 	} else {
 		out.WriteString(prefix + "\treverse_proxy " + site.Upstream + "\n")
+	}
+	if site.LogsEnabled {
+		out.WriteString(prefix + "\tlog\n")
 	}
 	for _, line := range strings.Split(site.ExtraDirectives, "\n") {
 		line = strings.TrimSpace(line)
@@ -651,10 +684,11 @@ func hashPassword(password string) string {
 func (a *App) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
+		authEnabled := a.settings.AuthEnabled
 		authenticated := a.hasValidSessionLocked(r)
 		a.mu.Unlock()
 
-		if authenticated || isPublicPath(r.URL.Path) {
+		if !authEnabled || authenticated || isPublicPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -759,6 +793,11 @@ func env(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func authEnabledFromEnv() bool {
+	value := strings.ToLower(env("CADDYMGM_AUTH_ENABLED", "true"))
+	return value != "0" && value != "false" && value != "no" && value != "off"
 }
 
 func logRequest(next http.Handler) http.Handler {

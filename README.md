@@ -31,10 +31,12 @@ The initial credentials come from Docker Compose environment variables:
 ```text
 CADDYMGM_ADMIN_USER=admin
 CADDYMGM_ADMIN_PASSWORD=changeme
+CADDYMGM_AUTH_ENABLED=true
 ```
 
 Change the password after the first start in `Settings`.
-Authentication is mandatory and cannot be disabled from the UI.
+Authentication defaults to enabled. It can be disabled only through the
+`CADDYMGM_AUTH_ENABLED=false` environment variable in `.env`.
 
 ## Config Access
 
@@ -109,6 +111,7 @@ Example managed reverse proxy entry:
 # caddymgm:site 4f197c4ea9bd
 example.local {
 	reverse_proxy http://app:3000
+	log
 	encode zstd gzip
 }
 # caddymgm:end-site
@@ -122,12 +125,17 @@ Example managed static file entry:
 files.example.local {
 	root * /srv/www/files
 	file_server
+	log
 }
 # caddymgm:end-site
 ```
 
 Disabled sites are kept in the Caddyfile as commented blocks, so they can be
 enabled again from the UI.
+
+Access logs are enabled by default for newly created sites by writing Caddy's
+`log` directive into the site block. They can be disabled manually per site in
+the proxy host editor.
 
 ## Caddy Integration
 
@@ -182,6 +190,7 @@ Environment variables:
 | `PGID` | `1000` | Group id used by Docker Compose for host file ownership |
 | `CADDYMGM_ADMIN_USER` | `admin` | Initial admin user when no settings file exists |
 | `CADDYMGM_ADMIN_PASSWORD` | `changeme` | Initial admin password when no settings file exists |
+| `CADDYMGM_AUTH_ENABLED` | `true` | Enable or disable login/session authentication |
 | `CADDYMGM_LISTEN` | `:8080` | HTTP listen address inside the container |
 | `CADDY_CONFIG_PATH` | `/config/Caddyfile` | Path to the mounted Caddyfile |
 | `CADDYMGM_SETTINGS_PATH` | `/config/caddymgm-settings.json` | Path to the mounted CaddyMGM settings file |
@@ -191,6 +200,7 @@ Environment variables:
 - List managed sites
 - Add, edit, enable, disable and delete sites
 - Generate reverse proxy and static file Caddy blocks
+- Enable Caddy access logs by default for new sites, with a per-site toggle
 - Preserve manual config outside the managed block
 - Login page with session-cookie authentication for the management interface
 - Editable CaddyMGM settings

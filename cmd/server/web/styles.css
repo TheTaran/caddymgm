@@ -337,10 +337,6 @@ h2 {
   grid-template-columns: minmax(0, 1fr) 410px;
 }
 
-.config-panel {
-  margin-top: 16px;
-}
-
 .panel-card {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -582,12 +578,6 @@ pre {
   overflow: auto;
   background: #08090d;
   color: #dce5f3;
-}
-
-#inline-config {
-  max-height: 360px;
-  margin: 0 14px 14px;
-  border-radius: 8px;
 }
 
 .login-body {

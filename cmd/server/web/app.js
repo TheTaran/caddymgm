@@ -7,7 +7,6 @@ const els = {
   dashboardSiteList: document.querySelector("#dashboard-site-list"),
   siteList: document.querySelector("#site-list"),
   proxyGrid: document.querySelector("#proxy-hosts-grid"),
-  inlineConfig: document.querySelector("#inline-config"),
   editor: document.querySelector("#editor"),
   form: document.querySelector("#site-form"),
   formTitle: document.querySelector("#form-title"),
@@ -21,8 +20,6 @@ const els = {
   enabled: document.querySelector("#enabled"),
   logsEnabled: document.querySelector("#logs-enabled"),
   delete: document.querySelector("#delete"),
-  configDialog: document.querySelector("#config-dialog"),
-  configContent: document.querySelector("#config-content"),
   totalSites: document.querySelector("#total-sites"),
   activeSites: document.querySelector("#active-sites"),
   proxySites: document.querySelector("#proxy-sites"),
@@ -52,7 +49,6 @@ document.querySelector("#new-site").addEventListener("click", () => {
   editSite();
 });
 document.querySelector("#cancel").addEventListener("click", closeEditor);
-document.querySelector("#close-config").addEventListener("click", () => els.configDialog.close());
 els.form.addEventListener("submit", saveSite);
 els.delete.addEventListener("click", deleteSite);
 els.logSiteFilter.addEventListener("change", loadLogs);
@@ -66,7 +62,6 @@ init();
 
 async function init() {
   await Promise.all([loadSites(), loadSettings()]);
-  await loadConfigPreview();
   await loadLogs();
 }
 
@@ -77,7 +72,6 @@ function showView(view) {
   els.pageTitle.textContent = title;
   els.sectionTitle.textContent = section;
 
-  if (view === "proxy-hosts") loadConfigPreview();
   if (view === "logs") loadLogs();
   if (view === "settings") loadSettings();
 }
@@ -272,7 +266,6 @@ async function saveSite(event) {
     });
     closeEditor();
     await loadSites();
-    await loadConfigPreview();
     await loadLogs();
   } catch (err) {
     setStatus(err.message);
@@ -286,20 +279,9 @@ async function deleteSite() {
     await request(`/api/sites/${id}`, { method: "DELETE" });
     closeEditor();
     await loadSites();
-    await loadConfigPreview();
     await loadLogs();
   } catch (err) {
     setStatus(err.message);
-  }
-}
-
-async function loadConfigPreview() {
-  try {
-    const response = await fetch("/api/config");
-    if (!response.ok) throw new Error("Caddyfile konnte nicht geladen werden");
-    els.inlineConfig.textContent = await response.text();
-  } catch (err) {
-    els.inlineConfig.textContent = err.message;
   }
 }
 

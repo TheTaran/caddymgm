@@ -5,6 +5,10 @@ Management web interface for Caddy websites.
 The container serves a small UI and API. The Caddy configuration stays outside
 the container and is mounted into `/config`.
 
+Docker Compose starts CaddyMGM and Caddy as separate services. This allows the
+Caddy reverse proxy to be updated independently from the CaddyMGM management
+interface.
+
 ## Run
 
 ```bash
@@ -22,6 +26,22 @@ The management interface is exposed by Docker Compose on port `8080`:
 ```yaml
 ports:
   - "8080:8080"
+```
+
+Caddy is exposed by Docker Compose on the standard HTTP and HTTPS ports:
+
+```yaml
+ports:
+  - "80:80"
+  - "443:443"
+  - "443:443/udp"
+```
+
+The host ports can be changed in `.env`:
+
+```text
+CADDY_HTTP_PORT=80
+CADDY_HTTPS_PORT=443
 ```
 
 The application protects the web interface and API with a login page and
@@ -51,6 +71,13 @@ Docker Compose mounts this directory into the container:
 ```yaml
 volumes:
   - ./config:/config
+```
+
+Caddy receives the same Caddyfile as read-only configuration:
+
+```yaml
+volumes:
+  - ./config:/etc/caddy:ro
 ```
 
 Inside the container the application reads and writes:
@@ -95,43 +122,7 @@ id -g
 
 ## Configuration
 
-The app only owns the block between these markers:
-
-```caddyfile
-# caddymgm:start
-# caddymgm:end
-```
-
-Manual Caddy directives outside this block are preserved.
-
-Example managed reverse proxy entry:
-
-```caddyfile
-# caddymgm:start
-# caddymgm:site 4f197c4ea9bd
-example.local {
-	reverse_proxy http://app:3000
-	log
-	encode zstd gzip
-}
-# caddymgm:end-site
-# caddymgm:end
-```
-
-Example managed static file entry:
-
-```caddyfile
-# caddymgm:site 7a4d9c1a8302
-files.example.local {
-	root * /srv/www/files
-	file_server
-	log
-}
-# caddymgm:end-site
-```
-
-Disabled sites are kept in the Caddyfile as commented blocks, so they can be
-enabled again from the UI.
+CaddyMGM manages proxy host entries in the configured Caddyfile.
 
 Access logs are enabled by default for newly created sites by writing Caddy's
 `log` directive into the site block. They can be disabled manually per site in
@@ -139,23 +130,53 @@ the proxy host editor.
 
 ## Caddy Integration
 
-This project currently writes the Caddyfile only. Reloading Caddy is not
-automated yet.
+Caddy runs as its own Docker Compose service:
 
-Recommended deployment model:
+```yaml
+services:
+  caddymgm:
+    image: ghcr.io/thetaran/caddymgm:latest
 
-- Run Caddy in its own container or on the host.
-- Mount the same external Caddyfile into Caddy.
-- After changes, reload Caddy with your chosen mechanism.
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
+```
 
-Possible reload mechanisms:
+CaddyMGM reads and writes the external Caddyfile at `/config/Caddyfile`.
+Caddy reads the same file at `/etc/caddy/Caddyfile`.
 
-- `caddy reload --config /path/to/Caddyfile`
-- Caddy Admin API
-- a Docker-side helper that sends a reload command to the Caddy container
+Caddy stores certificates and runtime data in Docker named volumes:
 
-The management container does not need access to TLS certificates, Caddy data,
-or the Docker socket for the current scope.
+```text
+caddy_data
+caddy_config
+```
+
+To update only Caddy:
+
+```bash
+docker compose pull caddy
+docker compose up -d --no-deps caddy
+```
+
+To update only CaddyMGM:
+
+```bash
+docker compose pull caddymgm
+docker compose up -d --no-deps caddymgm
+```
+
+Reloading Caddy after Caddyfile changes is not automated yet. Reload manually
+with:
+
+```bash
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
+The Caddy image can be changed independently in `.env`:
+
+```text
+CADDY_IMAGE=caddy:2-alpine
+```
 
 ## Views
 
@@ -199,6 +220,9 @@ Environment variables:
 | `CADDYMGM_LISTEN` | `:8080` | HTTP listen address inside the container |
 | `CADDY_CONFIG_PATH` | `/config/Caddyfile` | Path to the mounted Caddyfile |
 | `CADDYMGM_SETTINGS_PATH` | `/config/caddymgm-settings.json` | Path to the mounted CaddyMGM settings file |
+| `CADDY_IMAGE` | `caddy:2-alpine` | Caddy Docker image used by the separate Caddy service |
+| `CADDY_HTTP_PORT` | `80` | Host HTTP port forwarded to the Caddy container |
+| `CADDY_HTTPS_PORT` | `443` | Host HTTPS port forwarded to the Caddy container |
 
 ## Current scope
 
@@ -206,11 +230,10 @@ Environment variables:
 - Add, edit, enable, disable and delete sites
 - Generate reverse proxy and static file Caddy blocks
 - Enable Caddy access logs by default for new sites, with a per-site toggle
-- Preserve manual config outside the managed block
 - Login page with session-cookie authentication for the management interface
 - Editable CaddyMGM settings
 - In-memory CaddyMGM host event logs
 
 Reloading Caddy is intentionally not automated yet. In a production setup this
-should be wired to the chosen Caddy deployment model, for example a shared
-volume plus `caddy reload`, or the Caddy admin API.
+should be wired to the chosen reload model, for example `docker compose exec
+caddy caddy reload --config /etc/caddy/Caddyfile`, or the Caddy admin API.

@@ -168,8 +168,13 @@ or the Docker socket for the current scope.
 
 ## Docker
 
-GitHub Actions builds the Docker image on every push to `main` and pushes it to
-GitHub Container Registry:
+GitHub Actions runs tests for pull requests. Docker images are built and pushed
+to GitHub Container Registry only when a version tag is pushed:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
 ```text
 ghcr.io/thetaran/caddymgm:latest

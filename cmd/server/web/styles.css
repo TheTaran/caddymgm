@@ -8,12 +8,12 @@
   --line: #2b2d36;
   --text: #f3f6fb;
   --muted: #8d96a8;
-  --accent: #18b6a6;
-  --accent-strong: #67f4df;
+  --accent: #5bb8ff;
+  --accent-strong: #a8dcff;
   --blue: #2389ff;
   --danger: #ff2d63;
   --warning: #ffae36;
-  --ok: #35e0bd;
+  --ok: #7dc8ff;
   --disabled: #697386;
 }
 
@@ -38,17 +38,17 @@ textarea {
 
 button {
   min-height: 34px;
-  border: 1px solid rgba(24, 182, 166, 0.36);
+  border: 1px solid rgba(91, 184, 255, 0.38);
   border-radius: 999px;
   padding: 0 16px;
-  background: linear-gradient(180deg, #18b6a6, #0e8e82);
-  color: #04110f;
+  background: linear-gradient(180deg, #7bc8ff, #369ce8);
+  color: #031421;
   cursor: pointer;
   font-weight: 650;
 }
 
 button:hover {
-  border-color: rgba(103, 244, 223, 0.72);
+  border-color: rgba(168, 220, 255, 0.78);
   filter: brightness(1.08);
 }
 
@@ -420,7 +420,7 @@ h2 {
   min-height: 24px;
   border-radius: 999px;
   padding: 0 10px;
-  background: rgba(24, 182, 166, 0.12);
+  background: rgba(91, 184, 255, 0.14);
   color: var(--ok);
   font-size: 12px;
   font-weight: 600;

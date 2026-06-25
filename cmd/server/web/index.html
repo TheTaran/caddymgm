@@ -7,81 +7,146 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div>
-        <h1>CaddyMGM</h1>
-        <p id="status">Lade Websites...</p>
-      </div>
-      <div class="actions">
-        <button id="refresh" class="secondary" title="Neu laden">Refresh</button>
-        <button id="show-config" class="secondary" title="Caddyfile anzeigen">Config</button>
-        <button id="new-site" title="Website anlegen">Neu</button>
-      </div>
-    </header>
-
-    <main class="layout">
-      <section class="sites">
-        <div class="table-head">
-          <span>Adresse</span>
-          <span>Typ</span>
-          <span>Ziel</span>
-          <span>Status</span>
-          <span></span>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">C</span>
+          <span>CaddyMGM</span>
         </div>
-        <div id="site-list" class="site-list"></div>
-      </section>
 
-      <aside class="panel" id="editor" hidden>
-        <form id="site-form">
-          <input type="hidden" id="site-id" />
-          <div class="panel-title">
-            <h2 id="form-title">Website</h2>
-            <label class="switch">
-              <input id="enabled" type="checkbox" checked />
-              <span>Aktiv</span>
-            </label>
+        <nav class="nav">
+          <a class="nav-item" href="#">Dashboard</a>
+          <a class="nav-item active" href="#">Proxy Hosts</a>
+          <a class="nav-item" href="#">Certificates</a>
+          <a class="nav-item" href="#">Audit Logs</a>
+          <a class="nav-item" href="#">Settings</a>
+        </nav>
+
+        <div class="profile">
+          <span class="avatar">CM</span>
+          <div>
+            <strong>admin@local</strong>
+            <span>Caddy Management</span>
           </div>
-
-          <label>
-            Adresse
-            <input id="address" required placeholder="example.com" autocomplete="off" />
-          </label>
-
-          <fieldset>
-            <legend>Typ</legend>
-            <label class="radio">
-              <input type="radio" name="mode" value="proxy" checked />
-              Reverse Proxy
-            </label>
-            <label class="radio">
-              <input type="radio" name="mode" value="static" />
-              Static Files
-            </label>
-          </fieldset>
-
-          <label id="upstream-row">
-            Upstream
-            <input id="upstream" placeholder="http://app:3000" autocomplete="off" />
-          </label>
-
-          <label id="root-row" hidden>
-            Root
-            <input id="root" placeholder="/srv/www/example" autocomplete="off" />
-          </label>
-
-          <label>
-            Zusätzliche Direktiven
-            <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
-          </label>
-
-          <div class="form-actions">
-            <button type="submit">Speichern</button>
-            <button type="button" id="cancel" class="secondary">Schließen</button>
-            <button type="button" id="delete" class="danger" hidden>Löschen</button>
-          </div>
-        </form>
+        </div>
       </aside>
-    </main>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <span class="eyebrow">Reverse Proxy Control</span>
+            <h1>Caddy Websites</h1>
+          </div>
+          <div class="actions">
+            <button id="refresh" class="secondary" title="Neu laden">Aktualisieren</button>
+            <button id="show-config" class="secondary" title="Caddyfile anzeigen">Config</button>
+            <button id="new-site" title="Website anlegen">Neue Website</button>
+          </div>
+        </header>
+
+        <section class="hero-line">
+          <div class="section-title">
+            <span class="shield">◆</span>
+            <h2>Managed Sites</h2>
+            <span id="status" class="status-pill">Lade Websites...</span>
+          </div>
+          <div class="signal-pills">
+            <span>Config: extern</span>
+            <span>Port: 8080</span>
+          </div>
+        </section>
+
+        <section class="metrics">
+          <article class="metric">
+            <span>Websites</span>
+            <strong id="total-sites">0</strong>
+          </article>
+          <article class="metric">
+            <span>Aktiv</span>
+            <strong id="active-sites">0</strong>
+          </article>
+          <article class="metric">
+            <span>Proxy</span>
+            <strong id="proxy-sites">0</strong>
+          </article>
+          <article class="metric">
+            <span>Static</span>
+            <strong id="static-sites">0</strong>
+          </article>
+        </section>
+
+        <section class="dashboard-grid">
+          <section class="sites panel-card">
+            <div class="panel-heading">
+              <h2>Website Regeln</h2>
+              <span>Reverse Proxy und Static Hosts</span>
+            </div>
+            <div class="table-head">
+              <span>Adresse</span>
+              <span>Typ</span>
+              <span>Ziel</span>
+              <span>Status</span>
+              <span></span>
+            </div>
+            <div id="site-list" class="site-list"></div>
+          </section>
+
+          <aside class="panel-card editor-card" id="editor" hidden>
+            <form id="site-form">
+              <input type="hidden" id="site-id" />
+              <div class="panel-title">
+                <div>
+                  <span class="eyebrow">Rule Editor</span>
+                  <h2 id="form-title">Website</h2>
+                </div>
+                <label class="switch">
+                  <input id="enabled" type="checkbox" checked />
+                  <span>Aktiv</span>
+                </label>
+              </div>
+
+              <label>
+                Adresse
+                <input id="address" required placeholder="example.com" autocomplete="off" />
+              </label>
+
+              <fieldset>
+                <legend>Typ</legend>
+                <label class="radio">
+                  <input type="radio" name="mode" value="proxy" checked />
+                  Reverse Proxy
+                </label>
+                <label class="radio">
+                  <input type="radio" name="mode" value="static" />
+                  Static Files
+                </label>
+              </fieldset>
+
+              <label id="upstream-row">
+                Upstream
+                <input id="upstream" placeholder="http://app:3000" autocomplete="off" />
+              </label>
+
+              <label id="root-row" hidden>
+                Root
+                <input id="root" placeholder="/srv/www/example" autocomplete="off" />
+              </label>
+
+              <label>
+                Zusätzliche Direktiven
+                <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
+              </label>
+
+              <div class="form-actions">
+                <button type="submit">Speichern</button>
+                <button type="button" id="cancel" class="secondary">Schließen</button>
+                <button type="button" id="delete" class="danger" hidden>Löschen</button>
+              </div>
+            </form>
+          </aside>
+        </section>
+      </main>
+    </div>
 
     <dialog id="config-dialog">
       <div class="dialog-head">

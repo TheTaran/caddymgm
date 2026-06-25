@@ -15,6 +15,10 @@ const els = {
   delete: document.querySelector("#delete"),
   configDialog: document.querySelector("#config-dialog"),
   configContent: document.querySelector("#config-content"),
+  totalSites: document.querySelector("#total-sites"),
+  activeSites: document.querySelector("#active-sites"),
+  proxySites: document.querySelector("#proxy-sites"),
+  staticSites: document.querySelector("#static-sites"),
 };
 
 let sites = [];
@@ -38,10 +42,18 @@ async function loadSites() {
     const data = await request("/api/sites");
     sites = data.sites || [];
     renderSites();
+    renderMetrics();
     setStatus(`${sites.length} Website${sites.length === 1 ? "" : "s"} verwaltet`);
   } catch (err) {
     setStatus(err.message);
   }
+}
+
+function renderMetrics() {
+  els.totalSites.textContent = sites.length;
+  els.activeSites.textContent = sites.filter((site) => site.enabled).length;
+  els.proxySites.textContent = sites.filter((site) => site.mode === "proxy").length;
+  els.staticSites.textContent = sites.filter((site) => site.mode === "static").length;
 }
 
 function renderSites() {

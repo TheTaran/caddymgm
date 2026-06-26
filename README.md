@@ -177,6 +177,13 @@ Caddy access logs are stored outside the containers:
 ./caddy-logs
 ```
 
+The same folder also contains the Caddy service runtime log used by the
+`Logs` view:
+
+```text
+./caddy-logs/caddy-service.log
+```
+
 Docker Compose mounts this directory into CaddyMGM and the optional Docker Caddy
 service:
 

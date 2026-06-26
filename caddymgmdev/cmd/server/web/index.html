@@ -231,23 +231,43 @@
         </section>
 
         <section id="view-logs" class="view">
-          <section class="panel-card">
-            <div class="panel-heading">
-              <h2>Logs</h2>
-              <span>Website access logs</span>
-            </div>
-            <label class="filter-row">
-              Web Host
-              <select id="log-site-filter">
-                <option value="">Select Web Host</option>
-              </select>
-            </label>
-            <div id="log-stream-label" class="log-stream-label" hidden>
-              <span>Realtime Logs</span>
-              <strong></strong>
-            </div>
-            <div id="log-list" class="log-list"></div>
-          </section>
+          <div class="logs-grid">
+            <section class="panel-card">
+              <div class="panel-heading">
+                <h2>Caddy Service Log</h2>
+                <span>Realtime service log</span>
+              </div>
+              <div id="service-log-stream-label" class="log-stream-label">
+                <span>Service</span>
+                <strong>Caddy</strong>
+              </div>
+              <div id="service-log-list" class="log-list"></div>
+              <div class="log-actions">
+                <button id="service-log-toggle" type="button" class="secondary" hidden>Show more</button>
+              </div>
+            </section>
+
+            <section class="panel-card">
+              <div class="panel-heading">
+                <h2>Website Access Logs</h2>
+                <span>Realtime per web host</span>
+              </div>
+              <label class="filter-row">
+                Web Host
+                <select id="log-site-filter">
+                  <option value="">Select Web Host</option>
+                </select>
+              </label>
+              <div id="log-stream-label" class="log-stream-label" hidden>
+                <span>Realtime Logs</span>
+                <strong></strong>
+              </div>
+              <div id="log-list" class="log-list"></div>
+              <div class="log-actions">
+                <button id="site-log-toggle" type="button" class="secondary" hidden>Show more</button>
+              </div>
+            </section>
+          </div>
         </section>
 
         <section id="view-settings" class="view">

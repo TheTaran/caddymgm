@@ -30,6 +30,9 @@ const els = {
   logSiteFilter: document.querySelector("#log-site-filter"),
   logStreamLabel: document.querySelector("#log-stream-label"),
   logList: document.querySelector("#log-list"),
+  serviceLogList: document.querySelector("#service-log-list"),
+  serviceLogToggle: document.querySelector("#service-log-toggle"),
+  siteLogToggle: document.querySelector("#site-log-toggle"),
   settingsForm: document.querySelector("#settings-form"),
   settingsUsername: document.querySelector("#settings-username"),
   settingsPassword: document.querySelector("#settings-password"),
@@ -77,6 +80,9 @@ const viewTitles = {
 let sites = [];
 let settings = null;
 let logPollTimer = null;
+let serviceLogsExpanded = false;
+let siteLogsExpanded = false;
+const LOG_PREVIEW_LIMIT = 10;
 
 document.querySelector("#logout").addEventListener("click", logout);
 document.querySelector("#new-site").addEventListener("click", () => {
@@ -87,9 +93,12 @@ document.querySelector("#cancel").addEventListener("click", closeEditor);
 els.form.addEventListener("submit", saveSite);
 els.delete.addEventListener("click", deleteSite);
 els.logSiteFilter.addEventListener("change", () => {
+  siteLogsExpanded = false;
   loadLogs();
   syncLogPolling();
 });
+els.serviceLogToggle.addEventListener("click", toggleServiceLogsExpanded);
+els.siteLogToggle.addEventListener("click", toggleSiteLogsExpanded);
 els.settingsForm.addEventListener("submit", saveSettings);
 els.settingsWebTLSEnabled.addEventListener("change", syncSettingsWebTLS);
 els.certificateForm.addEventListener("submit", saveIssuer);
@@ -109,6 +118,7 @@ init();
 async function init() {
   await Promise.all([loadSites(), loadSettings()]);
   renderLogs([]);
+  renderServiceLogs([]);
 }
 
 function showView(view) {
@@ -120,6 +130,7 @@ function showView(view) {
 
   if (view === "proxy-hosts") closeEditor();
   if (view === "logs") {
+    loadServiceLogs();
     loadLogs();
     syncLogPolling();
   } else {
@@ -486,8 +497,18 @@ async function loadLogs() {
   }
 }
 
+async function loadServiceLogs() {
+  try {
+    const data = await request("/api/logs?source=caddy-service");
+    renderServiceLogs(data.logs || [], data.available !== false);
+  } catch (err) {
+    setStatus(err.message);
+  }
+}
+
 function renderLogs(logs) {
   els.logList.innerHTML = "";
+  els.siteLogToggle.hidden = true;
   if (!els.logSiteFilter.value) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
@@ -503,7 +524,8 @@ function renderLogs(logs) {
     return;
   }
 
-  for (const entry of logs) {
+  const visibleLogs = siteLogsExpanded ? logs : logs.slice(0, LOG_PREVIEW_LIMIT);
+  for (const entry of visibleLogs) {
     const row = document.createElement("div");
     row.className = "log-row";
     row.innerHTML = `
@@ -521,13 +543,78 @@ function renderLogs(logs) {
     row.children[3].classList.toggle("off", !String(entry.status || "").startsWith("2"));
     els.logList.append(row);
   }
+  syncLogToggle(els.siteLogToggle, logs.length, siteLogsExpanded);
+}
+
+function renderServiceLogs(logs, available = true) {
+  els.serviceLogList.innerHTML = "";
+  els.serviceLogToggle.hidden = true;
+  if (!available) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No Caddy service log available in the current mode.";
+    els.serviceLogList.append(empty);
+    return;
+  }
+  if (!logs.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No Caddy service log lines yet.";
+    els.serviceLogList.append(empty);
+    return;
+  }
+
+  const visibleLogs = serviceLogsExpanded ? logs : logs.slice(0, LOG_PREVIEW_LIMIT);
+  for (const entry of visibleLogs) {
+    const row = document.createElement("div");
+    row.className = "log-row service-log-row";
+    row.innerHTML = `
+      <time></time>
+      <span class="log-method"></span>
+      <span class="log-path"></span>
+      <span class="log-status badge"></span>
+    `;
+    row.children[0].textContent = new Date(entry.time).toLocaleTimeString();
+    row.children[0].title = new Date(entry.time).toLocaleString();
+    row.children[1].textContent = entry.action || "service";
+    row.children[2].textContent = entry.message || "-";
+    row.children[2].title = entry.message || "";
+    row.children[3].textContent = entry.status || "INFO";
+    row.children[3].classList.toggle("off", String(entry.status || "").toUpperCase() === "ERROR");
+    els.serviceLogList.append(row);
+  }
+  syncLogToggle(els.serviceLogToggle, logs.length, serviceLogsExpanded);
+}
+
+function syncLogToggle(button, total, expanded) {
+  if (total <= LOG_PREVIEW_LIMIT) {
+    button.hidden = true;
+    return;
+  }
+  button.hidden = false;
+  button.textContent = expanded ? "Show less" : `Show ${total - LOG_PREVIEW_LIMIT} more`;
+}
+
+function toggleServiceLogsExpanded() {
+  serviceLogsExpanded = !serviceLogsExpanded;
+  loadServiceLogs();
+}
+
+function toggleSiteLogsExpanded() {
+  siteLogsExpanded = !siteLogsExpanded;
+  loadLogs();
 }
 
 function syncLogPolling() {
   stopLogPolling();
   const logsViewActive = document.querySelector("#view-logs").classList.contains("active");
-  if (!logsViewActive || !els.logSiteFilter.value) return;
-  logPollTimer = window.setInterval(loadLogs, 2500);
+  if (!logsViewActive) return;
+  logPollTimer = window.setInterval(() => {
+    loadServiceLogs();
+    if (els.logSiteFilter.value) {
+      loadLogs();
+    }
+  }, 2500);
 }
 
 function stopLogPolling() {

@@ -530,6 +530,23 @@ legend {
   margin: 0 16px 14px;
 }
 
+.log-stream-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 12px;
+  color: var(--muted);
+}
+
+.log-stream-label strong {
+  color: var(--text);
+}
+
+.logs-grid {
+  display: grid;
+  gap: 16px;
+}
+
 .log-list {
   display: grid;
   gap: 4px;
@@ -567,6 +584,16 @@ legend {
   min-height: 20px;
   padding: 0 8px;
   font-size: 11px;
+}
+
+.service-log-row .log-method {
+  text-transform: lowercase;
+}
+
+.log-actions {
+  display: flex;
+  justify-content: flex-start;
+  padding: 0 14px 14px;
 }
 
 .settings-form {

@@ -145,6 +145,7 @@ type App struct {
 	caddyAPIURL  string
 	accessLogDir string
 	caddyLogDir  string
+	serviceLog   string
 	caddyDataDir string
 	caCertDir    string
 	webListen    string
@@ -176,6 +177,7 @@ func main() {
 	caddyAPIURL := env("CADDYMGM_CADDY_API_URL", defaultCaddyAPIURL(caddyMode))
 	accessLogDir := env("CADDYMGM_ACCESS_LOG_DIR", "/logs")
 	caddyLogDir := env("CADDY_ACCESS_LOG_DIR", accessLogDir)
+	serviceLog := env("CADDYMGM_CADDY_SERVICE_LOG", filepath.Join(accessLogDir, "caddy-service.log"))
 	caddyDataDir := env("CADDYMGM_CADDY_DATA_DIR", "/caddy-data")
 	caCertDir := env("CADDYMGM_CA_CERT_DIR", "/ca-certificates")
 	webListen := env("CADDYMGM_WEB_LISTEN", ":8080")
@@ -191,6 +193,7 @@ func main() {
 		caddyAPIURL:  strings.TrimRight(caddyAPIURL, "/"),
 		accessLogDir: accessLogDir,
 		caddyLogDir:  caddyLogDir,
+		serviceLog:   serviceLog,
 		caddyDataDir: caddyDataDir,
 		caCertDir:    caCertDir,
 		webListen:    webListen,
@@ -485,14 +488,28 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
+	source := strings.TrimSpace(r.URL.Query().Get("source"))
 	siteID := strings.TrimSpace(r.URL.Query().Get("siteId"))
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if source == "caddy-service" {
+		entries := a.readServiceLogsLocked()
+		sort.SliceStable(entries, func(i, j int) bool {
+			return entries[i].Time > entries[j].Time
+		})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"logs":      entries,
+			"available": a.serviceLogAvailableLocked(),
+		})
+		return
+	}
+
 	if siteID == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"logs": []LogEntry{}})
 		return
 	}
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
 
 	sites, _, _, err := a.load()
 	if err != nil {
@@ -1447,6 +1464,33 @@ func (a *App) readAccessLogsLocked(siteID string, sites []Site) []LogEntry {
 	return entries
 }
 
+func (a *App) readServiceLogsLocked() []LogEntry {
+	limit := a.settings.LogRetention
+	if limit <= 0 {
+		limit = 100
+	}
+	lines, err := readLastLines(a.serviceLog, limit)
+	if err != nil {
+		return nil
+	}
+	entries := make([]LogEntry, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		entries = append(entries, serviceLogEntry(line))
+	}
+	return entries
+}
+
+func (a *App) serviceLogAvailableLocked() bool {
+	if a.caddyMode != "docker" {
+		return false
+	}
+	_, err := os.Stat(a.serviceLog)
+	return err == nil
+}
+
 func readLastLines(path string, limit int) ([]string, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -1498,6 +1542,33 @@ func accessLogEntry(site Site, line string) LogEntry {
 	entry.Status = status
 	if len(parts) > 0 {
 		entry.Message = strings.Join(parts, " - ")
+	}
+	return entry
+}
+
+func serviceLogEntry(line string) LogEntry {
+	entry := LogEntry{
+		Time:    time.Now().Format(time.RFC3339),
+		Action:  "service",
+		Message: strings.TrimSpace(line),
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(line), &payload); err != nil {
+		return entry
+	}
+	if ts, ok := payload["ts"].(float64); ok {
+		sec := int64(ts)
+		nsec := int64((ts - float64(sec)) * 1_000_000_000)
+		entry.Time = time.Unix(sec, nsec).Format(time.RFC3339)
+	}
+	if msg, ok := payload["msg"].(string); ok && strings.TrimSpace(msg) != "" {
+		entry.Message = msg
+	}
+	if logger, ok := payload["logger"].(string); ok && strings.TrimSpace(logger) != "" {
+		entry.Action = logger
+	}
+	if level, ok := payload["level"].(string); ok && strings.TrimSpace(level) != "" {
+		entry.Status = strings.ToUpper(level)
 	}
 	return entry
 }

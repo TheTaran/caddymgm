@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -148,14 +147,8 @@ type App struct {
 	caddyLogDir  string
 	caddyDataDir string
 	caCertDir    string
-	webACMEHome  string
-	webTLSDir    string
-	webTLSCert   string
-	webTLSKey    string
-	webTLSCA     string
-	webDNSHook   string
-	webDNSSleep  string
-	webTLSReady  bool
+	webListen    string
+	webPort      string
 	httpClient   *http.Client
 	settings     Settings
 	logs         []LogEntry
@@ -185,13 +178,11 @@ func main() {
 	caddyLogDir := env("CADDY_ACCESS_LOG_DIR", accessLogDir)
 	caddyDataDir := env("CADDYMGM_CADDY_DATA_DIR", "/caddy-data")
 	caCertDir := env("CADDYMGM_CA_CERT_DIR", "/ca-certificates")
-	webACMEHome := env("CADDYMGM_WEB_ACME_HOME", "/caddymgm-data/acme")
-	webTLSDir := env("CADDYMGM_WEB_TLS_DIR", "/caddymgm-data/tls")
-	webTLSCert := env("CADDYMGM_WEB_TLS_CERT_FILE", filepath.Join(webTLSDir, "caddymgm.crt"))
-	webTLSKey := env("CADDYMGM_WEB_TLS_KEY_FILE", filepath.Join(webTLSDir, "caddymgm.key"))
-	webTLSCA := env("CADDYMGM_WEB_TLS_CA_FILE", filepath.Join(webTLSDir, "caddymgm-ca.crt"))
-	webDNSHook := env("CADDYMGM_WEB_DNS_PROVIDER", "")
-	webDNSSleep := env("CADDYMGM_WEB_DNS_SLEEP", "")
+	webListen := env("CADDYMGM_WEB_LISTEN", ":8080")
+	webPort := strings.TrimSpace(env("CADDYMGM_WEB_PORT", "8080"))
+	if _, err := net.LookupPort("tcp", webPort); err != nil {
+		log.Fatalf("invalid CADDYMGM_WEB_PORT %q: %v", webPort, err)
+	}
 
 	app := &App{
 		configPath:   configPath,
@@ -202,13 +193,8 @@ func main() {
 		caddyLogDir:  caddyLogDir,
 		caddyDataDir: caddyDataDir,
 		caCertDir:    caCertDir,
-		webACMEHome:  webACMEHome,
-		webTLSDir:    webTLSDir,
-		webTLSCert:   webTLSCert,
-		webTLSKey:    webTLSKey,
-		webTLSCA:     webTLSCA,
-		webDNSHook:   webDNSHook,
-		webDNSSleep:  webDNSSleep,
+		webListen:    webListen,
+		webPort:      webPort,
 		httpClient:   &http.Client{Timeout: 15 * time.Second},
 		sessions:     make(map[string]Session),
 		oidcStates:   make(map[string]time.Time),
@@ -222,11 +208,6 @@ func main() {
 	}
 	if err := app.syncManagedConfig(); err != nil {
 		log.Printf("sync managed caddy config: %v", err)
-	}
-	if err := app.ensureWebInterfaceCertificate(app.settings); err != nil {
-		log.Printf("web interface tls inactive: %v", err)
-	} else {
-		app.webTLSReady = app.settings.WebInterface.TLSEnabled && strings.TrimSpace(app.settings.WebInterface.Host) != ""
 	}
 
 	webRoot, err := fs.Sub(webFS, "web")
@@ -253,15 +234,11 @@ func main() {
 	mux.HandleFunc("GET /api/auth/oidc/callback", app.handleOIDCCallback)
 	mux.HandleFunc("GET /auth/oidc/callback", app.handleOIDCCallback)
 
-	listenAddr := app.webListenAddr()
+	listenAddr := app.webListen
 	handler := logRequest(app.requireAuth(mux))
 	server := &http.Server{
 		Addr:    listenAddr,
 		Handler: handler,
-	}
-	if app.webTLSActive() {
-		log.Printf("caddymgm listening with native https on %s, cert=%s, key=%s, config=%s, settings=%s, caddy_mode=%s, caddy_api=%s, access_logs=%s", listenAddr, app.webTLSCert, app.webTLSKey, configPath, settingsPath, app.caddyMode, app.caddyAPIURL, app.accessLogDir)
-		log.Fatal(server.ListenAndServeTLS(app.webTLSCert, app.webTLSKey))
 	}
 	log.Printf("caddymgm listening on %s, config=%s, settings=%s, caddy_mode=%s, caddy_api=%s, access_logs=%s", listenAddr, configPath, settingsPath, app.caddyMode, app.caddyAPIURL, app.accessLogDir)
 	log.Fatal(server.ListenAndServe())
@@ -456,7 +433,7 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if next.LogRetention < 25 {
 		next.LogRetention = 100
 	}
-	normalizeWebInterface(&next.WebInterface)
+	normalizeWebInterface(&next.WebInterface, a.caddyMode)
 	if next.ACMEIssuers == nil {
 		next.ACMEIssuers = a.settings.ACMEIssuers
 	}
@@ -485,17 +462,12 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := a.ensureWebInterfaceCertificate(next); err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("web interface certificate setup failed: %w", err))
-		return
-	}
 	sites, head, tail, err := a.load()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	a.settings = next
-	a.webTLSReady = next.WebInterface.TLSEnabled && strings.TrimSpace(next.WebInterface.Host) != ""
 	if err := a.saveSettingsLocked(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -773,7 +745,7 @@ func (a *App) ensureSettings() error {
 		if a.settings.LogRetention == 0 {
 			a.settings.LogRetention = 100
 		}
-		normalizeWebInterface(&a.settings.WebInterface)
+		normalizeWebInterface(&a.settings.WebInterface, a.caddyMode)
 		a.settings.OIDC = normalizeOIDCSettings(a.settings.OIDC, OIDCSettings{})
 		a.settings.ACMEIssuers = ensureBuiltInACMEIssuers(a.settings.ACMEIssuers)
 		return a.saveSettingsLocked()
@@ -790,7 +762,7 @@ func (a *App) ensureSettings() error {
 		ConfigPath:   a.configPath,
 		LogRetention: 100,
 		ACMEIssuers:  ensureBuiltInACMEIssuers(nil),
-		WebInterface: WebInterface{Upstream: env("CADDYMGM_WEB_LISTEN", ":8080")},
+		WebInterface: WebInterface{Upstream: defaultWebInterfaceUpstream(a.caddyMode)},
 	}
 	return a.saveSettingsLocked()
 }
@@ -849,7 +821,7 @@ func (a *App) save(head string, sites []Site, tail string) error {
 	if out.Len() > 0 {
 		out.WriteString("\n\n")
 	}
-	out.WriteString(renderManaged(sites, a.settings.ACMEIssuers, a.caddyLogDir))
+	out.WriteString(renderManaged(sites, a.settings.ACMEIssuers, a.caddyLogDir, a.settings.WebInterface, a.caddyMode, a.webPort))
 	if strings.TrimSpace(tail) != "" {
 		out.WriteString("\n")
 		out.WriteString(strings.TrimLeft(tail, "\n"))
@@ -1052,15 +1024,55 @@ func parseSite(id string, lines []string) (Site, error) {
 	return site, nil
 }
 
-func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string) string {
+func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string, webInterface WebInterface, caddyMode string, webPort string) string {
 	var out strings.Builder
 	out.WriteString(managedStart + "\n")
+	if block := renderWebInterface(webInterface, issuers, caddyMode, webPort); block != "" {
+		out.WriteString(block)
+	}
 	for _, site := range sites {
 		out.WriteString("# caddymgm:site " + site.ID + "\n")
 		out.WriteString(renderSite(site, issuers, logDir))
 		out.WriteString("# caddymgm:end-site\n")
 	}
 	out.WriteString(managedEnd + "\n")
+	return out.String()
+}
+
+func renderWebInterface(webInterface WebInterface, issuers []ACMEIssuer, caddyMode string, webPort string) string {
+	host := strings.TrimSpace(webInterface.Host)
+	upstream := effectiveWebInterfaceUpstream(webInterface, caddyMode)
+	if upstream == "" {
+		return ""
+	}
+	var out strings.Builder
+	out.WriteString("# caddymgm:web-interface\n")
+	if host == "" {
+		out.WriteString("http://:" + webPort + " {\n")
+	} else if webInterface.TLSEnabled {
+		out.WriteString("https://" + host + ":" + webPort + " {\n")
+	} else {
+		out.WriteString("http://" + strings.TrimPrefix(strings.TrimPrefix(host, "http://"), "https://") + ":" + webPort + " {\n")
+	}
+	out.WriteString("\treverse_proxy " + upstream + "\n")
+	if webInterface.TLSEnabled {
+		if issuer, ok := findACMEIssuer(issuers, webInterface.ACMEIssuerID); ok {
+			out.WriteString("\t# caddymgm:tls-issuer " + issuer.ID + "\n")
+			out.WriteString("\ttls {\n")
+			out.WriteString("\t\tissuer acme {\n")
+			out.WriteString("\t\t\tdir " + issuer.DirectoryURL + "\n")
+			if issuer.Email != "" {
+				out.WriteString("\t\t\temail " + issuer.Email + "\n")
+			}
+			if issuer.RootCAFile != "" {
+				out.WriteString("\t\t\ttrusted_roots " + caddyfileQuote(issuer.RootCAFile) + "\n")
+			}
+			out.WriteString("\t\t}\n")
+			out.WriteString("\t}\n")
+		}
+	}
+	out.WriteString("}\n")
+	out.WriteString("# caddymgm:end-web-interface\n")
 	return out.String()
 }
 
@@ -1256,19 +1268,16 @@ func validateRootCAFile(path string) error {
 	return nil
 }
 
-func normalizeWebInterface(webInterface *WebInterface) {
+func normalizeWebInterface(webInterface *WebInterface, caddyMode string) {
 	webInterface.Host = strings.TrimSpace(webInterface.Host)
 	webInterface.Upstream = strings.TrimSpace(webInterface.Upstream)
 	webInterface.ACMEIssuerID = strings.TrimSpace(webInterface.ACMEIssuerID)
 	if webInterface.Upstream == "" {
-		webInterface.Upstream = env("CADDYMGM_WEB_LISTEN", ":8080")
+		webInterface.Upstream = defaultWebInterfaceUpstream(caddyMode)
 	}
 	if strings.HasPrefix(webInterface.Upstream, "http://") || strings.HasPrefix(webInterface.Upstream, "https://") {
 		if parsed, err := url.Parse(webInterface.Upstream); err == nil && parsed.Host != "" {
 			webInterface.Upstream = parsed.Host
-			if parsed.Host == "caddymgm:8080" || parsed.Host == "localhost:8080" || parsed.Host == "127.0.0.1:8080" || parsed.Host == "0.0.0.0:8080" {
-				webInterface.Upstream = ":8080"
-			}
 		}
 	}
 	if !webInterface.TLSEnabled {
@@ -1278,12 +1287,8 @@ func normalizeWebInterface(webInterface *WebInterface) {
 
 func validateWebInterface(webInterface WebInterface, issuers []ACMEIssuer) error {
 	host := strings.TrimSpace(webInterface.Host)
-	if host == "" {
-		if webInterface.TLSEnabled {
-			return errors.New("web interface host is required when TLS is enabled")
-		}
-	} else {
-		host = ""
+	if host == "" && webInterface.TLSEnabled {
+		return errors.New("web interface host is required when TLS is enabled")
 	}
 	parsedHost, _, err := splitHostPortLoose(host)
 	if err != nil {
@@ -1296,8 +1301,10 @@ func validateWebInterface(webInterface WebInterface, issuers []ACMEIssuer) error
 	if host != "" && !addressPattern.MatchString(host) {
 		return errors.New("web interface host contains unsupported characters")
 	}
-	if err := validateListenAddress(webInterface.Upstream); err != nil {
-		return fmt.Errorf("web interface listen address: %w", err)
+	if upstream := strings.TrimSpace(webInterface.Upstream); upstream != "" {
+		if _, err := normalizeProxyUpstream(upstream); err != nil {
+			return fmt.Errorf("web interface upstream: %w", err)
+		}
 	}
 	if webInterface.TLSEnabled {
 		if webInterface.ACMEIssuerID == "" {
@@ -1841,101 +1848,6 @@ func (a *App) syncManagedConfig() error {
 	return a.applyCaddyConfigLocked()
 }
 
-func (a *App) webListenAddr() string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	addr := strings.TrimSpace(a.settings.WebInterface.Upstream)
-	if addr == "" {
-		addr = env("CADDYMGM_WEB_LISTEN", ":8080")
-	}
-	return addr
-}
-
-func (a *App) webTLSActive() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.webTLSReady && a.settings.WebInterface.TLSEnabled && strings.TrimSpace(a.settings.WebInterface.Host) != ""
-}
-
-func (a *App) ensureWebInterfaceCertificate(settings Settings) error {
-	if !settings.WebInterface.TLSEnabled {
-		return nil
-	}
-	if strings.TrimSpace(settings.WebInterface.Host) == "" {
-		return errors.New("web interface host is required")
-	}
-	if a.webTLSFilesExist() && strings.TrimSpace(a.webDNSHook) == "" {
-		return nil
-	}
-	if strings.TrimSpace(a.webDNSHook) == "" {
-		return errors.New("set CADDYMGM_WEB_DNS_PROVIDER for dns-01 certificate issuance")
-	}
-	domain, _, err := splitHostPortLoose(settings.WebInterface.Host)
-	if err != nil || strings.TrimSpace(domain) == "" {
-		return errors.New("web interface host is invalid")
-	}
-	issuer, ok := findACMEIssuer(settings.ACMEIssuers, settings.WebInterface.ACMEIssuerID)
-	if !ok {
-		return errors.New("selected web interface ACME authority was not found")
-	}
-	if err := os.MkdirAll(a.webACMEHome, 0o700); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(a.webTLSCert), 0o755); err != nil {
-		return err
-	}
-	issueArgs := []string{
-		"--home", a.webACMEHome,
-		"--server", issuer.DirectoryURL,
-		"--issue",
-		"--dns", a.webDNSHook,
-		"-d", domain,
-	}
-	if issuer.RootCAFile != "" {
-		issueArgs = append(issueArgs, "--ca-bundle", issuer.RootCAFile)
-	}
-	if a.webDNSSleep != "" {
-		issueArgs = append(issueArgs, "--dnssleep", a.webDNSSleep)
-	}
-	if _, err := a.runACMESh(issueArgs...); err != nil {
-		return err
-	}
-	installArgs := []string{
-		"--home", a.webACMEHome,
-		"--server", issuer.DirectoryURL,
-		"--install-cert",
-		"-d", domain,
-		"--key-file", a.webTLSKey,
-		"--fullchain-file", a.webTLSCert,
-		"--ca-file", a.webTLSCA,
-	}
-	if issuer.RootCAFile != "" {
-		installArgs = append(installArgs, "--ca-bundle", issuer.RootCAFile)
-	}
-	_, err = a.runACMESh(installArgs...)
-	return err
-}
-
-func (a *App) runACMESh(args ...string) ([]byte, error) {
-	cmd := exec.Command("acme.sh", args...)
-	cmd.Env = os.Environ()
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return output, fmt.Errorf("acme.sh %s failed: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
-	}
-	return output, nil
-}
-
-func (a *App) webTLSFilesExist() bool {
-	if _, err := os.Stat(a.webTLSCert); err != nil {
-		return false
-	}
-	if _, err := os.Stat(a.webTLSKey); err != nil {
-		return false
-	}
-	return true
-}
-
 func normalizeCaddyMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "native", "docker", "api", "none":
@@ -1954,6 +1866,25 @@ func defaultCaddyAPIURL(mode string) string {
 	default:
 		return ""
 	}
+}
+
+func defaultWebInterfaceUpstream(mode string) string {
+	switch mode {
+	case "docker":
+		return "http://caddymgm:8080"
+	case "native", "api":
+		return "http://host.docker.internal:8080"
+	default:
+		return "http://caddymgm:8080"
+	}
+}
+
+func effectiveWebInterfaceUpstream(webInterface WebInterface, caddyMode string) string {
+	upstream := strings.TrimSpace(webInterface.Upstream)
+	if upstream == "" {
+		upstream = defaultWebInterfaceUpstream(caddyMode)
+	}
+	return upstream
 }
 
 func newID() string {

@@ -40,7 +40,6 @@ const els = {
   settingsOIDCRedirect: document.querySelector("#settings-oidc-redirect"),
   settingsOIDCScopes: document.querySelector("#settings-oidc-scopes"),
   settingsWebHost: document.querySelector("#settings-web-host"),
-  settingsWebUpstream: document.querySelector("#settings-web-upstream"),
   settingsWebTLSEnabled: document.querySelector("#settings-web-tls-enabled"),
   settingsWebACMERow: document.querySelector("#settings-web-acme-row"),
   settingsWebACME: document.querySelector("#settings-web-acme"),
@@ -157,7 +156,6 @@ async function loadSettings() {
     els.settingsOIDCRedirect.value = settings.oidc?.redirectUrl || "";
     els.settingsOIDCScopes.value = settings.oidc?.scopes || "openid profile email";
     els.settingsWebHost.value = settings.webInterface?.host || "";
-    els.settingsWebUpstream.value = settings.webInterface?.upstream || ":8080";
     els.settingsWebTLSEnabled.checked = !!settings.webInterface?.tlsEnabled;
     els.settingsLogRetention.value = settings.logRetention || 100;
     els.settingsCaddyMode.value = settings.caddyMode || "file";
@@ -188,7 +186,6 @@ async function saveSettings(event) {
     },
     webInterface: {
       host: els.settingsWebHost.value,
-      upstream: els.settingsWebUpstream.value,
       tlsEnabled: els.settingsWebTLSEnabled.checked,
       acmeIssuerId: els.settingsWebTLSEnabled.checked ? els.settingsWebACME.value : "",
     },
@@ -378,12 +375,7 @@ function syncSettingsWebTLS() {
   els.settingsWebACMERow.hidden = !enabled;
   els.settingsWebACME.required = enabled;
   els.settingsWebACME.disabled = !enabled;
-  els.settingsWebHost.required = enabled;
-  if (enabled) {
-    els.settingsWebHost.placeholder = "mgm.example.com:8080";
-  } else {
-    els.settingsWebHost.placeholder = "mgm.example.com:8080";
-  }
+  els.settingsWebHost.placeholder = "mgm.example.com";
   if (!enabled) {
     els.settingsWebACME.value = "";
   } else if (!els.settingsWebACME.value && els.settingsWebACME.options.length > 0) {

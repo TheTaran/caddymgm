@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -26,6 +27,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -145,7 +149,21 @@ type App struct {
 	httpClient   *http.Client
 	settings     Settings
 	logs         []LogEntry
-	sessions     map[string]time.Time
+	sessions     map[string]Session
+	oidcStates   map[string]time.Time
+	oidcCache    map[string]*oidcRuntime
+}
+
+type Session struct {
+	ExpiresAt time.Time
+	Username  string
+	Provider  string
+}
+
+type oidcRuntime struct {
+	Provider *oidc.Provider
+	Verifier *oidc.IDTokenVerifier
+	Config   oauth2.Config
 }
 
 func main() {
@@ -169,7 +187,9 @@ func main() {
 		caddyDataDir: caddyDataDir,
 		caCertDir:    caCertDir,
 		httpClient:   &http.Client{Timeout: 15 * time.Second},
-		sessions:     make(map[string]time.Time),
+		sessions:     make(map[string]Session),
+		oidcStates:   make(map[string]time.Time),
+		oidcCache:    make(map[string]*oidcRuntime),
 	}
 	if err := app.ensureConfig(); err != nil {
 		log.Fatalf("prepare config: %v", err)
@@ -197,6 +217,10 @@ func main() {
 	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
 	mux.HandleFunc("GET /api/auth/me", app.handleMe)
+	mux.HandleFunc("GET /api/auth/config", app.handleAuthConfig)
+	mux.HandleFunc("GET /api/auth/oidc/start", app.handleOIDCStart)
+	mux.HandleFunc("GET /api/auth/oidc/callback", app.handleOIDCCallback)
+	mux.HandleFunc("GET /auth/oidc/callback", app.handleOIDCCallback)
 
 	log.Printf("caddymgm listening on %s, config=%s, settings=%s, caddy_mode=%s, caddy_api=%s, access_logs=%s", addr, configPath, settingsPath, app.caddyMode, app.caddyAPIURL, app.accessLogDir)
 	log.Fatal(http.ListenAndServe(addr, logRequest(app.requireAuth(mux))))
@@ -416,6 +440,10 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	next.Password = ""
 	next.OIDC = normalizeOIDCSettings(next.OIDC, a.settings.OIDC)
+	if err := validateOIDCSettings(next.OIDC); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	sites, head, tail, err := a.load()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -514,10 +542,13 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if !localAuthEnabledFromEnv() {
+		writeError(w, http.StatusForbidden, errors.New("local authentication is disabled"))
+		return
+	}
+
 	if a.validCredentialsLocked(payload.Username, payload.Password) {
-		token := newSessionToken()
-		a.sessions[token] = time.Now().Add(12 * time.Hour)
-		http.SetCookie(w, sessionCookie(token, 12*time.Hour))
+		a.createSessionLocked(w, a.settings.Username, "local")
 		writeJSON(w, http.StatusOK, map[string]any{
 			"authenticated": true,
 			"username":      a.settings.Username,
@@ -542,11 +573,120 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	username := a.settings.Username
+	provider := "local"
+	authenticated := a.hasValidSessionLocked(r)
+	if cookie, err := r.Cookie("caddymgm_session"); err == nil {
+		if session, ok := a.sessions[cookie.Value]; ok {
+			username = session.Username
+			provider = session.Provider
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"authenticated": true,
-		"username":      a.settings.Username,
+		"authenticated": authenticated || !a.settings.AuthEnabled,
+		"username":      username,
+		"provider":      provider,
 		"appName":       a.settings.AppName,
 	})
+}
+
+func (a *App) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"authEnabled":      a.settings.AuthEnabled,
+		"localAuthEnabled": localAuthEnabledFromEnv(),
+		"oidcAuthEnabled":  oidcAuthEnabledFromEnv() && a.settings.OIDC.Enabled,
+		"appName":          a.settings.AppName,
+	})
+}
+
+func (a *App) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	if !a.settings.AuthEnabled {
+		a.mu.Unlock()
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	runtime, err := a.oidcRuntimeLocked(r.Context())
+	if err != nil {
+		a.mu.Unlock()
+		http.Redirect(w, r, "/login.html?error=oidc_not_available", http.StatusFound)
+		return
+	}
+	state := newSessionToken()
+	a.oidcStates[state] = time.Now().Add(10 * time.Minute)
+	a.mu.Unlock()
+
+	http.SetCookie(w, oidcStateCookie(state, 10*time.Minute))
+	http.Redirect(w, r, runtime.Config.AuthCodeURL(state), http.StatusFound)
+}
+
+func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if state == "" || code == "" {
+		http.Redirect(w, r, "/login.html?error=missing_oidc_response", http.StatusFound)
+		return
+	}
+
+	a.mu.Lock()
+	if !a.settings.AuthEnabled {
+		a.mu.Unlock()
+		http.SetCookie(w, oidcStateCookie("", -time.Hour))
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	runtime, err := a.oidcRuntimeLocked(r.Context())
+	if err != nil {
+		a.mu.Unlock()
+		http.SetCookie(w, oidcStateCookie("", -time.Hour))
+		http.Redirect(w, r, "/login.html?error=oidc_not_available", http.StatusFound)
+		return
+	}
+	if err := a.consumeOIDCStateLocked(r, state); err != nil {
+		a.mu.Unlock()
+		http.SetCookie(w, oidcStateCookie("", -time.Hour))
+		http.Redirect(w, r, "/login.html?error=invalid_oidc_state", http.StatusFound)
+		return
+	}
+	a.mu.Unlock()
+	http.SetCookie(w, oidcStateCookie("", -time.Hour))
+
+	token, err := runtime.Config.Exchange(r.Context(), code)
+	if err != nil {
+		http.Redirect(w, r, "/login.html?error=oidc_exchange_failed", http.StatusFound)
+		return
+	}
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok || strings.TrimSpace(rawIDToken) == "" {
+		http.Redirect(w, r, "/login.html?error=missing_id_token", http.StatusFound)
+		return
+	}
+	idToken, err := runtime.Verifier.Verify(r.Context(), rawIDToken)
+	if err != nil {
+		http.Redirect(w, r, "/login.html?error=invalid_id_token", http.StatusFound)
+		return
+	}
+	var claims struct {
+		Email             string `json:"email"`
+		PreferredUsername string `json:"preferred_username"`
+		Name              string `json:"name"`
+		Subject           string `json:"sub"`
+	}
+	if err := idToken.Claims(&claims); err != nil {
+		http.Redirect(w, r, "/login.html?error=invalid_oidc_claims", http.StatusFound)
+		return
+	}
+	username := firstNonEmpty(claims.PreferredUsername, claims.Email, claims.Name, claims.Subject)
+	if username == "" {
+		username = "oidc-user"
+	}
+
+	a.mu.Lock()
+	a.createSessionLocked(w, username, "oidc")
+	a.mu.Unlock()
+	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func (a *App) ensureConfig() error {
@@ -610,6 +750,7 @@ func (a *App) ensureSettings() error {
 }
 
 func (a *App) saveSettingsLocked() error {
+	a.oidcCache = make(map[string]*oidcRuntime)
 	content, err := json.MarshalIndent(a.settings, "", "  ")
 	if err != nil {
 		return err
@@ -1161,6 +1302,25 @@ func normalizeOIDCSettings(next, current OIDCSettings) OIDCSettings {
 	return next
 }
 
+func validateOIDCSettings(settings OIDCSettings) error {
+	if !settings.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(settings.IssuerURL) == "" {
+		return errors.New("oidc issuer url is required")
+	}
+	if strings.TrimSpace(settings.ClientID) == "" {
+		return errors.New("oidc client id is required")
+	}
+	if strings.TrimSpace(settings.ClientSecret) == "" {
+		return errors.New("oidc client secret is required")
+	}
+	if strings.TrimSpace(settings.RedirectURL) == "" {
+		return errors.New("oidc redirect url is required")
+	}
+	return nil
+}
+
 func isRootCAFile(path string) bool {
 	path = strings.ToLower(path)
 	return strings.HasSuffix(path, ".crt") || strings.HasSuffix(path, ".cer") || strings.HasSuffix(path, ".pem")
@@ -1637,11 +1797,18 @@ func (a *App) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
 		authEnabled := a.settings.AuthEnabled
+		localEnabled := localAuthEnabledFromEnv()
+		oidcEnabled := oidcAuthEnabledFromEnv() && a.settings.OIDC.Enabled
 		authenticated := a.hasValidSessionLocked(r)
 		a.mu.Unlock()
 
 		if !authEnabled || authenticated || isPublicPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
+			return
+		}
+
+		if !localEnabled && !oidcEnabled {
+			writeError(w, http.StatusServiceUnavailable, errors.New("authentication is enabled but no login method is configured"))
 			return
 		}
 
@@ -1667,11 +1834,11 @@ func (a *App) hasValidSessionLocked(r *http.Request) bool {
 	if err != nil || cookie.Value == "" {
 		return false
 	}
-	expires, ok := a.sessions[cookie.Value]
+	session, ok := a.sessions[cookie.Value]
 	if !ok {
 		return false
 	}
-	if time.Now().After(expires) {
+	if time.Now().After(session.ExpiresAt) {
 		delete(a.sessions, cookie.Value)
 		return false
 	}
@@ -1683,6 +1850,8 @@ func isPublicPath(path string) bool {
 	case "/login.html", "/login.css", "/login.js", "/styles.css":
 		return true
 	case "/api/auth/login":
+		return true
+	case "/api/auth/config", "/api/auth/oidc/start", "/api/auth/oidc/callback", "/auth/oidc/callback":
 		return true
 	default:
 		return false
@@ -1706,6 +1875,91 @@ func sessionCookie(value string, maxAge time.Duration) *http.Cookie {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	}
+}
+
+func oidcStateCookie(value string, maxAge time.Duration) *http.Cookie {
+	return &http.Cookie{
+		Name:     "caddymgm_oidc_state",
+		Value:    value,
+		Path:     "/",
+		MaxAge:   int(maxAge.Seconds()),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
+func (a *App) createSessionLocked(w http.ResponseWriter, username, provider string) {
+	token := newSessionToken()
+	a.sessions[token] = Session{
+		ExpiresAt: time.Now().Add(12 * time.Hour),
+		Username:  username,
+		Provider:  provider,
+	}
+	http.SetCookie(w, sessionCookie(token, 12*time.Hour))
+}
+
+func (a *App) consumeOIDCStateLocked(r *http.Request, state string) error {
+	cookie, err := r.Cookie("caddymgm_oidc_state")
+	if err != nil || cookie.Value == "" || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {
+		return errors.New("state cookie mismatch")
+	}
+	expiresAt, ok := a.oidcStates[state]
+	if !ok {
+		return errors.New("state not found")
+	}
+	delete(a.oidcStates, state)
+	if time.Now().After(expiresAt) {
+		return errors.New("state expired")
+	}
+	return nil
+}
+
+func (a *App) oidcRuntimeLocked(ctx context.Context) (*oidcRuntime, error) {
+	if !oidcAuthEnabledFromEnv() || !a.settings.OIDC.Enabled {
+		return nil, errors.New("oidc authentication is disabled")
+	}
+	if err := validateOIDCSettings(a.settings.OIDC); err != nil {
+		return nil, err
+	}
+	cacheKey := strings.Join([]string{
+		a.settings.OIDC.IssuerURL,
+		a.settings.OIDC.ClientID,
+		a.settings.OIDC.RedirectURL,
+		a.settings.OIDC.Scopes,
+	}, "|")
+	if cached, ok := a.oidcCache[cacheKey]; ok {
+		return cached, nil
+	}
+	provider, err := oidc.NewProvider(ctx, a.settings.OIDC.IssuerURL)
+	if err != nil {
+		return nil, err
+	}
+	scopes := strings.Fields(a.settings.OIDC.Scopes)
+	if len(scopes) == 0 {
+		scopes = []string{oidc.ScopeOpenID, "profile", "email"}
+	}
+	runtime := &oidcRuntime{
+		Provider: provider,
+		Verifier: provider.Verifier(&oidc.Config{ClientID: a.settings.OIDC.ClientID}),
+		Config: oauth2.Config{
+			ClientID:     a.settings.OIDC.ClientID,
+			ClientSecret: a.settings.OIDC.ClientSecret,
+			Endpoint:     provider.Endpoint(),
+			RedirectURL:  a.settings.OIDC.RedirectURL,
+			Scopes:       scopes,
+		},
+	}
+	a.oidcCache[cacheKey] = runtime
+	return runtime, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (a *App) addLogLocked(site Site, action, message string) {
@@ -1748,8 +2002,30 @@ func env(key, fallback string) string {
 }
 
 func authEnabledFromEnv() bool {
-	value := strings.ToLower(env("CADDYMGM_AUTH_ENABLED", "true"))
-	return value != "0" && value != "false" && value != "no" && value != "off"
+	return envBool("CADDYMGM_AUTH_ENABLED", true)
+}
+
+func localAuthEnabledFromEnv() bool {
+	return envBool("CADDYMGM_LOCALAUTH_ENABLED", true)
+}
+
+func oidcAuthEnabledFromEnv() bool {
+	return envBool("CADDYMGM_OIDCAUTH_ENABLED", false)
+}
+
+func envBool(key string, fallback bool) bool {
+	value := strings.ToLower(env(key, ""))
+	if value == "" {
+		return fallback
+	}
+	switch value {
+	case "1", "true", "treu", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func logRequest(next http.Handler) http.Handler {

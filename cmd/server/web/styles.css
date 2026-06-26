@@ -786,6 +786,34 @@ pre {
   margin-top: 4px;
 }
 
+.login-divider {
+  position: relative;
+  margin: 16px 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+.login-divider::before {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  border-top: 1px solid var(--line);
+}
+
+.login-divider span {
+  position: relative;
+  padding: 0 12px;
+  background: var(--panel);
+}
+
+.login-oidc-button {
+  width: 100%;
+}
+
+.login-note {
+  color: var(--muted);
+}
+
 .login-error {
   border: 1px solid rgba(255, 45, 99, 0.35);
   border-radius: 8px;

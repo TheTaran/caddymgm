@@ -74,11 +74,25 @@ The initial credentials come from Docker Compose environment variables:
 CADDYMGM_ADMIN_USER=admin
 CADDYMGM_ADMIN_PASSWORD=changeme
 CADDYMGM_AUTH_ENABLED=true
+CADDYMGM_LOCALAUTH_ENABLED=true
+CADDYMGM_OIDCAUTH_ENABLED=false
 ```
 
 Change the password after the first start in `Settings`.
 Authentication defaults to enabled. It can be disabled only through the
 `CADDYMGM_AUTH_ENABLED=false` environment variable in `.env`.
+Local admin login and OIDC login are controlled independently:
+
+```text
+CADDYMGM_AUTH_ENABLED=true
+CADDYMGM_LOCALAUTH_ENABLED=true
+CADDYMGM_OIDCAUTH_ENABLED=false
+```
+
+`CADDYMGM_AUTH_ENABLED` enables the login portal itself.
+`CADDYMGM_LOCALAUTH_ENABLED` enables the built-in admin username/password login.
+`CADDYMGM_OIDCAUTH_ENABLED` enables OIDC login. When both local auth and OIDC
+are enabled, the login page shows both methods side by side.
 
 ## Config Access
 

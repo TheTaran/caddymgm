@@ -1,5 +1,68 @@
 const form = document.querySelector("#login-form");
 const errorBox = document.querySelector("#login-error");
+const oidcButton = document.querySelector("#oidc-login");
+const divider = document.querySelector("#login-divider");
+const disabledBox = document.querySelector("#login-disabled");
+const methodNote = document.querySelector("#login-method-note");
+
+init();
+
+async function init() {
+  const params = new URLSearchParams(window.location.search);
+  const error = params.get("error");
+  if (error) {
+    errorBox.textContent = friendlyError(error);
+    errorBox.hidden = false;
+  }
+
+  try {
+    const response = await fetch("/api/auth/config");
+    const config = await response.json();
+    if (!response.ok) throw new Error(config.error || "Could not load auth config");
+
+    const authEnabled = !!config.authEnabled;
+    const localEnabled = !!config.localAuthEnabled;
+    const oidcEnabled = !!config.oidcAuthEnabled;
+
+    if (!authEnabled) {
+      disabledBox.hidden = false;
+      methodNote.hidden = false;
+      methodNote.textContent = "Open the interface directly. No login is required.";
+      return;
+    }
+
+    form.hidden = !localEnabled;
+    oidcButton.hidden = !oidcEnabled;
+    divider.hidden = !(localEnabled && oidcEnabled);
+
+    if (localEnabled) {
+      document.querySelector("#username").required = true;
+      document.querySelector("#password").required = true;
+    }
+
+    if (!localEnabled && !oidcEnabled) {
+      methodNote.hidden = false;
+      methodNote.textContent = "Authentication is enabled, but no login method is available.";
+      errorBox.textContent = "Enable local authentication or OIDC in the environment.";
+      errorBox.hidden = false;
+      return;
+    }
+
+    if (localEnabled && oidcEnabled) {
+      methodNote.hidden = false;
+      methodNote.textContent = "Use local admin access or continue with your identity provider.";
+    } else if (localEnabled) {
+      methodNote.hidden = false;
+      methodNote.textContent = "Local admin login is enabled.";
+    } else if (oidcEnabled) {
+      methodNote.hidden = false;
+      methodNote.textContent = "OIDC login is enabled.";
+    }
+  } catch (err) {
+    errorBox.textContent = err.message;
+    errorBox.hidden = false;
+  }
+}
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -24,3 +87,28 @@ form.addEventListener("submit", async (event) => {
     errorBox.hidden = false;
   }
 });
+
+oidcButton.addEventListener("click", () => {
+  window.location.assign("/api/auth/oidc/start");
+});
+
+function friendlyError(code) {
+  switch (code) {
+    case "missing_oidc_response":
+      return "OIDC login did not return the expected response.";
+    case "oidc_not_available":
+      return "OIDC is not available with the current configuration.";
+    case "invalid_oidc_state":
+      return "The OIDC login session is invalid or expired.";
+    case "oidc_exchange_failed":
+      return "The OIDC authorization code could not be exchanged.";
+    case "missing_id_token":
+      return "The identity provider did not return an ID token.";
+    case "invalid_id_token":
+      return "The ID token could not be verified.";
+    case "invalid_oidc_claims":
+      return "The ID token claims could not be read.";
+    default:
+      return "Login failed.";
+  }
+}

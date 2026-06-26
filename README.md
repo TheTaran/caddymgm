@@ -341,23 +341,22 @@ CADDY_IMAGE=caddy:2-alpine
 ## Docker
 
 GitHub Actions runs tests for pull requests. Docker images are built only for
-three-part release tags like `v0.4.1` or `0.4.1`:
+two-part master release tags like `v0.4` or `0.4`:
 
 ```bash
-git tag v0.4.1
-git push origin v0.4.1
+git tag v0.4
+git push origin v0.4
 ```
 
-The image receives all useful tags from that single Git tag:
+The image receives these tags from that Git tag:
 
 ```text
 latest
-0.4.1
 0.4
 ```
 
-Two-part Git tags like `0.4` are not needed for Docker image tagging and do not
-trigger the Docker workflow.
+Three-part Git tags like `v0.4.1` are minor development tags and do not trigger
+the Docker workflow.
 
 ```text
 ghcr.io/thetaran/caddymgm:latest

@@ -41,6 +41,15 @@ jobs:
         run: |
           if [[ "${GITHUB_REF_NAME}" =~ ^v?[0-9]+\.[0-9]+$ ]]; then
             echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "release_kind=master" >> "$GITHUB_OUTPUT"
+            version="${GITHUB_REF_NAME#v}"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF_NAME}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "release_kind=minor" >> "$GITHUB_OUTPUT"
+            version="${GITHUB_REF_NAME#v}"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+            echo "minor_version=${version%.*}" >> "$GITHUB_OUTPUT"
           else
             echo "is_release=false" >> "$GITHUB_OUTPUT"
           fi
@@ -57,16 +66,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata
-        id: meta
+      - name: Prepare Docker tags
+        id: docker-tags
         if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-
+        shell: bash
+        run: |
+          {
+            echo "tags<<EOF"
+            if [[ "${{ steps.release-tag.outputs.release_kind }}" == "master" ]]; then
+              echo "${IMAGE_NAME}:latest"
+              echo "${IMAGE_NAME}:${{ steps.release-tag.outputs.version }}"
+            else
+              echo "${IMAGE_NAME}:${{ steps.release-tag.outputs.version }}"
+              echo "${IMAGE_NAME}:${{ steps.release-tag.outputs.minor_version }}"
+            fi
+            echo "${IMAGE_NAME}:sha-${GITHUB_SHA::7}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
@@ -74,7 +90,6 @@ jobs:
         with:
           context: ./caddymgmdev
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.docker-tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

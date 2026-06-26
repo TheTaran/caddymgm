@@ -23,10 +23,10 @@
         </nav>
 
         <div class="profile">
-          <span class="avatar">CM</span>
+          <span id="profile-avatar" class="avatar">CM</span>
           <div>
-            <strong>admin@local</strong>
-            <span>Caddy Management</span>
+            <strong id="profile-username">admin@local</strong>
+            <span id="profile-provider">Caddy Management</span>
           </div>
           <button id="logout" class="icon-button" type="button" title="Sign out">⏻</button>
         </div>
@@ -359,7 +359,7 @@
 
     <dialog id="acme-dialog">
       <div class="dialog-head">
-        <h2>ACME Certificate Request</h2>
+        <h2>Caddy Activity</h2>
         <button id="acme-dialog-close" class="secondary" type="button">Close</button>
       </div>
       <div class="acme-status">
@@ -367,7 +367,11 @@
           <strong id="acme-domain"></strong>
           <span id="acme-authority"></span>
         </div>
-        <ol id="acme-steps"></ol>
+        <div class="log-stream-label">
+          <span>Realtime</span>
+          <strong>Caddy service log</strong>
+        </div>
+        <div id="acme-log-list" class="log-list"></div>
       </div>
     </dialog>
 

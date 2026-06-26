@@ -2,6 +2,9 @@ const els = {
   status: document.querySelector("#status"),
   pageTitle: document.querySelector("#page-title"),
   sectionTitle: document.querySelector("#section-title"),
+  profileAvatar: document.querySelector("#profile-avatar"),
+  profileUsername: document.querySelector("#profile-username"),
+  profileProvider: document.querySelector("#profile-provider"),
   navItems: document.querySelectorAll(".nav-item[data-view]"),
   views: document.querySelectorAll(".view"),
   dashboardSiteList: document.querySelector("#dashboard-site-list"),
@@ -66,7 +69,7 @@ const els = {
   acmeDialogClose: document.querySelector("#acme-dialog-close"),
   acmeDomain: document.querySelector("#acme-domain"),
   acmeAuthority: document.querySelector("#acme-authority"),
-  acmeSteps: document.querySelector("#acme-steps"),
+  acmeLogList: document.querySelector("#acme-log-list"),
 };
 
 const viewTitles = {
@@ -80,6 +83,8 @@ const viewTitles = {
 let sites = [];
 let settings = null;
 let logPollTimer = null;
+let acmeDialogTimer = null;
+let acmeDialogContext = null;
 let serviceLogsExpanded = false;
 let siteLogsExpanded = false;
 const LOG_PREVIEW_LIMIT = 10;
@@ -107,7 +112,9 @@ els.issuerReset.addEventListener("click", closeIssuerForm);
 els.issuerDelete.addEventListener("click", deleteIssuer);
 els.issuerRootCAUploadButton.addEventListener("click", uploadRootCA);
 els.tlsEnabled.addEventListener("change", syncTLSMode);
-els.acmeDialogClose.addEventListener("click", () => els.acmeDialog.close());
+els.acmeDialogClose.addEventListener("click", closeACMEStatus);
+els.acmeDialog.addEventListener("close", stopACMEStatusPolling);
+els.acmeDialog.addEventListener("cancel", stopACMEStatusPolling);
 els.navItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
 document.querySelectorAll("input[name='mode']").forEach((input) => {
   input.addEventListener("change", syncMode);
@@ -116,9 +123,24 @@ document.querySelectorAll("input[name='mode']").forEach((input) => {
 init();
 
 async function init() {
-  await Promise.all([loadSites(), loadSettings()]);
+  await Promise.all([loadSites(), loadSettings(), loadProfile()]);
   renderLogs([]);
   renderServiceLogs([]);
+}
+
+async function loadProfile() {
+  try {
+    const me = await request("/api/auth/me");
+    const username = String(me.username || "admin");
+    const provider = String(me.provider || "local");
+    els.profileUsername.textContent = username;
+    els.profileProvider.textContent = provider === "oidc" ? "OIDC Login" : "Local Login";
+    els.profileAvatar.textContent = initialsForUser(username);
+  } catch (_err) {
+    els.profileUsername.textContent = "admin@local";
+    els.profileProvider.textContent = "Caddy Management";
+    els.profileAvatar.textContent = "CM";
+  }
 }
 
 function showView(view) {
@@ -501,6 +523,7 @@ async function loadServiceLogs() {
   try {
     const data = await request("/api/logs?source=caddy-service");
     renderServiceLogs(data.logs || [], data.available !== false);
+    renderACMEActivityLogs(data.logs || [], data.available !== false);
   } catch (err) {
     setStatus(err.message);
   }
@@ -732,18 +755,92 @@ function showACMEStatus(site) {
   const issuer = (settings?.acmeIssuers || []).find((item) => item.id === site.acmeIssuerId);
   els.acmeDomain.textContent = site.address;
   els.acmeAuthority.textContent = issuer ? issuer.name : "Selected ACME Authority";
-  els.acmeSteps.innerHTML = "";
-  [
-    `Saved web host ${site.address}.`,
-    "Generated Caddy TLS configuration with the selected ACME authority.",
-    "Loaded the updated Caddyfile through the Caddy Admin API.",
-    "Caddy now performs the ACME order and certificate validation in the background.",
-  ].forEach((step) => {
-    const item = document.createElement("li");
-    item.textContent = step;
-    els.acmeSteps.append(item);
-  });
+  acmeDialogContext = {
+    domain: String(site.address || "").toLowerCase(),
+    startedAt: Date.now() - 5000,
+  };
   els.acmeDialog.showModal();
+  renderACMEActivityLogs([], true);
+  stopACMEStatusPolling();
+  loadServiceLogs();
+  acmeDialogTimer = window.setInterval(loadServiceLogs, 2000);
+}
+
+function closeACMEStatus() {
+  stopACMEStatusPolling();
+  acmeDialogContext = null;
+  els.acmeDialog.close();
+}
+
+function stopACMEStatusPolling() {
+  if (!acmeDialogTimer) return;
+  window.clearInterval(acmeDialogTimer);
+  acmeDialogTimer = null;
+}
+
+function renderACMEActivityLogs(logs, available = true) {
+  if (!els.acmeDialog.open) return;
+  els.acmeLogList.innerHTML = "";
+  if (!available) {
+    appendACMEEmptyState("No Caddy service log available in the current mode.");
+    return;
+  }
+  const filtered = filterACMELogs(logs);
+  if (!filtered.length) {
+    appendACMEEmptyState("Waiting for matching Caddy log lines for this host.");
+    return;
+  }
+  for (const entry of filtered.slice(0, 12)) {
+    const row = document.createElement("div");
+    row.className = "log-row service-log-row";
+    row.innerHTML = `
+      <time></time>
+      <span class="log-method"></span>
+      <span class="log-path"></span>
+      <span class="log-status badge"></span>
+    `;
+    row.children[0].textContent = new Date(entry.time).toLocaleTimeString();
+    row.children[0].title = new Date(entry.time).toLocaleString();
+    row.children[1].textContent = entry.action || "service";
+    row.children[2].textContent = entry.message || "-";
+    row.children[2].title = entry.message || "";
+    row.children[3].textContent = entry.status || "INFO";
+    row.children[3].classList.toggle("off", String(entry.status || "").toUpperCase() === "ERROR");
+    els.acmeLogList.append(row);
+  }
+}
+
+function appendACMEEmptyState(message) {
+  const empty = document.createElement("div");
+  empty.className = "empty-state";
+  empty.textContent = message;
+  els.acmeLogList.append(empty);
+}
+
+function filterACMELogs(logs) {
+  if (!acmeDialogContext) return [];
+  const { domain, startedAt } = acmeDialogContext;
+  return logs.filter((entry) => {
+    const time = Date.parse(entry.time || "");
+    const recent = Number.isNaN(time) ? true : time >= startedAt;
+    if (!recent) return false;
+    const haystack = `${entry.action || ""} ${entry.message || ""} ${entry.status || ""}`.toLowerCase();
+    if (domain && haystack.includes(domain)) return true;
+    return [
+      "load complete",
+      "received request",
+      "automatic tls certificate management",
+      "obtaining certificate",
+      "trying to solve challenge",
+      "authorization finalized",
+      "validations succeeded",
+      "certificate obtained successfully",
+      "server running",
+      "served key authentication",
+      "releasing lock",
+      "lock acquired",
+    ].some((needle) => haystack.includes(needle));
+  });
 }
 
 async function deleteSite() {
@@ -788,6 +885,17 @@ async function uploadRequest(url, body) {
 async function logout() {
   await fetch("/api/auth/logout", { method: "POST" });
   window.location.assign("/login.html");
+}
+
+function initialsForUser(value) {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9@._ -]/g, "");
+  if (!cleaned) return "CM";
+  const parts = cleaned.split(/[@._ -]+/).filter(Boolean);
+  if (parts.length === 0) return cleaned.slice(0, 2).toUpperCase();
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
 function getMode() {

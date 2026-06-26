@@ -1570,6 +1570,29 @@ func serviceLogEntry(line string) LogEntry {
 	if level, ok := payload["level"].(string); ok && strings.TrimSpace(level) != "" {
 		entry.Status = strings.ToUpper(level)
 	}
+	extra := make([]string, 0, 4)
+	if identifier, ok := payload["identifier"].(string); ok && strings.TrimSpace(identifier) != "" {
+		extra = append(extra, identifier)
+	}
+	if challengeType, ok := payload["challenge_type"].(string); ok && strings.TrimSpace(challengeType) != "" {
+		extra = append(extra, challengeType)
+	}
+	if addr, ok := payload["addr"].(string); ok && strings.TrimSpace(addr) != "" {
+		extra = append(extra, addr)
+	}
+	if ca, ok := payload["ca"].(string); ok && strings.TrimSpace(ca) != "" {
+		extra = append(extra, ca)
+	}
+	if domains, ok := payload["domains"].([]any); ok {
+		for _, value := range domains {
+			if domain, ok := value.(string); ok && strings.TrimSpace(domain) != "" {
+				extra = append(extra, domain)
+			}
+		}
+	}
+	if len(extra) > 0 {
+		entry.Message = entry.Message + " - " + strings.Join(uniqueStrings(extra), " - ")
+	}
 	return entry
 }
 

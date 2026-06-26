@@ -1,23 +1,4 @@
 services:
-  caddy-init:
-    image: ${CADDY_IMAGE:-caddy:2-alpine}
-    container_name: caddy-init
-    profiles:
-      - docker-caddy
-    user: "0:0"
-    command:
-      - sh
-      - -c
-      - |
-        mkdir -p /data /logs /config /srv /ca-certificates /caddymgm-config
-        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /srv /ca-certificates /caddymgm-config
-    volumes:
-      - ./caddy-config:/config
-      - ./caddy-logs:/logs
-      - ./caddy-data:/data
-      - ./ca-certificates:/ca-certificates
-      - ./caddymgm-config:/caddymgm-config
-
   caddymgm:
     image: ghcr.io/thetaran/caddymgm:latest
     build:
@@ -59,9 +40,6 @@ services:
       - docker-caddy
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
-    depends_on:
-      caddy-init:
-        condition: service_completed_successfully
     environment:
       CADDY_ADMIN: 0.0.0.0:2019
     command:

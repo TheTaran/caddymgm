@@ -43,6 +43,8 @@ const els = {
   issuerDirectory: document.querySelector("#issuer-directory"),
   issuerEmail: document.querySelector("#issuer-email"),
   issuerRootCA: document.querySelector("#issuer-root-ca"),
+  issuerRootCAUpload: document.querySelector("#issuer-root-ca-upload"),
+  issuerRootCAUploadButton: document.querySelector("#issuer-root-ca-upload-button"),
   issuerReset: document.querySelector("#issuer-reset"),
   issuerDelete: document.querySelector("#issuer-delete"),
   issuerList: document.querySelector("#issuer-list"),
@@ -83,6 +85,7 @@ els.certificateForm.addEventListener("submit", saveIssuer);
 els.issuerNew.addEventListener("click", () => editIssuer({}));
 els.issuerReset.addEventListener("click", closeIssuerForm);
 els.issuerDelete.addEventListener("click", deleteIssuer);
+els.issuerRootCAUploadButton.addEventListener("click", uploadRootCA);
 els.tlsEnabled.addEventListener("change", syncTLSMode);
 els.acmeDialogClose.addEventListener("click", () => els.acmeDialog.close());
 els.navItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
@@ -202,6 +205,24 @@ async function deleteIssuer() {
   closeIssuerForm();
 }
 
+async function uploadRootCA() {
+  const file = els.issuerRootCAUpload.files?.[0];
+  if (!file) {
+    setStatus("Select a Root CA file first");
+    return;
+  }
+  const body = new FormData();
+  body.append("certificate", file);
+  try {
+    const data = await uploadRequest("/api/certificates/root-ca", body);
+    els.issuerRootCA.value = data.rootCaFile || "";
+    els.issuerRootCAUpload.value = "";
+    setStatus("Root CA uploaded");
+  } catch (err) {
+    setStatus(err.message);
+  }
+}
+
 async function saveIssuers(issuers, message) {
   const payload = {
     appName: settings?.appName || "CaddyMGM",
@@ -315,6 +336,7 @@ function editIssuer(issuer = null) {
   els.issuerDirectory.value = issuer?.directoryUrl || "";
   els.issuerEmail.value = issuer?.email || "";
   els.issuerRootCA.value = issuer?.rootCaFile || "";
+  els.issuerRootCAUpload.value = "";
   els.issuerDelete.hidden = !issuer?.id || issuer.builtIn;
   els.issuerName.readOnly = !!issuer?.builtIn;
   els.issuerDirectory.readOnly = !!issuer?.builtIn;
@@ -329,6 +351,7 @@ function closeIssuerForm() {
   els.issuerName.readOnly = false;
   els.issuerDirectory.readOnly = false;
   els.issuerRootCA.readOnly = false;
+  els.issuerRootCAUpload.value = "";
   els.issuerDelete.hidden = true;
 }
 
@@ -490,15 +513,23 @@ function closeEditor() {
 
 function syncMode() {
   const mode = getMode();
-  els.upstreamRow.hidden = mode !== "proxy";
-  els.rootRow.hidden = mode !== "static";
+  setFieldVisible(els.upstreamRow, mode === "proxy");
+  setFieldVisible(els.rootRow, mode === "static");
   els.upstream.required = mode === "proxy";
   els.root.required = mode === "static";
+  els.upstream.disabled = mode !== "proxy";
+  els.root.disabled = mode !== "static";
   if (mode === "proxy") {
     els.root.value = "";
   } else {
     els.upstream.value = "";
   }
+}
+
+function setFieldVisible(row, visible) {
+  row.hidden = !visible;
+  row.classList.toggle("field-hidden", !visible);
+  row.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
 function syncTLSMode() {
@@ -586,6 +617,17 @@ async function request(url, options = {}) {
   if (response.status === 204) return null;
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+async function uploadRequest(url, body) {
+  const response = await fetch(url, { method: "POST", body });
+  if (response.status === 401) {
+    window.location.assign("/login.html");
+    throw new Error("authentication required");
+  }
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Upload failed");
   return data;
 }
 

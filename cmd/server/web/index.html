@@ -202,6 +202,10 @@
                   Root CA file
                   <input id="issuer-root-ca" placeholder="/ca-certificates/internal-root-ca.cer" autocomplete="off" />
                 </label>
+                <div class="file-upload">
+                  <input id="issuer-root-ca-upload" type="file" accept=".crt,.cer,.pem,application/x-x509-ca-cert,application/pem-certificate" />
+                  <button type="button" id="issuer-root-ca-upload-button" class="secondary">Upload</button>
+                </div>
                 <div class="form-actions">
                   <button type="submit">Save Authority</button>
                   <button type="button" id="issuer-reset" class="secondary">Close</button>

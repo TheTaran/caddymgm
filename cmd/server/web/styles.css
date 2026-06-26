@@ -73,6 +73,10 @@ button.danger {
   color: #ffd8e2;
 }
 
+.field-hidden {
+  display: none !important;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
@@ -588,6 +592,17 @@ legend {
 
 .issuer-form[hidden] {
   display: none;
+}
+
+.file-upload {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.file-upload input {
+  min-width: 0;
 }
 
 .issuer-row {

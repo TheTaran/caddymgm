@@ -9,14 +9,15 @@ services:
       - sh
       - -c
       - |
-        mkdir -p /data /logs /config /caddy-config /srv
-        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /caddy-config /srv
+        mkdir -p /data /logs /config /caddy-config /srv /ca-certificates
+        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /caddy-config /srv /ca-certificates
     volumes:
       - ./config:/config
       - ./logs:/logs
       - ./caddy-data:/data
       - ./caddy-config:/caddy-config
       - ./site:/srv
+      - ./ca-certificates:/ca-certificates
 
   caddymgm:
     image: ghcr.io/thetaran/caddymgm:latest
@@ -36,6 +37,7 @@ services:
       CADDYMGM_CADDY_API_URL: ${CADDYMGM_CADDY_API_URL:-}
       CADDYMGM_ACCESS_LOG_DIR: ${CADDYMGM_ACCESS_LOG_DIR:-/logs}
       CADDYMGM_CADDY_DATA_DIR: /caddy-data
+      CADDYMGM_CA_CERT_DIR: /ca-certificates
       CADDY_ACCESS_LOG_DIR: ${CADDY_ACCESS_LOG_DIR:-/logs}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -43,6 +45,7 @@ services:
       - ./config:/config
       - ./logs:/logs
       - ./caddy-data:/caddy-data
+      - ./ca-certificates:/ca-certificates
 
   caddy:
     image: ${CADDY_IMAGE:-caddy:2-alpine}

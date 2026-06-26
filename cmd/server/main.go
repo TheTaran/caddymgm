@@ -123,6 +123,7 @@ type App struct {
 	accessLogDir string
 	caddyLogDir  string
 	caddyDataDir string
+	caCertDir    string
 	httpClient   *http.Client
 	settings     Settings
 	logs         []LogEntry
@@ -138,6 +139,7 @@ func main() {
 	accessLogDir := env("CADDYMGM_ACCESS_LOG_DIR", "/logs")
 	caddyLogDir := env("CADDY_ACCESS_LOG_DIR", accessLogDir)
 	caddyDataDir := env("CADDYMGM_CADDY_DATA_DIR", "/caddy-data")
+	caCertDir := env("CADDYMGM_CA_CERT_DIR", "/ca-certificates")
 
 	app := &App{
 		configPath:   configPath,
@@ -147,6 +149,7 @@ func main() {
 		accessLogDir: accessLogDir,
 		caddyLogDir:  caddyLogDir,
 		caddyDataDir: caddyDataDir,
+		caCertDir:    caCertDir,
 		httpClient:   &http.Client{Timeout: 15 * time.Second},
 		sessions:     make(map[string]time.Time),
 	}
@@ -172,6 +175,7 @@ func main() {
 	mux.HandleFunc("GET /api/settings", app.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", app.handleUpdateSettings)
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
+	mux.HandleFunc("POST /api/certificates/root-ca", app.handleUploadRootCA)
 	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
 	mux.HandleFunc("GET /api/auth/me", app.handleMe)
@@ -430,6 +434,47 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return entries[i].Time > entries[j].Time
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"logs": entries})
+}
+
+func (a *App) handleUploadRootCA(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid upload"))
+		return
+	}
+	file, header, err := r.FormFile("certificate")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("certificate file is required"))
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(io.LimitReader(file, 4<<20))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(content) == 0 {
+		writeError(w, http.StatusBadRequest, errors.New("certificate file is empty"))
+		return
+	}
+	pemContent, err := normalizeCertificateBundle(content)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	filename := rootCAFilename(header.Filename)
+	if err := os.MkdirAll(a.caCertDir, 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	path := filepath.Join(a.caCertDir, filename)
+	if err := os.WriteFile(path, pemContent, 0o644); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"rootCaFile": "/ca-certificates/" + filename,
+	})
 }
 
 func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -1005,6 +1050,64 @@ func caddyfileQuote(value string) string {
 	escaped := strings.ReplaceAll(value, `\`, `\\`)
 	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 	return `"` + escaped + `"`
+}
+
+func normalizeCertificateBundle(content []byte) ([]byte, error) {
+	var out bytes.Buffer
+	remaining := content
+	found := false
+	for {
+		block, rest := pem.Decode(remaining)
+		if block == nil {
+			break
+		}
+		remaining = rest
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, errors.New("certificate file contains an invalid certificate")
+		}
+		_ = pem.Encode(&out, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+		found = true
+	}
+	if found {
+		return out.Bytes(), nil
+	}
+	cert, err := x509.ParseCertificate(bytes.TrimSpace(content))
+	if err != nil {
+		return nil, errors.New("certificate file must contain a PEM or DER encoded certificate")
+	}
+	_ = pem.Encode(&out, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+	return out.Bytes(), nil
+}
+
+func rootCAFilename(name string) string {
+	base := strings.TrimSuffix(filepath.Base(name), filepath.Ext(name))
+	base = strings.TrimSpace(base)
+	if base == "" || base == "." {
+		base = "root-ca"
+	}
+	var out strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(base) {
+		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '-'
+		if valid {
+			out.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			out.WriteByte('-')
+			lastDash = true
+		}
+	}
+	safe := strings.Trim(out.String(), ".-")
+	if safe == "" {
+		safe = "root-ca"
+	}
+	return safe + ".crt"
 }
 
 func (a *App) readAccessLogsLocked(siteID string, sites []Site) []LogEntry {

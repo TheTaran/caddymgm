@@ -270,7 +270,13 @@ place the Root CA certificate in:
 ./ca-certificates
 ```
 
-Use PEM encoded files with a `.crt`, `.cer` or `.pem` extension, for example:
+Root CA certificates can also be uploaded from the `Certificates` view when
+editing an ACME authority. Uploaded PEM or DER certificates are stored under
+`./ca-certificates` as PEM `.crt` files and the `Root CA file` field is filled
+automatically.
+
+For manual placement, use PEM encoded files with a `.crt`, `.cer` or `.pem`
+extension, for example:
 
 ```text
 ./ca-certificates/internal-root-ca.cer
@@ -376,6 +382,7 @@ Environment variables:
 | `CADDYMGM_CADDY_API_URL` | empty | Caddy Admin API base URL for `native`, `docker`, or `api` mode |
 | `CADDYMGM_ACCESS_LOG_DIR` | `/logs` | Directory where CaddyMGM reads website access logs |
 | `CADDYMGM_CADDY_DATA_DIR` | `/caddy-data` | Caddy data directory used for certificate metadata and cleanup |
+| `CADDYMGM_CA_CERT_DIR` | `/ca-certificates` | Directory where uploaded Root CA certificates are stored |
 | `CADDY_ACCESS_LOG_DIR` | `/logs` | Directory written into generated Caddy log directives |
 | `COMPOSE_PROFILES` | empty | Set to `docker-caddy` to start the optional Compose Caddy service |
 | `CADDY_IMAGE` | `caddy:2-alpine` | Caddy Docker image used by the separate Caddy service |

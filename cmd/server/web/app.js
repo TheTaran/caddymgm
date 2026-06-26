@@ -33,6 +33,17 @@ const els = {
   settingsForm: document.querySelector("#settings-form"),
   settingsUsername: document.querySelector("#settings-username"),
   settingsPassword: document.querySelector("#settings-password"),
+  settingsOIDCEnabled: document.querySelector("#settings-oidc-enabled"),
+  settingsOIDCIssuer: document.querySelector("#settings-oidc-issuer"),
+  settingsOIDCClientID: document.querySelector("#settings-oidc-client-id"),
+  settingsOIDCClientSecret: document.querySelector("#settings-oidc-client-secret"),
+  settingsOIDCRedirect: document.querySelector("#settings-oidc-redirect"),
+  settingsOIDCScopes: document.querySelector("#settings-oidc-scopes"),
+  settingsWebHost: document.querySelector("#settings-web-host"),
+  settingsWebUpstream: document.querySelector("#settings-web-upstream"),
+  settingsWebTLSEnabled: document.querySelector("#settings-web-tls-enabled"),
+  settingsWebACMERow: document.querySelector("#settings-web-acme-row"),
+  settingsWebACME: document.querySelector("#settings-web-acme"),
   settingsLogRetention: document.querySelector("#settings-log-retention"),
   settingsCaddyMode: document.querySelector("#settings-caddy-mode"),
   settingsCaddyAPIURL: document.querySelector("#settings-caddy-api-url"),
@@ -81,6 +92,7 @@ els.logSiteFilter.addEventListener("change", () => {
   syncLogPolling();
 });
 els.settingsForm.addEventListener("submit", saveSettings);
+els.settingsWebTLSEnabled.addEventListener("change", syncSettingsWebTLS);
 els.certificateForm.addEventListener("submit", saveIssuer);
 els.issuerNew.addEventListener("click", () => editIssuer({}));
 els.issuerReset.addEventListener("click", closeIssuerForm);
@@ -138,11 +150,22 @@ async function loadSettings() {
     settings = await request("/api/settings");
     els.settingsUsername.value = settings.username || "admin";
     els.settingsPassword.value = "";
+    els.settingsOIDCEnabled.checked = !!settings.oidc?.enabled;
+    els.settingsOIDCIssuer.value = settings.oidc?.issuerUrl || "";
+    els.settingsOIDCClientID.value = settings.oidc?.clientId || "";
+    els.settingsOIDCClientSecret.value = "";
+    els.settingsOIDCRedirect.value = settings.oidc?.redirectUrl || "";
+    els.settingsOIDCScopes.value = settings.oidc?.scopes || "openid profile email";
+    els.settingsWebHost.value = settings.webInterface?.host || "";
+    els.settingsWebUpstream.value = settings.webInterface?.upstream || "http://caddymgm:8080";
+    els.settingsWebTLSEnabled.checked = !!settings.webInterface?.tlsEnabled;
     els.settingsLogRetention.value = settings.logRetention || 100;
     els.settingsCaddyMode.value = settings.caddyMode || "file";
     els.settingsCaddyAPIURL.value = settings.caddyApiUrl || "";
     renderCertificatesView();
     renderIssuerOptions();
+    els.settingsWebACME.value = settings.webInterface?.acmeIssuerId || "";
+    syncSettingsWebTLS();
   } catch (err) {
     setStatus(err.message);
   }
@@ -155,6 +178,20 @@ async function saveSettings(event) {
     authEnabled: settings?.authEnabled ?? true,
     username: els.settingsUsername.value,
     password: els.settingsPassword.value,
+    oidc: {
+      enabled: els.settingsOIDCEnabled.checked,
+      issuerUrl: els.settingsOIDCIssuer.value,
+      clientId: els.settingsOIDCClientID.value,
+      clientSecret: els.settingsOIDCClientSecret.value,
+      redirectUrl: els.settingsOIDCRedirect.value,
+      scopes: els.settingsOIDCScopes.value,
+    },
+    webInterface: {
+      host: els.settingsWebHost.value,
+      upstream: els.settingsWebUpstream.value,
+      tlsEnabled: els.settingsWebTLSEnabled.checked,
+      acmeIssuerId: els.settingsWebTLSEnabled.checked ? els.settingsWebACME.value : "",
+    },
     logRetention: Number(els.settingsLogRetention.value || 100),
     acmeIssuers: settings?.acmeIssuers || [],
   };
@@ -229,6 +266,8 @@ async function saveIssuers(issuers, message) {
     authEnabled: settings?.authEnabled ?? true,
     username: settings?.username || els.settingsUsername.value || "admin",
     password: "",
+    oidc: settings?.oidc || {},
+    webInterface: settings?.webInterface || {},
     logRetention: settings?.logRetention || Number(els.settingsLogRetention.value || 100),
     acmeIssuers: issuers,
   };
@@ -319,14 +358,31 @@ function certificateIssuerName(site) {
 
 function renderIssuerOptions() {
   const current = els.acmeIssuer.value;
+  const settingsCurrent = els.settingsWebACME.value;
   els.acmeIssuer.innerHTML = "";
+  els.settingsWebACME.innerHTML = "";
   for (const issuer of settings?.acmeIssuers || []) {
     const option = document.createElement("option");
     option.value = issuer.id;
     option.textContent = issuer.name;
     els.acmeIssuer.append(option);
+    els.settingsWebACME.append(option.cloneNode(true));
   }
   els.acmeIssuer.value = current;
+  els.settingsWebACME.value = settingsCurrent;
+  syncSettingsWebTLS();
+}
+
+function syncSettingsWebTLS() {
+  const enabled = els.settingsWebTLSEnabled.checked;
+  els.settingsWebACMERow.hidden = !enabled;
+  els.settingsWebACME.required = enabled;
+  els.settingsWebACME.disabled = !enabled;
+  if (!enabled) {
+    els.settingsWebACME.value = "";
+  } else if (!els.settingsWebACME.value && els.settingsWebACME.options.length > 0) {
+    els.settingsWebACME.value = els.settingsWebACME.options[0].value;
+  }
 }
 
 function editIssuer(issuer = null) {

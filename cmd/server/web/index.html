@@ -251,45 +251,92 @@
         </section>
 
         <section id="view-settings" class="view">
-          <section class="panel-card editor-card settings-card">
-            <form id="settings-form">
-              <div class="panel-title">
-                <div>
-                  <span class="eyebrow">CaddyMGM</span>
-                  <h2>Settings</h2>
-                </div>
+          <form id="settings-form" class="settings-form">
+            <section class="panel-card editor-card settings-card settings-group">
+              <div class="panel-heading">
+                <h2>Authentication</h2>
+                <span>Local login and OIDC</span>
               </div>
-
               <label>
                 Admin User
                 <input id="settings-username" autocomplete="off" />
               </label>
-
               <label>
                 New Password
                 <input id="settings-password" type="password" placeholder="Leave empty to keep the current password" autocomplete="new-password" />
               </label>
-
-              <label>
-                Log Retention
-                <input id="settings-log-retention" type="number" min="25" step="25" />
+              <label class="switch">
+                <input id="settings-oidc-enabled" type="checkbox" />
+                <span>OIDC enabled</span>
               </label>
+              <label>
+                OIDC Issuer URL
+                <input id="settings-oidc-issuer" placeholder="https://idp.example.com" autocomplete="off" />
+              </label>
+              <label>
+                OIDC Client ID
+                <input id="settings-oidc-client-id" autocomplete="off" />
+              </label>
+              <label>
+                OIDC Client Secret
+                <input id="settings-oidc-client-secret" type="password" placeholder="Leave empty to keep the current secret" autocomplete="new-password" />
+              </label>
+              <label>
+                OIDC Redirect URL
+                <input id="settings-oidc-redirect" placeholder="https://mgm.example.com/auth/oidc/callback" autocomplete="off" />
+              </label>
+              <label>
+                OIDC Scopes
+                <input id="settings-oidc-scopes" placeholder="openid profile email" autocomplete="off" />
+              </label>
+            </section>
 
+            <section class="panel-card editor-card settings-card settings-group">
+              <div class="panel-heading">
+                <h2>Web Interface</h2>
+                <span>CaddyMGM frontend and TLS</span>
+              </div>
+              <label>
+                Interface Host
+                <input id="settings-web-host" placeholder="mgm.example.com" autocomplete="off" />
+              </label>
+              <label>
+                Interface Upstream
+                <input id="settings-web-upstream" placeholder="http://caddymgm:8080" autocomplete="off" />
+              </label>
+              <label class="switch">
+                <input id="settings-web-tls-enabled" type="checkbox" />
+                <span>TLS enabled</span>
+              </label>
+              <label id="settings-web-acme-row" hidden>
+                ACME Authority
+                <select id="settings-web-acme"></select>
+              </label>
               <label>
                 Caddy Mode
                 <input id="settings-caddy-mode" readonly />
               </label>
-
               <label>
                 Caddy API URL
                 <input id="settings-caddy-api-url" readonly />
               </label>
+            </section>
 
-              <div class="form-actions">
-                <button type="submit">Save Settings</button>
+            <section class="panel-card editor-card settings-card settings-group">
+              <div class="panel-heading">
+                <h2>Logs</h2>
+                <span>Retention and Caddy access logs</span>
               </div>
-            </form>
-          </section>
+              <label>
+                Log Retention
+                <input id="settings-log-retention" type="number" min="25" step="25" />
+              </label>
+            </section>
+
+            <div class="form-actions settings-actions">
+              <button type="submit">Save Settings</button>
+            </div>
+          </form>
         </section>
       </main>
     </div>

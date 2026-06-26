@@ -96,11 +96,29 @@ type Settings struct {
 	Username     string       `json:"username"`
 	Password     string       `json:"password,omitempty"`
 	PasswordHash string       `json:"passwordHash,omitempty"`
+	OIDC         OIDCSettings `json:"oidc"`
 	ConfigPath   string       `json:"configPath"`
 	LogRetention int          `json:"logRetention"`
 	ACMEIssuers  []ACMEIssuer `json:"acmeIssuers,omitempty"`
 	CaddyMode    string       `json:"caddyMode"`
 	CaddyAPIURL  string       `json:"caddyApiUrl"`
+	WebInterface WebInterface `json:"webInterface"`
+}
+
+type OIDCSettings struct {
+	Enabled      bool   `json:"enabled"`
+	IssuerURL    string `json:"issuerUrl,omitempty"`
+	ClientID     string `json:"clientId,omitempty"`
+	ClientSecret string `json:"clientSecret,omitempty"`
+	RedirectURL  string `json:"redirectUrl,omitempty"`
+	Scopes       string `json:"scopes,omitempty"`
+}
+
+type WebInterface struct {
+	Host         string `json:"host,omitempty"`
+	Upstream     string `json:"upstream,omitempty"`
+	TLSEnabled   bool   `json:"tlsEnabled"`
+	ACMEIssuerID string `json:"acmeIssuerId,omitempty"`
 }
 
 type LogEntry struct {
@@ -373,6 +391,7 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if next.LogRetention < 25 {
 		next.LogRetention = 100
 	}
+	normalizeWebInterface(&next.WebInterface)
 	if next.ACMEIssuers == nil {
 		next.ACMEIssuers = a.settings.ACMEIssuers
 	}
@@ -382,6 +401,10 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next.ACMEIssuers = issuers
+	if err := validateWebInterface(next.WebInterface, issuers); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 
 	next.ConfigPath = a.configPath
 	next.AuthEnabled = authEnabledFromEnv()
@@ -392,6 +415,7 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		next.PasswordHash = hashPassword(next.Password)
 	}
 	next.Password = ""
+	next.OIDC = normalizeOIDCSettings(next.OIDC, a.settings.OIDC)
 	sites, head, tail, err := a.load()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -563,6 +587,8 @@ func (a *App) ensureSettings() error {
 		if a.settings.LogRetention == 0 {
 			a.settings.LogRetention = 100
 		}
+		normalizeWebInterface(&a.settings.WebInterface)
+		a.settings.OIDC = normalizeOIDCSettings(a.settings.OIDC, OIDCSettings{})
 		a.settings.ACMEIssuers = ensureBuiltInACMEIssuers(a.settings.ACMEIssuers)
 		return a.saveSettingsLocked()
 	}
@@ -578,6 +604,7 @@ func (a *App) ensureSettings() error {
 		ConfigPath:   a.configPath,
 		LogRetention: 100,
 		ACMEIssuers:  ensureBuiltInACMEIssuers(nil),
+		WebInterface: WebInterface{Upstream: env("CADDYMGM_WEB_INTERFACE_UPSTREAM", "http://caddymgm:8080")},
 	}
 	return a.saveSettingsLocked()
 }
@@ -598,6 +625,7 @@ func (a *App) publicSettingsLocked() Settings {
 	settings := a.settings
 	settings.Password = ""
 	settings.PasswordHash = ""
+	settings.OIDC.ClientSecret = ""
 	settings.ConfigPath = a.configPath
 	settings.CaddyMode = a.caddyMode
 	settings.CaddyAPIURL = a.caddyAPIURL
@@ -634,7 +662,7 @@ func (a *App) save(head string, sites []Site, tail string) error {
 	if out.Len() > 0 {
 		out.WriteString("\n\n")
 	}
-	out.WriteString(renderManaged(sites, a.settings.ACMEIssuers, a.caddyLogDir))
+	out.WriteString(renderManaged(sites, a.settings.ACMEIssuers, a.caddyLogDir, a.settings.WebInterface))
 	if strings.TrimSpace(tail) != "" {
 		out.WriteString("\n")
 		out.WriteString(strings.TrimLeft(tail, "\n"))
@@ -837,13 +865,18 @@ func parseSite(id string, lines []string) (Site, error) {
 	return site, nil
 }
 
-func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string) string {
+func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string, webInterface WebInterface) string {
 	var out strings.Builder
 	out.WriteString(managedStart + "\n")
 	for _, site := range sites {
 		out.WriteString("# caddymgm:site " + site.ID + "\n")
 		out.WriteString(renderSite(site, issuers, logDir))
 		out.WriteString("# caddymgm:end-site\n")
+	}
+	if strings.TrimSpace(webInterface.Host) != "" {
+		out.WriteString("# caddymgm:interface\n")
+		out.WriteString(renderWebInterface(webInterface, issuers, logDir))
+		out.WriteString("# caddymgm:end-interface\n")
 	}
 	out.WriteString(managedEnd + "\n")
 	return out.String()
@@ -901,6 +934,44 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir string) string {
 		out.WriteString(prefix + "\t" + line + "\n")
 	}
 	out.WriteString(prefix + "}\n")
+	return out.String()
+}
+
+func renderWebInterface(webInterface WebInterface, issuers []ACMEIssuer, logDir string) string {
+	var out strings.Builder
+	host := strings.TrimSpace(webInterface.Host)
+	if !webInterface.TLSEnabled {
+		host = "http://" + strings.TrimPrefix(strings.TrimPrefix(host, "http://"), "https://")
+	}
+	upstream := strings.TrimSpace(webInterface.Upstream)
+	if upstream == "" {
+		upstream = "http://caddymgm:8080"
+	}
+	out.WriteString(host + " {\n")
+	out.WriteString("\treverse_proxy " + upstream + "\n")
+	if webInterface.TLSEnabled {
+		if issuer, ok := findACMEIssuer(issuers, webInterface.ACMEIssuerID); ok {
+			out.WriteString("\t# caddymgm:tls-issuer " + issuer.ID + "\n")
+			out.WriteString("\ttls {\n")
+			out.WriteString("\t\tissuer acme {\n")
+			out.WriteString("\t\t\tdir " + issuer.DirectoryURL + "\n")
+			if issuer.Email != "" {
+				out.WriteString("\t\t\temail " + issuer.Email + "\n")
+			}
+			if issuer.RootCAFile != "" {
+				out.WriteString("\t\t\ttrusted_roots " + caddyfileQuote(issuer.RootCAFile) + "\n")
+			}
+			out.WriteString("\t\t}\n")
+			out.WriteString("\t}\n")
+		}
+	}
+	out.WriteString("\tlog {\n")
+	out.WriteString("\t\toutput file " + accessLogPath(logDir, "caddymgm-interface") + " {\n")
+	out.WriteString("\t\t\tmode 0644\n")
+	out.WriteString("\t\t}\n")
+	out.WriteString("\t\tformat json\n")
+	out.WriteString("\t}\n")
+	out.WriteString("}\n")
 	return out.String()
 }
 
@@ -1039,6 +1110,55 @@ func validateRootCAFile(path string) error {
 		return errors.New("root CA file must be a .crt, .cer or .pem file under /ca-certificates")
 	}
 	return nil
+}
+
+func normalizeWebInterface(webInterface *WebInterface) {
+	webInterface.Host = strings.TrimSpace(webInterface.Host)
+	webInterface.Upstream = strings.TrimSpace(webInterface.Upstream)
+	webInterface.ACMEIssuerID = strings.TrimSpace(webInterface.ACMEIssuerID)
+	if webInterface.Upstream == "" {
+		webInterface.Upstream = env("CADDYMGM_WEB_INTERFACE_UPSTREAM", "http://caddymgm:8080")
+	}
+	if !webInterface.TLSEnabled {
+		webInterface.ACMEIssuerID = ""
+	}
+}
+
+func validateWebInterface(webInterface WebInterface, issuers []ACMEIssuer) error {
+	if strings.TrimSpace(webInterface.Host) == "" {
+		return nil
+	}
+	host := strings.TrimPrefix(strings.TrimPrefix(webInterface.Host, "http://"), "https://")
+	if !addressPattern.MatchString(host) {
+		return errors.New("web interface host contains unsupported characters")
+	}
+	if _, err := normalizeProxyUpstream(webInterface.Upstream); err != nil {
+		return fmt.Errorf("web interface upstream: %w", err)
+	}
+	if webInterface.TLSEnabled {
+		if webInterface.ACMEIssuerID == "" {
+			return errors.New("web interface ACME authority is required when TLS is enabled")
+		}
+		if _, ok := findACMEIssuer(issuers, webInterface.ACMEIssuerID); !ok {
+			return errors.New("web interface ACME authority was not found")
+		}
+	}
+	return nil
+}
+
+func normalizeOIDCSettings(next, current OIDCSettings) OIDCSettings {
+	next.IssuerURL = strings.TrimSpace(next.IssuerURL)
+	next.ClientID = strings.TrimSpace(next.ClientID)
+	next.ClientSecret = strings.TrimSpace(next.ClientSecret)
+	next.RedirectURL = strings.TrimSpace(next.RedirectURL)
+	next.Scopes = strings.TrimSpace(next.Scopes)
+	if next.ClientSecret == "" {
+		next.ClientSecret = current.ClientSecret
+	}
+	if next.Scopes == "" {
+		next.Scopes = "openid profile email"
+	}
+	return next
 }
 
 func isRootCAFile(path string) bool {

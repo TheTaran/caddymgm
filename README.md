@@ -2,8 +2,9 @@
 
 Management web interface for Caddy websites.
 
-The container serves a small UI and API. The Caddy configuration stays outside
-the container and is mounted into `/config`.
+The container serves a small UI and API with Go's built-in `net/http` server.
+No nginx or Apache is bundled in the CaddyMGM container. The Caddy configuration
+stays outside the container and is mounted into `/config`.
 
 Docker Compose can run only CaddyMGM, or CaddyMGM plus a separate Caddy service.
 This allows the Caddy reverse proxy to be updated independently from the
@@ -333,6 +334,9 @@ CADDY_IMAGE=caddy:2-alpine
 - `Certificates` manages ACME authorities and lists managed TLS certificates.
 - `Logs` shows website access logs from Caddy.
 - `Settings` shows and updates CaddyMGM settings, including authentication.
+  Settings are grouped into `Authentication`, `Web Interface` and `Logs`.
+  `Web Interface` can publish the CaddyMGM UI through Caddy with optional ACME
+  TLS, using the same ACME authorities as web hosts.
 
 ## Docker
 
@@ -383,6 +387,7 @@ Environment variables:
 | `CADDYMGM_ACCESS_LOG_DIR` | `/logs` | Directory where CaddyMGM reads website access logs |
 | `CADDYMGM_CADDY_DATA_DIR` | `/caddy-data` | Caddy data directory used for certificate metadata and cleanup |
 | `CADDYMGM_CA_CERT_DIR` | `/ca-certificates` | Directory where uploaded Root CA certificates are stored |
+| `CADDYMGM_WEB_INTERFACE_UPSTREAM` | `http://caddymgm:8080` | Default upstream used when publishing the CaddyMGM web interface through Caddy |
 | `CADDY_ACCESS_LOG_DIR` | `/logs` | Directory written into generated Caddy log directives |
 | `COMPOSE_PROFILES` | empty | Set to `docker-caddy` to start the optional Compose Caddy service |
 | `CADDY_IMAGE` | `caddy:2-alpine` | Caddy Docker image used by the separate Caddy service |

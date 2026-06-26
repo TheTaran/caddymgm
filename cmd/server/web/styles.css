@@ -569,8 +569,23 @@ legend {
   font-size: 11px;
 }
 
-.settings-card {
-  max-width: 680px;
+.settings-form {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-group {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+}
+
+.settings-group .panel-heading {
+  margin: 0;
+}
+
+.settings-actions {
+  padding: 0 16px 8px;
 }
 
 .certificates-grid {

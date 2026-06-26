@@ -8,6 +8,7 @@ const methodNote = document.querySelector("#login-method-note");
 init();
 
 async function init() {
+  applyLoginModes(false, false, false);
   const params = new URLSearchParams(window.location.search);
   const error = params.get("error");
   if (error) {
@@ -25,20 +26,14 @@ async function init() {
     const oidcEnabled = !!config.oidcAuthEnabled;
 
     if (!authEnabled) {
+      applyLoginModes(false, false, true);
       disabledBox.hidden = false;
       methodNote.hidden = false;
       methodNote.textContent = "Open the interface directly. No login is required.";
       return;
     }
 
-    form.hidden = !localEnabled;
-    oidcButton.hidden = !oidcEnabled;
-    divider.hidden = !(localEnabled && oidcEnabled);
-
-    if (localEnabled) {
-      document.querySelector("#username").required = true;
-      document.querySelector("#password").required = true;
-    }
+    applyLoginModes(localEnabled, oidcEnabled, false);
 
     if (!localEnabled && !oidcEnabled) {
       methodNote.hidden = false;
@@ -55,13 +50,27 @@ async function init() {
       methodNote.hidden = false;
       methodNote.textContent = "Local admin login is enabled.";
     } else if (oidcEnabled) {
-      methodNote.hidden = false;
-      methodNote.textContent = "OIDC login is enabled.";
+      methodNote.hidden = true;
+      methodNote.textContent = "";
     }
   } catch (err) {
     errorBox.textContent = err.message;
     errorBox.hidden = false;
   }
+}
+
+function applyLoginModes(localEnabled, oidcEnabled, authDisabled) {
+  const username = document.querySelector("#username");
+  const password = document.querySelector("#password");
+
+  form.hidden = !localEnabled || authDisabled;
+  oidcButton.hidden = !oidcEnabled || authDisabled;
+  divider.hidden = !(localEnabled && oidcEnabled) || authDisabled;
+
+  username.required = !!localEnabled && !authDisabled;
+  password.required = !!localEnabled && !authDisabled;
+  username.disabled = !localEnabled || authDisabled;
+  password.disabled = !localEnabled || authDisabled;
 }
 
 form.addEventListener("submit", async (event) => {

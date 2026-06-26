@@ -7,9 +7,6 @@ caddymgm-data/*
 !caddymgm-data/.gitkeep
 caddy-logs/
 caddy-data/
-caddy-state/
-caddy-site/*
-!caddy-site/.gitkeep
 ca-certificates/*
 !ca-certificates/.gitkeep
 AGENTS.md

@@ -28,9 +28,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: caddymgmdev/go.mod
 
       - name: Test
+        working-directory: caddymgmdev
         run: go test ./...
 
       - name: Classify tag
@@ -71,7 +72,7 @@ jobs:
         if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./caddymgmdev
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

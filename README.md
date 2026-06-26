@@ -2,6 +2,11 @@
 
 Management web interface for Caddy websites.
 
+This repository is split into two layers:
+
+- Runtime folders at the repository root for Caddy and CaddyMGM data
+- Development source under `./caddymgmdev`
+
 The container serves a small UI and API with Go's built-in `net/http` server.
 No nginx or Apache is bundled in the CaddyMGM container. The Caddy configuration
 stays outside the container and is mounted into `/config`.
@@ -119,6 +124,36 @@ volumes:
   - ./caddymgm-data:/caddymgm-data
 ```
 
+## Source Layout
+
+Development files live under:
+
+```text
+./caddymgmdev
+```
+
+That folder contains:
+
+```text
+./caddymgmdev/cmd
+./caddymgmdev/Dockerfile
+./caddymgmdev/go.mod
+./caddymgmdev/go.sum
+```
+
+This keeps the repository root focused on the deployable runtime structure:
+
+```text
+./caddy-config
+./caddy-state
+./caddy-data
+./caddy-logs
+./caddy-site
+./caddymgm-config
+./caddymgm-data
+./ca-certificates
+```
+
 The DNS provider hook and provider credentials are passed through `.env` to
 `acme.sh`. Example:
 
@@ -168,8 +203,6 @@ Caddy certificate storage and runtime data are stored outside the containers:
 
 ```text
 ./caddy-data
-./caddy-state
-./caddy-site
 ```
 
 Docker Compose uses the official Caddy image mount layout:
@@ -177,14 +210,16 @@ Docker Compose uses the official Caddy image mount layout:
 ```yaml
 volumes:
   - ./caddy-config:/etc/caddy:ro
-  - ./caddy-site:/srv
+  - ./caddy-data/site:/srv
   - ./caddy-data:/data
-  - ./caddy-state:/config
+  - ./caddy-data/state:/config
 ```
 
 Caddy stores certificates under `./caddy-data/caddy/certificates`. CaddyMGM
 also mounts `./caddy-data` at `/caddy-data` to show certificate expiration dates
 and clean up managed certificate files when a web host is deleted.
+Caddy's site files and runtime `/config` state are also stored below
+`./caddy-data/site` and `./caddy-data/state`.
 
 Caddy receives the same Caddyfile as read-only configuration:
 

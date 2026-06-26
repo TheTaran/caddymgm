@@ -9,21 +9,20 @@ services:
       - sh
       - -c
       - |
-        mkdir -p /data /logs /config /caddy-state /srv /ca-certificates /caddymgm-config /caddymgm-data
-        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /caddy-state /srv /ca-certificates /caddymgm-config /caddymgm-data
+        mkdir -p /data /logs /config /srv /ca-certificates /caddymgm-config /caddymgm-data
+        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /srv /ca-certificates /caddymgm-config /caddymgm-data
     volumes:
       - ./caddy-config:/config
       - ./caddy-logs:/logs
       - ./caddy-data:/data
-      - ./caddy-state:/caddy-state
-      - ./caddy-site:/srv
       - ./ca-certificates:/ca-certificates
       - ./caddymgm-config:/caddymgm-config
       - ./caddymgm-data:/caddymgm-data
 
   caddymgm:
     image: ghcr.io/thetaran/caddymgm:latest
-    build: .
+    build:
+      context: ./caddymgmdev
     container_name: caddymgm
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
@@ -81,8 +80,8 @@ services:
       - "${CADDY_HTTPS_PORT:-443}:443/udp"
     volumes:
       - ./caddy-config:/etc/caddy:ro
-      - ./caddy-site:/srv
+      - ./caddy-data/site:/srv
       - ./caddy-logs:/logs
       - ./caddy-data:/data
-      - ./caddy-state:/config
+      - ./caddy-data/state:/config
       - ./ca-certificates:/ca-certificates:ro

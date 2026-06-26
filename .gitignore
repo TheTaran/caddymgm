@@ -2,4 +2,10 @@
 config/Caddyfile
 config/caddymgm-settings.json
 logs/
+caddy-data/
+caddy-config/
+site/*
+!site/.gitkeep
+ca-certificates/*
+!ca-certificates/.gitkeep
 AGENTS.md

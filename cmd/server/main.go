@@ -86,6 +86,7 @@ type ACMEIssuer struct {
 	Name         string `json:"name"`
 	DirectoryURL string `json:"directoryUrl"`
 	Email        string `json:"email,omitempty"`
+	RootCAFile   string `json:"rootCaFile,omitempty"`
 	BuiltIn      bool   `json:"builtIn,omitempty"`
 }
 
@@ -832,6 +833,9 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir string) string {
 			if issuer.Email != "" {
 				out.WriteString(prefix + "\t\t\temail " + issuer.Email + "\n")
 			}
+			if issuer.RootCAFile != "" {
+				out.WriteString(prefix + "\t\t\ttrusted_roots " + caddyfileQuote(issuer.RootCAFile) + "\n")
+			}
 			out.WriteString(prefix + "\t\t}\n")
 			out.WriteString(prefix + "\t}\n")
 		}
@@ -929,9 +933,11 @@ func normalizeACMEIssuers(issuers []ACMEIssuer) ([]ACMEIssuer, error) {
 		issuers[i].Name = strings.TrimSpace(issuers[i].Name)
 		issuers[i].DirectoryURL = strings.TrimSpace(issuers[i].DirectoryURL)
 		issuers[i].Email = strings.TrimSpace(issuers[i].Email)
+		issuers[i].RootCAFile = strings.TrimSpace(issuers[i].RootCAFile)
 		if issuers[i].ID == "letsencrypt" {
 			issuers[i].Name = "Let's Encrypt"
 			issuers[i].DirectoryURL = "https://acme-v02.api.letsencrypt.org/directory"
+			issuers[i].RootCAFile = ""
 			issuers[i].BuiltIn = true
 		}
 		if issuers[i].ID == "" {
@@ -943,6 +949,9 @@ func normalizeACMEIssuers(issuers []ACMEIssuer) ([]ACMEIssuer, error) {
 		if !strings.HasPrefix(issuers[i].DirectoryURL, "https://") {
 			return nil, errors.New("certificate authority directory URL must start with https://")
 		}
+		if err := validateRootCAFile(issuers[i].RootCAFile); err != nil {
+			return nil, err
+		}
 	}
 	return issuers, nil
 }
@@ -952,6 +961,7 @@ func ensureBuiltInACMEIssuers(issuers []ACMEIssuer) []ACMEIssuer {
 		if issuers[i].ID == "letsencrypt" {
 			issuers[i].Name = "Let's Encrypt"
 			issuers[i].DirectoryURL = "https://acme-v02.api.letsencrypt.org/directory"
+			issuers[i].RootCAFile = ""
 			issuers[i].BuiltIn = true
 			return issuers
 		}
@@ -971,6 +981,30 @@ func findACMEIssuer(issuers []ACMEIssuer, id string) (ACMEIssuer, bool) {
 		}
 	}
 	return ACMEIssuer{}, false
+}
+
+func validateRootCAFile(path string) error {
+	if path == "" {
+		return nil
+	}
+	if strings.Contains(path, "..") || strings.ContainsAny(path, "\n\r\t") {
+		return errors.New("root CA file path is invalid")
+	}
+	if !strings.HasPrefix(path, "/ca-certificates/") || !isRootCAFile(path) {
+		return errors.New("root CA file must be a .crt, .cer or .pem file under /ca-certificates")
+	}
+	return nil
+}
+
+func isRootCAFile(path string) bool {
+	path = strings.ToLower(path)
+	return strings.HasSuffix(path, ".crt") || strings.HasSuffix(path, ".cer") || strings.HasSuffix(path, ".pem")
+}
+
+func caddyfileQuote(value string) string {
+	escaped := strings.ReplaceAll(value, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	return `"` + escaped + `"`
 }
 
 func (a *App) readAccessLogsLocked(siteID string, sites []Site) []LogEntry {
@@ -1074,7 +1108,7 @@ func (a *App) certificateExpiresAt(domain string) (time.Time, error) {
 		return time.Time{}, os.ErrNotExist
 	}
 	var newest time.Time
-	err := filepath.WalkDir(filepath.Join(a.caddyDataDir, "caddy", "certificates"), func(path string, entry fs.DirEntry, err error) error {
+	err := filepath.WalkDir(a.certificateRoot(), func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".crt") {
 			return nil
 		}
@@ -1171,7 +1205,7 @@ func (a *App) certificateFiles(domain string) []string {
 		return nil
 	}
 	files := make([]string, 0)
-	_ = filepath.WalkDir(filepath.Join(a.caddyDataDir, "caddy", "certificates"), func(path string, entry fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(a.certificateRoot(), func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return nil
 		}
@@ -1183,6 +1217,14 @@ func (a *App) certificateFiles(domain string) []string {
 		return nil
 	})
 	return files
+}
+
+func (a *App) certificateRoot() string {
+	direct := filepath.Join(a.caddyDataDir, "certificates")
+	if _, err := os.Stat(direct); err == nil {
+		return direct
+	}
+	return filepath.Join(a.caddyDataDir, "caddy", "certificates")
 }
 
 func removeIfExists(path string) error {

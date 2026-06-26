@@ -7,7 +7,6 @@ RUN go build -o /out/caddymgm ./cmd/server
 
 FROM alpine:3.20
 
-RUN apk add --no-cache acme.sh
 RUN adduser -D -H -u 10001 caddymgm
 WORKDIR /app
 COPY --from=build /out/caddymgm /app/caddymgm

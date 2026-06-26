@@ -1,6 +1,6 @@
 services:
   caddy-init:
-    image: alpine:3.20
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
     container_name: caddy-init
     profiles:
       - docker-caddy
@@ -9,12 +9,14 @@ services:
       - sh
       - -c
       - |
-        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /caddy-config
+        mkdir -p /data /logs /config /caddy-config /srv
+        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /caddy-config /srv
     volumes:
       - ./config:/config
       - ./logs:/logs
-      - caddy_data:/data
-      - caddy_config:/caddy-config
+      - ./caddy-data:/data
+      - ./caddy-config:/caddy-config
+      - ./site:/srv
 
   caddymgm:
     image: ghcr.io/thetaran/caddymgm:latest
@@ -40,7 +42,7 @@ services:
     volumes:
       - ./config:/config
       - ./logs:/logs
-      - caddy_data:/caddy-data
+      - ./caddy-data:/caddy-data
 
   caddy:
     image: ${CADDY_IMAGE:-caddy:2-alpine}
@@ -60,10 +62,8 @@ services:
       - "${CADDY_HTTPS_PORT:-443}:443/udp"
     volumes:
       - ./config:/etc/caddy:ro
+      - ./site:/srv
       - ./logs:/logs
-      - caddy_data:/data
-      - caddy_config:/config
-
-volumes:
-  caddy_data:
-  caddy_config:
+      - ./caddy-data:/data
+      - ./caddy-config:/config
+      - ./ca-certificates:/ca-certificates:ro

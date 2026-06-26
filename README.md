@@ -108,6 +108,28 @@ volumes:
   - ./logs:/logs
 ```
 
+Caddy certificate storage and runtime data are stored outside the containers:
+
+```text
+./caddy-data
+./caddy-config
+./site
+```
+
+Docker Compose uses the official Caddy image mount layout:
+
+```yaml
+volumes:
+  - ./config:/etc/caddy:ro
+  - ./site:/srv
+  - ./caddy-data:/data
+  - ./caddy-config:/config
+```
+
+Caddy stores certificates under `./caddy-data/caddy/certificates`. CaddyMGM
+also mounts `./caddy-data` at `/caddy-data` to show certificate expiration dates
+and clean up managed certificate files when a web host is deleted.
+
 Caddy receives the same Caddyfile as read-only configuration:
 
 ```yaml
@@ -172,7 +194,8 @@ TLS can be enabled per site:
 
 - Enable `TLS enabled` in the web host editor.
 - Select an ACME authority. CaddyMGM writes a Caddy ACME issuer block for the
-  selected certificate authority.
+  selected certificate authority. Caddy performs the ACME order itself; `acme.sh`
+  is not used.
 
 Custom ACME certificate authorities can be managed in `Certificates`.
 `Let's Encrypt` is available as a built-in ACME authority.
@@ -224,21 +247,52 @@ services:
 CaddyMGM reads and writes the external Caddyfile at `/config/Caddyfile`.
 Caddy reads the same file at `/etc/caddy/Caddyfile`.
 
-Caddy stores certificates and runtime data in Docker named volumes:
+Caddy stores certificates and runtime data in host directories:
 
 ```text
-caddy_data
-caddy_config
+./caddy-data
+./caddy-config
+./site
 ```
 
-CaddyMGM mounts Caddy's data volume at `/caddy-data` so it can show certificate
-expiration dates in the `Issued Certificates` view and remove a deleted web
-host's managed certificate files.
 For the optional Docker Caddy service, Compose runs Caddy with the same
 `PUID`/`PGID` as CaddyMGM so generated certificate metadata can be read by the
 management interface.
 The `caddy-init` service prepares ownership for `./config`, `./logs` and the
-Caddy named volumes before the optional Caddy container starts.
+Caddy host directories before the optional Caddy container starts.
+
+### Custom Root CAs for ACME
+
+If a custom ACME authority uses a certificate signed by an internal Root CA,
+place the Root CA certificate in:
+
+```text
+./ca-certificates
+```
+
+Use PEM encoded files with a `.crt`, `.cer` or `.pem` extension, for example:
+
+```text
+./ca-certificates/internal-root-ca.cer
+```
+
+Then set the matching ACME authority's `Root CA file` field to the container
+path:
+
+```text
+/ca-certificates/internal-root-ca.cer
+```
+
+CaddyMGM writes this into the Caddyfile as an ACME issuer `trusted_roots`
+setting. Reload the affected web host configuration after adding or changing
+Root CA files:
+
+```bash
+docker compose up -d --force-recreate caddy
+```
+
+For native or remote Caddy deployments, install the same Root CA on the server
+running Caddy.
 
 To start CaddyMGM with the optional Docker Caddy service:
 
@@ -276,12 +330,19 @@ CADDY_IMAGE=caddy:2-alpine
 
 ## Docker
 
-GitHub Actions runs tests for pull requests. Docker images are built and pushed
-to GitHub Container Registry only when a version tag is pushed:
+GitHub Actions runs tests for pull requests and tags. Two-part tags are minor
+Git tags and do not build a Docker image:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag 0.1
+git push origin 0.1
+```
+
+Three-part tags are official releases and build/push a Docker image:
+
+```bash
+git tag 0.1.0
+git push origin 0.1.0
 ```
 
 ```text
@@ -324,12 +385,13 @@ Environment variables:
 - Generate reverse proxy and static file Caddy blocks
 - Enable Caddy access logs by default for new sites, with a per-site toggle
 - Store website access logs outside Docker under `./logs`
+- Store Caddy certificate/runtime data outside Docker under `./caddy-data`
 - Keep TLS disabled by default so Caddy does not request public certificates
   unless enabled per site
 - Manage custom ACME certificate authorities under Certificates
+- Trust custom ACME Root CAs by placing `.crt`, `.cer` or `.pem` files under `./ca-certificates`
 - Load generated Caddyfiles through the Caddy Admin API for native or Docker
   Caddy deployments
 - Login page with session-cookie authentication for the management interface
 - Editable CaddyMGM settings
 - Website access log viewer backed by Caddy JSON log files
-- `acme.sh` is installed in the CaddyMGM image for future certificate workflows

@@ -42,6 +42,7 @@ const els = {
   issuerName: document.querySelector("#issuer-name"),
   issuerDirectory: document.querySelector("#issuer-directory"),
   issuerEmail: document.querySelector("#issuer-email"),
+  issuerRootCA: document.querySelector("#issuer-root-ca"),
   issuerReset: document.querySelector("#issuer-reset"),
   issuerDelete: document.querySelector("#issuer-delete"),
   issuerList: document.querySelector("#issuer-list"),
@@ -175,6 +176,7 @@ async function saveIssuer(event) {
     name: els.issuerName.value,
     directoryUrl: els.issuerDirectory.value,
     email: els.issuerEmail.value,
+    rootCaFile: els.issuerRootCA.value,
   };
   const issuers = [...(settings?.acmeIssuers || [])];
   const index = issuers.findIndex((item) => item.id === issuer.id && issuer.id);
@@ -312,9 +314,11 @@ function editIssuer(issuer = null) {
   els.issuerName.value = issuer?.name || "";
   els.issuerDirectory.value = issuer?.directoryUrl || "";
   els.issuerEmail.value = issuer?.email || "";
+  els.issuerRootCA.value = issuer?.rootCaFile || "";
   els.issuerDelete.hidden = !issuer?.id || issuer.builtIn;
   els.issuerName.readOnly = !!issuer?.builtIn;
   els.issuerDirectory.readOnly = !!issuer?.builtIn;
+  els.issuerRootCA.readOnly = !!issuer?.builtIn;
   els.issuerName.focus({ preventScroll: true });
 }
 
@@ -324,6 +328,7 @@ function closeIssuerForm() {
   els.issuerId.value = "";
   els.issuerName.readOnly = false;
   els.issuerDirectory.readOnly = false;
+  els.issuerRootCA.readOnly = false;
   els.issuerDelete.hidden = true;
 }
 

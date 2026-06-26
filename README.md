@@ -153,7 +153,6 @@ This keeps the repository root focused on the deployable runtime structure:
 ./caddy-data
 ./caddy-logs
 ./caddymgm-config
-./caddymgm-data
 ./ca-certificates
 ```
 

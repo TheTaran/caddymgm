@@ -12,7 +12,7 @@ RUN apk add --no-cache ca-certificates \
   && adduser -D -H -u 10001 caddymgm
 WORKDIR /app
 COPY --from=build /out/caddymgm /app/caddymgm
-RUN mkdir -p /config /logs /caddymgm-config /caddymgm-data && chown -R caddymgm:caddymgm /config /logs /caddymgm-config /caddymgm-data
+RUN mkdir -p /config /logs /caddymgm-config && chown -R caddymgm:caddymgm /config /logs /caddymgm-config
 
 USER caddymgm
 EXPOSE 8080

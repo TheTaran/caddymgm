@@ -3,8 +3,6 @@ caddy-config/*
 !caddy-config/.gitkeep
 caddymgm-config/*
 !caddymgm-config/.gitkeep
-caddymgm-data/*
-!caddymgm-data/.gitkeep
 caddy-logs/
 caddy-data/
 ca-certificates/*

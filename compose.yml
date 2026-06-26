@@ -9,15 +9,14 @@ services:
       - sh
       - -c
       - |
-        mkdir -p /data /logs /config /srv /ca-certificates /caddymgm-config /caddymgm-data
-        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /srv /ca-certificates /caddymgm-config /caddymgm-data
+        mkdir -p /data /logs /config /srv /ca-certificates /caddymgm-config
+        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /srv /ca-certificates /caddymgm-config
     volumes:
       - ./caddy-config:/config
       - ./caddy-logs:/logs
       - ./caddy-data:/data
       - ./ca-certificates:/ca-certificates
       - ./caddymgm-config:/caddymgm-config
-      - ./caddymgm-data:/caddymgm-data
 
   caddymgm:
     image: ghcr.io/thetaran/caddymgm:latest
@@ -52,7 +51,6 @@ services:
       - ./caddy-data:/caddy-data
       - ./ca-certificates:/ca-certificates
       - ./caddymgm-config:/caddymgm-config
-      - ./caddymgm-data:/caddymgm-data
 
   caddy:
     image: ${CADDY_IMAGE:-caddy:2-alpine}

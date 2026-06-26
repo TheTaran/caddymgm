@@ -157,7 +157,7 @@ async function loadSettings() {
     els.settingsOIDCRedirect.value = settings.oidc?.redirectUrl || "";
     els.settingsOIDCScopes.value = settings.oidc?.scopes || "openid profile email";
     els.settingsWebHost.value = settings.webInterface?.host || "";
-    els.settingsWebUpstream.value = settings.webInterface?.upstream || "http://caddymgm:8080";
+    els.settingsWebUpstream.value = settings.webInterface?.upstream || ":8080";
     els.settingsWebTLSEnabled.checked = !!settings.webInterface?.tlsEnabled;
     els.settingsLogRetention.value = settings.logRetention || 100;
     els.settingsCaddyMode.value = settings.caddyMode || "file";
@@ -380,9 +380,9 @@ function syncSettingsWebTLS() {
   els.settingsWebACME.disabled = !enabled;
   els.settingsWebHost.required = enabled;
   if (enabled) {
-    els.settingsWebHost.placeholder = "mgm.example.com";
+    els.settingsWebHost.placeholder = "mgm.example.com:8080";
   } else {
-    els.settingsWebHost.placeholder = "mgm.example.com or mgm.example.com:8080";
+    els.settingsWebHost.placeholder = "mgm.example.com:8080";
   }
   if (!enabled) {
     els.settingsWebACME.value = "";
@@ -559,8 +559,13 @@ function editSite(site = null) {
   els.tlsEnabled.checked = !!site && site?.tlsMode !== "off";
   renderIssuerOptions();
   els.acmeIssuer.value = site?.acmeIssuerId || "";
-  const mode = site?.mode || "proxy";
-  document.querySelector(`input[name='mode'][value='${mode}']`).checked = true;
+  document.querySelectorAll("input[name='mode']").forEach((input) => {
+    input.checked = false;
+  });
+  if (site?.mode) {
+    const selected = document.querySelector(`input[name='mode'][value='${site.mode}']`);
+    if (selected) selected.checked = true;
+  }
   els.delete.hidden = !site;
   syncMode();
   syncTLSMode();
@@ -583,8 +588,11 @@ function syncMode() {
   els.root.disabled = mode !== "static";
   if (mode === "proxy") {
     els.root.value = "";
+  } else if (mode === "static") {
+    els.upstream.value = "";
   } else {
     els.upstream.value = "";
+    els.root.value = "";
   }
 }
 
@@ -608,9 +616,14 @@ function syncTLSMode() {
 
 async function saveSite(event) {
   event.preventDefault();
+  const mode = getMode();
+  if (!mode) {
+    setStatus("Select a website type first");
+    return;
+  }
   const payload = {
     address: els.address.value,
-    mode: getMode(),
+    mode,
     upstream: els.upstream.value,
     root: els.root.value,
     extraDirectives: els.extra.value,
@@ -699,7 +712,7 @@ async function logout() {
 }
 
 function getMode() {
-  return document.querySelector("input[name='mode']:checked").value;
+  return document.querySelector("input[name='mode']:checked")?.value || "";
 }
 
 function setStatus(message) {

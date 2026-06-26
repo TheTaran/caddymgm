@@ -9,15 +9,17 @@ services:
       - sh
       - -c
       - |
-        mkdir -p /data /logs /config /caddy-config /srv /ca-certificates
-        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /caddy-config /srv /ca-certificates
+        mkdir -p /data /logs /config /caddy-state /srv /ca-certificates /caddymgm-config /caddymgm-data
+        chown -R "${PUID:-1000}:${PGID:-1000}" /config /logs /data /caddy-state /srv /ca-certificates /caddymgm-config /caddymgm-data
     volumes:
-      - ./config:/config
-      - ./logs:/logs
+      - ./caddy-config:/config
+      - ./caddy-logs:/logs
       - ./caddy-data:/data
-      - ./caddy-config:/caddy-config
-      - ./site:/srv
+      - ./caddy-state:/caddy-state
+      - ./caddy-site:/srv
       - ./ca-certificates:/ca-certificates
+      - ./caddymgm-config:/caddymgm-config
+      - ./caddymgm-data:/caddymgm-data
 
   caddymgm:
     image: ghcr.io/thetaran/caddymgm:latest
@@ -25,11 +27,13 @@ services:
     container_name: caddymgm
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
+    env_file:
+      - .env
     ports:
       - "8080:8080"
     environment:
       CADDY_CONFIG_PATH: /config/Caddyfile
-      CADDYMGM_SETTINGS_PATH: /config/caddymgm-settings.json
+      CADDYMGM_SETTINGS_PATH: /caddymgm-config/caddymgm-settings.json
       CADDYMGM_AUTH_ENABLED: ${CADDYMGM_AUTH_ENABLED:-true}
       CADDYMGM_LOCALAUTH_ENABLED: ${CADDYMGM_LOCALAUTH_ENABLED:-true}
       CADDYMGM_OIDCAUTH_ENABLED: ${CADDYMGM_OIDCAUTH_ENABLED:-false}
@@ -40,14 +44,24 @@ services:
       CADDYMGM_ACCESS_LOG_DIR: ${CADDYMGM_ACCESS_LOG_DIR:-/logs}
       CADDYMGM_CADDY_DATA_DIR: /caddy-data
       CADDYMGM_CA_CERT_DIR: /ca-certificates
+      CADDYMGM_WEB_ACME_HOME: ${CADDYMGM_WEB_ACME_HOME:-/caddymgm-data/acme}
+      CADDYMGM_WEB_TLS_DIR: ${CADDYMGM_WEB_TLS_DIR:-/caddymgm-data/tls}
+      CADDYMGM_WEB_TLS_CERT_FILE: ${CADDYMGM_WEB_TLS_CERT_FILE:-/caddymgm-data/tls/caddymgm.crt}
+      CADDYMGM_WEB_TLS_KEY_FILE: ${CADDYMGM_WEB_TLS_KEY_FILE:-/caddymgm-data/tls/caddymgm.key}
+      CADDYMGM_WEB_TLS_CA_FILE: ${CADDYMGM_WEB_TLS_CA_FILE:-/caddymgm-data/tls/caddymgm-ca.crt}
+      CADDYMGM_WEB_LISTEN: ${CADDYMGM_WEB_LISTEN:-:8080}
+      CADDYMGM_WEB_DNS_PROVIDER: ${CADDYMGM_WEB_DNS_PROVIDER:-}
+      CADDYMGM_WEB_DNS_SLEEP: ${CADDYMGM_WEB_DNS_SLEEP:-}
       CADDY_ACCESS_LOG_DIR: ${CADDY_ACCESS_LOG_DIR:-/logs}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./config:/config
-      - ./logs:/logs
+      - ./caddy-config:/config
+      - ./caddy-logs:/logs
       - ./caddy-data:/caddy-data
       - ./ca-certificates:/ca-certificates
+      - ./caddymgm-config:/caddymgm-config
+      - ./caddymgm-data:/caddymgm-data
 
   caddy:
     image: ${CADDY_IMAGE:-caddy:2-alpine}
@@ -66,9 +80,9 @@ services:
       - "${CADDY_HTTPS_PORT:-443}:443"
       - "${CADDY_HTTPS_PORT:-443}:443/udp"
     volumes:
-      - ./config:/etc/caddy:ro
-      - ./site:/srv
-      - ./logs:/logs
+      - ./caddy-config:/etc/caddy:ro
+      - ./caddy-site:/srv
+      - ./caddy-logs:/logs
       - ./caddy-data:/data
-      - ./caddy-config:/config
+      - ./caddy-state:/config
       - ./ca-certificates:/ca-certificates:ro

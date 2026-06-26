@@ -22,7 +22,9 @@ Open:
 http://localhost:8080
 ```
 
-The management interface is exposed by Docker Compose on port `8080`:
+The management interface is exposed by Docker Compose on port `8080`.
+When `Web Interface -> TLS enabled` is active, CaddyMGM itself serves native
+HTTPS on that same port:
 
 ```yaml
 ports:
@@ -94,25 +96,64 @@ CADDYMGM_OIDCAUTH_ENABLED=false
 `CADDYMGM_OIDCAUTH_ENABLED` enables OIDC login. When both local auth and OIDC
 are enabled, the login page shows both methods side by side.
 
+## Native HTTPS For CaddyMGM
+
+The management interface does not need Caddy to terminate HTTPS anymore.
+When `TLS enabled` is turned on in `Settings -> Web Interface`, CaddyMGM serves
+HTTPS itself on the configured listen address, typically `:8080`.
+
+For automatic certificates on that port, CaddyMGM uses `acme.sh` with `dns-01`.
+This avoids port conflicts with Caddy on `80/443`.
+
+The certificate and ACME state live outside the container:
+
+```text
+./caddymgm-data/tls
+./caddymgm-data/acme
+```
+
+Compose mounts them into the CaddyMGM container:
+
+```yaml
+volumes:
+  - ./caddymgm-data:/caddymgm-data
+```
+
+The DNS provider hook and provider credentials are passed through `.env` to
+`acme.sh`. Example:
+
+```text
+CADDYMGM_WEB_LISTEN=:8080
+CADDYMGM_WEB_ACME_HOME=/caddymgm-data/acme
+CADDYMGM_WEB_DNS_PROVIDER=dns_cf
+CADDYMGM_WEB_DNS_SLEEP=30
+CF_Token=...
+CF_Account_ID=...
+```
+
+Custom ACME directory URLs from `Certificates` are supported for the web
+interface as well. If the ACME server is signed by a private Root CA, set the
+issuer's `Root CA file`. CaddyMGM passes it to `acme.sh` with `--ca-bundle`.
+
 ## Config Access
 
 The Caddy configuration lives outside the container on the host:
 
 ```text
-./config/Caddyfile
+./caddy-config/Caddyfile
 ```
 
 Docker Compose mounts this directory into the container:
 
 ```yaml
 volumes:
-  - ./config:/config
+  - ./caddy-config:/config
 ```
 
 Caddy access logs are stored outside the containers:
 
 ```text
-./logs
+./caddy-logs
 ```
 
 Docker Compose mounts this directory into CaddyMGM and the optional Docker Caddy
@@ -120,25 +161,25 @@ service:
 
 ```yaml
 volumes:
-  - ./logs:/logs
+  - ./caddy-logs:/logs
 ```
 
 Caddy certificate storage and runtime data are stored outside the containers:
 
 ```text
 ./caddy-data
-./caddy-config
-./site
+./caddy-state
+./caddy-site
 ```
 
 Docker Compose uses the official Caddy image mount layout:
 
 ```yaml
 volumes:
-  - ./config:/etc/caddy:ro
-  - ./site:/srv
+  - ./caddy-config:/etc/caddy:ro
+  - ./caddy-site:/srv
   - ./caddy-data:/data
-  - ./caddy-config:/config
+  - ./caddy-state:/config
 ```
 
 Caddy stores certificates under `./caddy-data/caddy/certificates`. CaddyMGM
@@ -164,16 +205,16 @@ The path can be changed with:
 CADDY_CONFIG_PATH=/config/Caddyfile
 ```
 
-CaddyMGM stores its own settings next to the Caddyfile:
+CaddyMGM stores its own settings outside the container in a dedicated folder:
 
 ```text
-./config/caddymgm-settings.json
+./caddymgm-config/caddymgm-settings.json
 ```
 
 Inside the container this file is read and written at:
 
 ```text
-/config/caddymgm-settings.json
+/caddymgm-config/caddymgm-settings.json
 ```
 
 The container is started with the host user and group from `.env`:
@@ -183,7 +224,7 @@ PUID=1000
 PGID=1000
 ```
 
-This keeps `./config/Caddyfile` writable by the container while still leaving the
+This keeps `./caddy-config/Caddyfile` writable by the container while still leaving the
 file visible and editable on the host. If the host user has different ids, set
 them with:
 
@@ -273,7 +314,7 @@ Caddy stores certificates and runtime data in host directories:
 For the optional Docker Caddy service, Compose runs Caddy with the same
 `PUID`/`PGID` as CaddyMGM so generated certificate metadata can be read by the
 management interface.
-The `caddy-init` service prepares ownership for `./config`, `./logs` and the
+The `caddy-init` service prepares ownership for `./caddy-config`, `./caddy-logs` and the
 Caddy host directories before the optional Caddy container starts.
 
 ### Custom Root CAs for ACME
@@ -349,8 +390,8 @@ CADDY_IMAGE=caddy:2-alpine
 - `Logs` shows website access logs from Caddy.
 - `Settings` shows and updates CaddyMGM settings, including authentication.
   Settings are grouped into `Authentication`, `Web Interface` and `Logs`.
-  `Web Interface` can publish the CaddyMGM UI through Caddy with optional ACME
-  TLS, using the same ACME authorities as web hosts.
+  `Web Interface` controls the Go server listen address and optional native
+  HTTPS for CaddyMGM itself.
 
 ## Docker
 
@@ -392,15 +433,21 @@ Environment variables:
 | `CADDYMGM_ADMIN_USER` | `admin` | Initial admin user when no settings file exists |
 | `CADDYMGM_ADMIN_PASSWORD` | `changeme` | Initial admin password when no settings file exists |
 | `CADDYMGM_AUTH_ENABLED` | `true` | Enable or disable login/session authentication |
-| `CADDYMGM_LISTEN` | `:8080` | HTTP listen address inside the container |
 | `CADDY_CONFIG_PATH` | `/config/Caddyfile` | Path to the mounted Caddyfile |
-| `CADDYMGM_SETTINGS_PATH` | `/config/caddymgm-settings.json` | Path to the mounted CaddyMGM settings file |
+| `CADDYMGM_SETTINGS_PATH` | `/caddymgm-config/caddymgm-settings.json` | Path to the mounted CaddyMGM settings file |
 | `CADDYMGM_CADDY_MODE` | `file` | Caddy integration mode: `file`, `native`, `docker`, or `api` |
 | `CADDYMGM_CADDY_API_URL` | empty | Caddy Admin API base URL for `native`, `docker`, or `api` mode |
 | `CADDYMGM_ACCESS_LOG_DIR` | `/logs` | Directory where CaddyMGM reads website access logs |
 | `CADDYMGM_CADDY_DATA_DIR` | `/caddy-data` | Caddy data directory used for certificate metadata and cleanup |
 | `CADDYMGM_CA_CERT_DIR` | `/ca-certificates` | Directory where uploaded Root CA certificates are stored |
-| `CADDYMGM_WEB_INTERFACE_UPSTREAM` | `http://caddymgm:8080` | Default upstream used when publishing the CaddyMGM web interface through Caddy |
+| `CADDYMGM_WEB_LISTEN` | `:8080` | Native listen address for the CaddyMGM Go web server |
+| `CADDYMGM_WEB_ACME_HOME` | `/caddymgm-data/acme` | `acme.sh` state directory for native web-interface certificates |
+| `CADDYMGM_WEB_TLS_DIR` | `/caddymgm-data/tls` | Directory where the native web-interface certificate files are written |
+| `CADDYMGM_WEB_TLS_CERT_FILE` | `/caddymgm-data/tls/caddymgm.crt` | Fullchain file used by the Go HTTPS server |
+| `CADDYMGM_WEB_TLS_KEY_FILE` | `/caddymgm-data/tls/caddymgm.key` | Private key file used by the Go HTTPS server |
+| `CADDYMGM_WEB_TLS_CA_FILE` | `/caddymgm-data/tls/caddymgm-ca.crt` | Intermediate CA file written by `acme.sh` |
+| `CADDYMGM_WEB_DNS_PROVIDER` | empty | `acme.sh` DNS API hook name such as `dns_cf` |
+| `CADDYMGM_WEB_DNS_SLEEP` | empty | Optional `acme.sh --dnssleep` value for slow DNS propagation |
 | `CADDY_ACCESS_LOG_DIR` | `/logs` | Directory written into generated Caddy log directives |
 | `COMPOSE_PROFILES` | empty | Set to `docker-caddy` to start the optional Compose Caddy service |
 | `CADDY_IMAGE` | `caddy:2-alpine` | Caddy Docker image used by the separate Caddy service |

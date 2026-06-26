@@ -17,6 +17,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -1266,10 +1267,23 @@ func normalizeWebInterface(webInterface *WebInterface) {
 }
 
 func validateWebInterface(webInterface WebInterface, issuers []ACMEIssuer) error {
-	if strings.TrimSpace(webInterface.Host) == "" {
+	host := strings.TrimSpace(webInterface.Host)
+	if host == "" {
+		if webInterface.TLSEnabled {
+			return errors.New("web interface host is required when TLS is enabled")
+		}
 		return nil
 	}
-	host := strings.TrimPrefix(strings.TrimPrefix(webInterface.Host, "http://"), "https://")
+	if webInterface.TLSEnabled {
+		if parsedHost, parsedPort, err := splitHostPortLoose(host); err != nil {
+			return errors.New("web interface host is invalid")
+		} else if parsedPort != "" {
+			return errors.New("web interface host must not include a port when TLS is enabled")
+		} else {
+			host = parsedHost
+		}
+	}
+	host = strings.TrimPrefix(strings.TrimPrefix(host, "http://"), "https://")
 	if !addressPattern.MatchString(host) {
 		return errors.New("web interface host contains unsupported characters")
 	}
@@ -1758,6 +1772,27 @@ func normalizeProxyUpstream(upstream string) (string, error) {
 	}
 	parsed.Path = ""
 	return parsed.String(), nil
+}
+
+func splitHostPortLoose(value string) (string, string, error) {
+	value = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(value, "http://"), "https://"))
+	if value == "" {
+		return "", "", nil
+	}
+	if strings.Count(value, ":") == 0 {
+		return value, "", nil
+	}
+	if host, port, err := net.SplitHostPort(value); err == nil {
+		return strings.Trim(host, "[]"), port, nil
+	}
+	host, port, ok := strings.Cut(value, ":")
+	if !ok || host == "" || port == "" {
+		return "", "", errors.New("invalid host")
+	}
+	if strings.Contains(port, ":") {
+		return "", "", errors.New("invalid host")
+	}
+	return host, port, nil
 }
 
 func normalizeCaddyMode(mode string) string {

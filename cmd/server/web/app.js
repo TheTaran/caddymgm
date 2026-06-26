@@ -378,6 +378,12 @@ function syncSettingsWebTLS() {
   els.settingsWebACMERow.hidden = !enabled;
   els.settingsWebACME.required = enabled;
   els.settingsWebACME.disabled = !enabled;
+  els.settingsWebHost.required = enabled;
+  if (enabled) {
+    els.settingsWebHost.placeholder = "mgm.example.com";
+  } else {
+    els.settingsWebHost.placeholder = "mgm.example.com or mgm.example.com:8080";
+  }
   if (!enabled) {
     els.settingsWebACME.value = "";
   } else if (!els.settingsWebACME.value && els.settingsWebACME.options.length > 0) {

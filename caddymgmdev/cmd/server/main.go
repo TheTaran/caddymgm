@@ -2048,7 +2048,7 @@ func (a *App) hasValidSessionLocked(r *http.Request) bool {
 
 func isPublicPath(path string) bool {
 	switch path {
-	case "/login.html", "/login.css", "/login.js", "/styles.css":
+	case "/login.html", "/login.css", "/login.js", "/styles.css", "/CaddyMGM.png", "/favicon.ico":
 		return true
 	case "/api/auth/login":
 		return true

@@ -2,6 +2,8 @@
 
 Management web interface for Caddy websites.
 
+![CaddyMGM](./caddymgmdev/cmd/server/web/CaddyMGM.png)
+
 This repository is split into two layers:
 
 - Runtime folders at the repository root for Caddy and CaddyMGM data

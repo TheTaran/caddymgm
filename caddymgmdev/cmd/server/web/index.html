@@ -51,7 +51,7 @@
           </div>
         </section>
 
-        <section class="metrics">
+        <section id="metrics" class="metrics">
           <article class="metric">
             <span>Websites</span>
             <strong id="total-sites">0</strong>
@@ -78,9 +78,11 @@
             </div>
             <div class="table-head">
               <span>Address</span>
+              <span>Protocol</span>
               <span>Type</span>
               <span>Target</span>
               <span>Status</span>
+              <span>Comment</span>
               <span></span>
             </div>
             <div id="dashboard-site-list" class="site-list"></div>
@@ -96,9 +98,11 @@
               </div>
               <div class="table-head">
                 <span>Address</span>
+                <span>Protocol</span>
                 <span>Type</span>
                 <span>Target</span>
                 <span>Status</span>
+                <span>Comment</span>
                 <span></span>
               </div>
               <div id="site-list" class="site-list"></div>
@@ -136,6 +140,11 @@
                 <label>
                   Address
                   <input id="address" required placeholder="example.com" autocomplete="off" />
+                </label>
+
+                <label>
+                  Comment
+                  <input id="comment" placeholder="Internal Jellyfin proxy" autocomplete="off" />
                 </label>
 
                 <fieldset>
@@ -224,6 +233,7 @@
                 <span>Issuer</span>
                 <span>Expires</span>
                 <span>Status</span>
+                <span></span>
               </div>
               <div id="certificate-list" class="certificate-list"></div>
             </section>

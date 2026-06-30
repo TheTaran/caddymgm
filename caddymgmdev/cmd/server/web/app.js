@@ -2,6 +2,7 @@ const els = {
   status: document.querySelector("#status"),
   pageTitle: document.querySelector("#page-title"),
   sectionTitle: document.querySelector("#section-title"),
+  metrics: document.querySelector("#metrics"),
   profileAvatar: document.querySelector("#profile-avatar"),
   profileUsername: document.querySelector("#profile-username"),
   profileProvider: document.querySelector("#profile-provider"),
@@ -15,6 +16,7 @@ const els = {
   formTitle: document.querySelector("#form-title"),
   id: document.querySelector("#site-id"),
   address: document.querySelector("#address"),
+  comment: document.querySelector("#comment"),
   upstream: document.querySelector("#upstream"),
   root: document.querySelector("#root"),
   upstreamRow: document.querySelector("#upstream-row"),
@@ -146,6 +148,7 @@ async function loadProfile() {
 function showView(view) {
   els.navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   els.views.forEach((panel) => panel.classList.toggle("active", panel.id === `view-${view}`));
+  els.metrics.hidden = view !== "dashboard";
   const [title, section] = viewTitles[view] || viewTitles.dashboard;
   els.pageTitle.textContent = title;
   els.sectionTitle.textContent = section;
@@ -364,12 +367,16 @@ function renderIssuedCertificates() {
       <span></span>
       <span></span>
       <span class="badge"></span>
+      <button class="secondary" type="button">Renew</button>
     `;
     row.children[0].textContent = site.address;
     row.children[1].textContent = certificateIssuerName(site);
     row.children[2].textContent = formatCertificateExpiry(site.certificateExpiresAt);
     row.children[3].textContent = site.enabled ? "Active" : "Disabled";
     row.children[3].classList.toggle("off", !site.enabled);
+    row.children[4].disabled = !site.enabled;
+    row.children[4].title = site.enabled ? `Force renew for ${site.address}` : "Enable the web host before forcing renewal";
+    row.children[4].addEventListener("click", () => renewCertificate(site));
     els.certificateList.append(row);
   }
 }
@@ -469,18 +476,23 @@ function renderSiteList(container, editable) {
     row.className = "site-row";
     row.innerHTML = `
       <strong></strong>
+      <span class="badge"></span>
       <span></span>
       <span class="target"></span>
       <span class="badge"></span>
+      <span class="target"></span>
       <button class="secondary" type="button"></button>
     `;
     row.children[0].textContent = site.address;
-    row.children[1].textContent = site.mode === "static" ? "Static" : "Proxy";
-    row.children[2].textContent = site.mode === "static" ? site.root : site.upstream;
-    row.children[3].textContent = site.enabled ? "Active" : "Inactive";
-    row.children[3].classList.toggle("off", !site.enabled);
-    row.children[4].textContent = editable ? "Edit" : "Open";
-    row.children[4].addEventListener("click", () => {
+    row.children[1].textContent = protocolForSite(site);
+    row.children[2].textContent = site.mode === "static" ? "Static" : "Proxy";
+    row.children[3].textContent = site.mode === "static" ? site.root : site.upstream;
+    row.children[4].textContent = site.enabled ? "Active" : "Inactive";
+    row.children[4].classList.toggle("off", !site.enabled);
+    row.children[5].textContent = site.comment || "-";
+    row.children[5].title = site.comment || "";
+    row.children[6].textContent = editable ? "Edit" : "Open";
+    row.children[6].addEventListener("click", () => {
       showView("proxy-hosts");
       editSite(site);
     });
@@ -653,6 +665,7 @@ function editSite(site = null) {
   els.id.value = site?.id || "";
   els.formTitle.textContent = site ? "Edit Website" : "Create Website";
   els.address.value = site?.address || "";
+  els.comment.value = site?.comment || "";
   els.upstream.value = site?.upstream || "";
   els.root.value = site?.root || "";
   els.extra.value = site?.extraDirectives || "";
@@ -725,6 +738,7 @@ async function saveSite(event) {
   }
   const payload = {
     address: els.address.value,
+    comment: els.comment.value,
     mode,
     upstream: els.upstream.value,
     root: els.root.value,
@@ -856,6 +870,19 @@ async function deleteSite() {
   }
 }
 
+async function renewCertificate(site) {
+  if (!site?.id || !confirm(`Force renew certificate for ${site.address}?`)) return;
+  try {
+    showACMEStatus(site);
+    await request(`/api/certificates/renew/${site.id}`, { method: "POST" });
+    setStatus(`Certificate renew started for ${site.address}`);
+    await loadSites();
+  } catch (err) {
+    closeACMEStatus();
+    setStatus(err.message);
+  }
+}
+
 async function request(url, options = {}) {
   const response = await fetch(url, {
     headers: { "Content-Type": "application/json" },
@@ -900,6 +927,10 @@ function initialsForUser(value) {
 
 function getMode() {
   return document.querySelector("input[name='mode']:checked")?.value || "";
+}
+
+function protocolForSite(site) {
+  return site?.tlsMode && site.tlsMode !== "off" ? "https" : "http";
 }
 
 function setStatus(message) {

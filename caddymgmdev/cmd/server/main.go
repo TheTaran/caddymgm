@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"crypto/x509"
 	"embed"
 	"encoding/hex"
@@ -24,6 +25,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -44,6 +46,7 @@ var webFS embed.FS
 type Site struct {
 	ID                   string `json:"id"`
 	Address              string `json:"address"`
+	Comment              string `json:"comment,omitempty"`
 	Mode                 string `json:"mode"`
 	Upstream             string `json:"upstream,omitempty"`
 	Root                 string `json:"root,omitempty"`
@@ -57,6 +60,7 @@ type Site struct {
 
 type sitePayload struct {
 	Address         string `json:"address"`
+	Comment         string `json:"comment,omitempty"`
 	Mode            string `json:"mode"`
 	Upstream        string `json:"upstream,omitempty"`
 	Root            string `json:"root,omitempty"`
@@ -75,6 +79,7 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 	return Site{
 		ID:              id,
 		Address:         p.Address,
+		Comment:         p.Comment,
 		Mode:            p.Mode,
 		Upstream:        p.Upstream,
 		Root:            p.Root,
@@ -219,7 +224,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/", http.FileServer(http.FS(webRoot)))
+	mux.Handle("/", noCacheFileServer(http.FileServer(http.FS(webRoot))))
 	mux.HandleFunc("GET /api/sites", app.handleListSites)
 	mux.HandleFunc("POST /api/sites", app.handleCreateSite)
 	mux.HandleFunc("PUT /api/sites/", app.handleUpdateSite)
@@ -229,6 +234,7 @@ func main() {
 	mux.HandleFunc("PUT /api/settings", app.handleUpdateSettings)
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
 	mux.HandleFunc("POST /api/certificates/root-ca", app.handleUploadRootCA)
+	mux.HandleFunc("POST /api/certificates/renew/", app.handleRenewCertificate)
 	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
 	mux.HandleFunc("GET /api/auth/me", app.handleMe)
@@ -561,6 +567,67 @@ func (a *App) handleUploadRootCA(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{
 		"rootCaFile": "/ca-certificates/" + filename,
+	})
+}
+
+func (a *App) handleRenewCertificate(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/certificates/renew/")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, errors.New("missing site id"))
+		return
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	sites, _, _, err := a.load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	var site Site
+	found := false
+	for _, candidate := range sites {
+		if candidate.ID == id {
+			site = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, errors.New("site not found"))
+		return
+	}
+	if !site.Enabled {
+		writeError(w, http.StatusBadRequest, errors.New("site must be enabled before forcing renewal"))
+		return
+	}
+	if site.TLSMode != "acme" {
+		writeError(w, http.StatusBadRequest, errors.New("site does not use ACME TLS"))
+		return
+	}
+
+	files := a.certificateFiles(site.Address)
+	for _, path := range files {
+		if err := removeIfExists(path); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if err := a.applyCaddyConfigLocked(); err != nil {
+		a.addLogLocked(site, "certificate renew reload failed", err.Error())
+		writeError(w, http.StatusBadGateway, fmt.Errorf("certificate files removed but caddy reload failed: %w", err))
+		return
+	}
+	if err := a.triggerTLSHandshake(site.Address); err != nil {
+		a.addLogLocked(site, "certificate renew handshake warning", err.Error())
+	} else {
+		a.addLogLocked(site, "certificate renew triggered", "TLS handshake started for certificate renewal")
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"site":    site,
+		"message": "certificate renewal triggered",
 	})
 }
 
@@ -1007,6 +1074,8 @@ func parseSite(id string, lines []string) (Site, error) {
 		switch {
 		case line == "" || line == "}":
 			continue
+		case strings.HasPrefix(line, "# caddymgm:comment "):
+			site.Comment = parseManagedComment(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:comment ")))
 		case strings.HasPrefix(line, "# caddymgm:tls-issuer "):
 			site.ACMEIssuerID = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:tls-issuer "))
 		case line == "tls internal":
@@ -1104,6 +1173,9 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir string) string {
 		address = "http://" + strings.TrimPrefix(strings.TrimPrefix(address, "http://"), "https://")
 	}
 	out.WriteString(prefix + address + " {\n")
+	if site.Comment != "" {
+		out.WriteString(prefix + "\t# caddymgm:comment " + strconv.Quote(site.Comment) + "\n")
+	}
 	if site.Mode == "static" {
 		out.WriteString(prefix + "\troot * " + site.Root + "\n")
 		out.WriteString(prefix + "\tfile_server\n")
@@ -1152,6 +1224,7 @@ var addressPattern = regexp.MustCompile(`^[A-Za-z0-9*._:-]+$`)
 
 func normalizeSite(site *Site) error {
 	site.Address = strings.TrimSpace(site.Address)
+	site.Comment = strings.TrimSpace(site.Comment)
 	site.Mode = strings.TrimSpace(site.Mode)
 	site.Upstream = strings.TrimSpace(site.Upstream)
 	site.Root = strings.TrimSpace(site.Root)
@@ -1200,6 +1273,16 @@ func normalizeSite(site *Site) error {
 		site.ACMEIssuerID = ""
 	}
 	return nil
+}
+
+func parseManagedComment(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if unquoted, err := strconv.Unquote(raw); err == nil {
+		return strings.TrimSpace(unquoted)
+	}
+	return strings.TrimSpace(raw)
 }
 
 func (a *App) validateSiteTLSLocked(site Site) error {
@@ -1732,6 +1815,40 @@ func (a *App) certificateRoot() string {
 		return direct
 	}
 	return filepath.Join(a.caddyDataDir, "caddy", "certificates")
+}
+
+func (a *App) triggerTLSHandshake(domain string) error {
+	host := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(domain, "http://"), "https://"))
+	if host == "" {
+		return errors.New("missing host for tls handshake")
+	}
+
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				ServerName:         host,
+			},
+		},
+	}
+
+	resp, err := client.Get("https://" + host)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
+func noCacheFileServer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func removeIfExists(path string) error {

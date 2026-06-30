@@ -360,7 +360,7 @@ h2 {
 .table-head,
 .site-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) 110px minmax(180px, 1fr) 96px 112px;
+  grid-template-columns: minmax(180px, 1fr) 88px 110px minmax(180px, 1fr) 96px minmax(160px, 0.95fr) 112px;
   align-items: center;
   gap: 12px;
   min-height: 58px;
@@ -407,6 +407,10 @@ h2 {
   width: 100%;
   min-height: 30px;
   padding: 0 10px;
+}
+
+.site-row .badge {
+  justify-self: start;
 }
 
 .target,
@@ -594,6 +598,20 @@ legend {
   text-transform: lowercase;
 }
 
+.service-log-row {
+  grid-template-columns: 86px minmax(132px, 0.95fr) minmax(0, 2fr) 68px;
+  align-items: flex-start;
+  min-height: 38px;
+}
+
+.service-log-row .log-method,
+.service-log-row .log-path {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.25;
+}
+
 .log-actions {
   display: flex;
   justify-content: flex-start;
@@ -683,7 +701,7 @@ legend {
 .certificate-head,
 .certificate-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) 120px 100px;
+  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) 120px 100px 120px;
   gap: 12px;
   align-items: center;
   margin: 0 14px;
@@ -714,6 +732,10 @@ legend {
 
 .certificate-row span {
   color: var(--muted);
+}
+
+.certificate-row button {
+  width: 100%;
 }
 
 dialog {

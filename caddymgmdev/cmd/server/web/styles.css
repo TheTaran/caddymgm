@@ -37,6 +37,9 @@ textarea {
 }
 
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 34px;
   border: 1px solid rgba(91, 184, 255, 0.38);
   border-radius: 999px;
@@ -360,7 +363,7 @@ h2 {
 .table-head,
 .site-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 88px 110px minmax(180px, 1fr) 96px minmax(160px, 0.95fr) 112px;
+  grid-template-columns: minmax(180px, 1fr) fit-content(88px) fit-content(110px) minmax(180px, 1fr) fit-content(96px) minmax(160px, 0.95fr) fit-content(220px);
   align-items: center;
   gap: 12px;
   min-height: 58px;
@@ -404,9 +407,17 @@ h2 {
 }
 
 .site-row button {
-  width: 100%;
+  width: auto;
   min-height: 30px;
   padding: 0 10px;
+}
+
+.site-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-start;
+  width: fit-content;
 }
 
 .site-row .badge {
@@ -671,7 +682,7 @@ legend {
 
 .issuer-row {
   display: grid;
-  grid-template-columns: minmax(130px, 0.6fr) minmax(0, 1fr) 90px 100px;
+  grid-template-columns: minmax(130px, 0.6fr) minmax(0, 1fr) fit-content(90px) fit-content(88px);
   gap: 12px;
   align-items: center;
   min-height: 52px;
@@ -701,7 +712,7 @@ legend {
 .certificate-head,
 .certificate-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) 120px 100px 120px;
+  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) fit-content(120px) fit-content(100px) fit-content(96px);
   gap: 12px;
   align-items: center;
   margin: 0 14px;
@@ -735,7 +746,7 @@ legend {
 }
 
 .certificate-row button {
-  width: 100%;
+  width: auto;
 }
 
 dialog {

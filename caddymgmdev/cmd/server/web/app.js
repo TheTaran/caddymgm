@@ -89,6 +89,7 @@ let acmeDialogTimer = null;
 let acmeDialogContext = null;
 let serviceLogsExpanded = false;
 let siteLogsExpanded = false;
+let editingSite = null;
 const LOG_PREVIEW_LIMIT = 10;
 
 document.querySelector("#logout").addEventListener("click", logout);
@@ -481,7 +482,7 @@ function renderSiteList(container, editable) {
       <span class="target"></span>
       <span class="badge"></span>
       <span class="target"></span>
-      <button class="secondary" type="button"></button>
+      <div class="site-actions"></div>
     `;
     row.children[0].textContent = site.address;
     row.children[1].textContent = protocolForSite(site);
@@ -491,12 +492,53 @@ function renderSiteList(container, editable) {
     row.children[4].classList.toggle("off", !site.enabled);
     row.children[5].textContent = site.comment || "-";
     row.children[5].title = site.comment || "";
-    row.children[6].textContent = editable ? "Edit" : "Open";
-    row.children[6].addEventListener("click", () => {
+    const actions = row.children[6];
+    actions.append(createSiteActionButton(editable ? "Edit" : "Open", "secondary", () => {
       showView("proxy-hosts");
       editSite(site);
-    });
+    }));
+    if (editable) {
+      actions.append(
+        createSiteActionButton(site.enabled ? "Deactivate" : "Activate", "secondary", () => toggleSiteEnabled(site)),
+      );
+    }
     container.append(row);
+  }
+}
+
+function createSiteActionButton(label, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+async function toggleSiteEnabled(site) {
+  if (!site?.id) return;
+  const nextEnabled = !site.enabled;
+  try {
+    await request(`/api/sites/${site.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        address: site.address,
+        comment: site.comment || "",
+        mode: site.mode,
+        upstream: site.upstream || "",
+        root: site.root || "",
+        extraDirectives: site.extraDirectives || "",
+        logsEnabled: !!site.logsEnabled,
+        tlsMode: site.tlsMode || "off",
+        acmeIssuerId: site.tlsMode === "acme" ? site.acmeIssuerId || "" : "",
+        enabled: nextEnabled,
+      }),
+    });
+    setStatus(`Website ${nextEnabled ? "activated" : "deactivated"}`);
+    await loadSites();
+    await loadLogs();
+  } catch (err) {
+    setStatus(err.message);
   }
 }
 
@@ -659,6 +701,7 @@ function stopLogPolling() {
 }
 
 function editSite(site = null) {
+  editingSite = site ? { ...site } : null;
   els.editor.hidden = false;
   els.proxyGrid.classList.add("editor-open");
   els.form.reset();
@@ -689,6 +732,7 @@ function editSite(site = null) {
 }
 
 function closeEditor() {
+  editingSite = null;
   els.editor.hidden = true;
   els.proxyGrid.classList.remove("editor-open");
 }
@@ -754,15 +798,41 @@ async function saveSite(event) {
       method: id ? "PUT" : "POST",
       body: JSON.stringify(payload),
     });
+    const shouldStartACMEFlow = shouldOpenACMEStatus(editingSite, payload, saved);
     closeEditor();
     await loadSites();
     await loadLogs();
-    if (payload.tlsMode === "acme") {
+    if (shouldStartACMEFlow) {
       showACMEStatus(saved || payload);
     }
   } catch (err) {
     setStatus(err.message);
   }
+}
+
+function shouldOpenACMEStatus(previousSite, payload, saved) {
+  if (payload.tlsMode !== "acme") return false;
+  if (saved?.certificateExpiresAt) return false;
+  if (!previousSite) return true;
+
+  const previousAddress = normalizeAddress(previousSite.address);
+  const nextAddress = normalizeAddress(payload.address);
+  const sameAddress = previousAddress === nextAddress;
+  const sameIssuer = String(previousSite.acmeIssuerId || "") === String(payload.acmeIssuerId || "");
+  const previousTLSActive = previousSite.tlsMode === "acme";
+  const previousCertificateExists = !!previousSite.certificateExpiresAt;
+
+  if (previousTLSActive && sameAddress && sameIssuer && previousCertificateExists) {
+    return false;
+  }
+  return true;
+}
+
+function normalizeAddress(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .toLowerCase();
 }
 
 function showACMEStatus(site) {

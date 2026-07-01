@@ -298,6 +298,7 @@ func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
 		return
 	}
+	a.populateSiteCertificateMetadata(&site)
 	a.addLogLocked(site, "created", "Proxy host created")
 	writeJSON(w, http.StatusCreated, site)
 }
@@ -350,6 +351,7 @@ func (a *App) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
 				return
 			}
+			a.populateSiteCertificateMetadata(&updated)
 			a.addLogLocked(updated, "updated", "Proxy host updated")
 			writeJSON(w, http.StatusOK, updated)
 			return
@@ -1685,10 +1687,18 @@ func accessLogPath(dir, siteID string) string {
 
 func (a *App) populateCertificateMetadata(sites []Site) {
 	for i := range sites {
-		expiresAt, err := a.certificateExpiresAt(sites[i].Address)
-		if err == nil && !expiresAt.IsZero() {
-			sites[i].CertificateExpiresAt = expiresAt.Format(time.RFC3339)
-		}
+		a.populateSiteCertificateMetadata(&sites[i])
+	}
+}
+
+func (a *App) populateSiteCertificateMetadata(site *Site) {
+	if site == nil {
+		return
+	}
+	site.CertificateExpiresAt = ""
+	expiresAt, err := a.certificateExpiresAt(site.Address)
+	if err == nil && !expiresAt.IsZero() {
+		site.CertificateExpiresAt = expiresAt.Format(time.RFC3339)
 	}
 }
 

@@ -11,19 +11,9 @@ services:
     environment:
       CADDY_CONFIG_PATH: /config/Caddyfile
       CADDYMGM_SETTINGS_PATH: /caddymgm-config/caddymgm-settings.json
-      CADDYMGM_AUTH_ENABLED: ${CADDYMGM_AUTH_ENABLED:-true}
-      CADDYMGM_LOCALAUTH_ENABLED: ${CADDYMGM_LOCALAUTH_ENABLED:-true}
-      CADDYMGM_OIDCAUTH_ENABLED: ${CADDYMGM_OIDCAUTH_ENABLED:-false}
-      CADDYMGM_ADMIN_USER: ${CADDYMGM_ADMIN_USER:-admin}
-      CADDYMGM_ADMIN_PASSWORD: ${CADDYMGM_ADMIN_PASSWORD:-changeme}
-      CADDYMGM_CADDY_MODE: ${CADDYMGM_CADDY_MODE:-file}
-      CADDYMGM_CADDY_API_URL: ${CADDYMGM_CADDY_API_URL:-}
-      CADDYMGM_ACCESS_LOG_DIR: ${CADDYMGM_ACCESS_LOG_DIR:-/logs}
       CADDYMGM_CADDY_DATA_DIR: /caddy-data
       CADDYMGM_CA_CERT_DIR: /ca-certificates
-      CADDYMGM_WEB_LISTEN: ${CADDYMGM_WEB_LISTEN:-:8080}
-      CADDYMGM_WEB_PORT: ${CADDYMGM_WEB_PORT:-8080}
-      CADDY_ACCESS_LOG_DIR: ${CADDY_ACCESS_LOG_DIR:-/logs}
+      CADDYMGM_LOCALAUTH_ENABLED: "false"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -51,7 +41,7 @@ services:
       - "${CADDY_HTTP_PORT:-80}:80"
       - "${CADDY_HTTPS_PORT:-443}:443"
       - "${CADDY_HTTPS_PORT:-443}:443/udp"
-      - "${CADDYMGM_WEB_PORT:-8080}:${CADDYMGM_WEB_PORT:-8080}"
+      - "8080:8080"
     volumes:
       - ./caddy-config:/etc/caddy:ro
       - ./caddy-data/site:/srv

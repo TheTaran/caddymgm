@@ -1,10 +1,10 @@
+<p align="center">
+  <img src="./caddymgmdev/cmd/server/web/CaddyMGM.png" alt="CaddyMGM" width="220" />
+</p>
+
 # caddymgm
 
-Management web interface for Caddy web hosts.
-
-<p align="center">
-  <img src="./caddymgmdev/cmd/server/web/CaddyMGM.png" alt="CaddyMGM" width="280" />
-</p>
+<p align="center">Management web interface for Caddy web hosts.</p>
 
 ## Overview
 

@@ -101,18 +101,20 @@ type ACMEIssuer struct {
 }
 
 type Settings struct {
-	AppName      string       `json:"appName"`
-	AuthEnabled  bool         `json:"authEnabled"`
-	Username     string       `json:"username"`
-	Password     string       `json:"password,omitempty"`
-	PasswordHash string       `json:"passwordHash,omitempty"`
-	OIDC         OIDCSettings `json:"oidc"`
-	ConfigPath   string       `json:"configPath"`
-	LogRetention int          `json:"logRetention"`
-	ACMEIssuers  []ACMEIssuer `json:"acmeIssuers,omitempty"`
-	CaddyMode    string       `json:"caddyMode"`
-	CaddyAPIURL  string       `json:"caddyApiUrl"`
-	WebInterface WebInterface `json:"webInterface"`
+	AppName          string       `json:"appName"`
+	AuthEnabled      bool         `json:"authEnabled"`
+	LocalAuthEnabled bool         `json:"localAuthEnabled"`
+	OIDCAuthEnabled  bool         `json:"oidcAuthEnabled"`
+	Username         string       `json:"username"`
+	Password         string       `json:"password,omitempty"`
+	PasswordHash     string       `json:"passwordHash,omitempty"`
+	OIDC             OIDCSettings `json:"oidc"`
+	ConfigPath       string       `json:"configPath"`
+	LogRetention     int          `json:"logRetention"`
+	ACMEIssuers      []ACMEIssuer `json:"acmeIssuers,omitempty"`
+	CaddyMode        string       `json:"caddyMode"`
+	CaddyAPIURL      string       `json:"caddyApiUrl"`
+	WebInterface     WebInterface `json:"webInterface"`
 }
 
 type OIDCSettings struct {
@@ -473,6 +475,7 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	a.applySettingsEnvOverridesLocked(&next)
 	sites, head, tail, err := a.load()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -817,23 +820,7 @@ func (a *App) ensureSettings() error {
 		if err := json.Unmarshal(content, &a.settings); err != nil {
 			return err
 		}
-		a.settings.AuthEnabled = authEnabledFromEnv()
-		a.settings.ConfigPath = a.configPath
-		if a.settings.AppName == "" {
-			a.settings.AppName = "CaddyMGM"
-		}
-		if a.settings.Username == "" {
-			a.settings.Username = "admin"
-		}
-		if a.settings.PasswordHash == "" {
-			a.settings.PasswordHash = hashPassword(env("CADDYMGM_ADMIN_PASSWORD", "changeme"))
-		}
-		if a.settings.LogRetention == 0 {
-			a.settings.LogRetention = 100
-		}
-		normalizeWebInterface(&a.settings.WebInterface, a.caddyMode)
-		a.settings.OIDC = normalizeOIDCSettings(a.settings.OIDC, OIDCSettings{})
-		a.settings.ACMEIssuers = ensureBuiltInACMEIssuers(a.settings.ACMEIssuers)
+		a.applySettingsEnvOverridesLocked(&a.settings)
 		return a.saveSettingsLocked()
 	}
 	if !errors.Is(err, os.ErrNotExist) {
@@ -842,7 +829,6 @@ func (a *App) ensureSettings() error {
 
 	a.settings = Settings{
 		AppName:      "CaddyMGM",
-		AuthEnabled:  authEnabledFromEnv(),
 		Username:     env("CADDYMGM_ADMIN_USER", "admin"),
 		PasswordHash: hashPassword(env("CADDYMGM_ADMIN_PASSWORD", "changeme")),
 		ConfigPath:   a.configPath,
@@ -850,6 +836,7 @@ func (a *App) ensureSettings() error {
 		ACMEIssuers:  ensureBuiltInACMEIssuers(nil),
 		WebInterface: WebInterface{Upstream: defaultWebInterfaceUpstream(a.caddyMode)},
 	}
+	a.applySettingsEnvOverridesLocked(&a.settings)
 	return a.saveSettingsLocked()
 }
 
@@ -868,6 +855,7 @@ func (a *App) saveSettingsLocked() error {
 
 func (a *App) publicSettingsLocked() Settings {
 	settings := a.settings
+	a.applySettingsEnvOverridesLocked(&settings)
 	settings.Password = ""
 	settings.PasswordHash = ""
 	settings.OIDC.ClientSecret = ""
@@ -875,6 +863,36 @@ func (a *App) publicSettingsLocked() Settings {
 	settings.CaddyMode = a.caddyMode
 	settings.CaddyAPIURL = a.caddyAPIURL
 	return settings
+}
+
+func (a *App) applySettingsEnvOverridesLocked(settings *Settings) {
+	settings.AuthEnabled = authEnabledFromEnv()
+	settings.LocalAuthEnabled = localAuthEnabledFromEnv()
+	settings.OIDCAuthEnabled = oidcAuthEnabledFromEnv()
+	settings.ConfigPath = a.configPath
+	settings.CaddyMode = a.caddyMode
+	settings.CaddyAPIURL = a.caddyAPIURL
+	if settings.AppName == "" {
+		settings.AppName = "CaddyMGM"
+	}
+	if username := strings.TrimSpace(env("CADDYMGM_ADMIN_USER", settings.Username)); username != "" {
+		settings.Username = username
+	}
+	if password := strings.TrimSpace(env("CADDYMGM_ADMIN_PASSWORD", "")); password != "" {
+		settings.PasswordHash = hashPassword(password)
+	}
+	if settings.PasswordHash == "" {
+		settings.PasswordHash = hashPassword("changeme")
+	}
+	if settings.LogRetention == 0 {
+		settings.LogRetention = 100
+	}
+	normalizeWebInterface(&settings.WebInterface, a.caddyMode)
+	settings.OIDC = normalizeOIDCSettings(settings.OIDC, OIDCSettings{})
+	if !settings.OIDCAuthEnabled {
+		settings.OIDC.Enabled = false
+	}
+	settings.ACMEIssuers = ensureBuiltInACMEIssuers(settings.ACMEIssuers)
 }
 
 func (a *App) readSites() ([]Site, error) {

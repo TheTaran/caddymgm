@@ -62,10 +62,9 @@ The repository root is the runtime structure:
 | Path | Purpose |
 | --- | --- |
 | `./caddy-config` | External Caddy configuration |
-| `./caddy-data` | Caddy data, certificates, state, and site files |
+| `./caddy-data` | Caddy data, certificates, state, Root CAs, and local static site files |
 | `./caddy-logs` | Website access logs and Caddy service log |
-| `./caddymgm-config` | CaddyMGM settings file |
-| `./ca-certificates` | Custom Root CA certificates for ACME authorities |
+| `./caddymgm` | CaddyMGM settings file |
 | `./caddymgmdev` | Go source code, frontend, and Docker build context |
 
 ## Important Files
@@ -73,9 +72,11 @@ The repository root is the runtime structure:
 | File | Description |
 | --- | --- |
 | `./caddy-config/Caddyfile` | Main Caddyfile managed by CaddyMGM |
-| `./caddymgm-config/caddymgm-settings.json` | Persistent CaddyMGM settings |
+| `./caddymgm/caddymgm-settings.json` | Persistent CaddyMGM settings |
 | `./caddy-logs/caddy-service.log` | Caddy runtime/service log |
 | `./caddy-logs/<domain>.access.log` | Per-host JSON access log |
+| `./caddy-data/site` | Document roots for local static sites served by Caddy under `/srv` |
+| `./caddy-data/ca-certificates` | Custom Root CA certificates mounted for Caddy and CaddyMGM |
 
 ## Caddy Integration Modes
 
@@ -108,7 +109,7 @@ The login page changes automatically based on your `.env` settings.
 
 If your ACME server uses a private Root CA:
 
-1. place the certificate in `./ca-certificates`
+1. place the certificate in `./caddy-data/ca-certificates`
 2. or upload it in `Certificates`
 3. reference it in the ACME authority
 
@@ -144,7 +145,7 @@ The following variables are used by Docker Compose and CaddyMGM.
 | `CADDYMGM_CA_CERT_DIR` | `/ca-certificates` | Directory for uploaded or mounted Root CAs |
 | `CADDYMGM_WEB_LISTEN` | `:8080` | Internal listen address of the Go web server |
 | `CADDYMGM_WEB_PORT` | `8080` | Public management port used through Caddy |
-| `CADDYMGM_SETTINGS_PATH` | `/caddymgm-config/caddymgm-settings.json` | Path to the CaddyMGM settings file |
+| `CADDYMGM_SETTINGS_PATH` | `/caddymgm/caddymgm-settings.json` | Path to the CaddyMGM settings file |
 | `CADDY_ACCESS_LOG_DIR` | `/logs` | Directory written into generated Caddy log directives |
 | `COMPOSE_PROFILES` | `docker-caddy` in example | Start optional Compose services such as Caddy |
 | `CADDY_IMAGE` | `caddy:2-alpine` | Caddy Docker image |

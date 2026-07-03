@@ -1,10 +1,8 @@
 .env
 caddy-config/*
 !caddy-config/.gitkeep
-caddymgm-config/*
-!caddymgm-config/.gitkeep
+caddymgm/*
+!caddymgm/.gitkeep
 caddy-logs/
 caddy-data/
-ca-certificates/*
-!ca-certificates/.gitkeep
 AGENTS.md

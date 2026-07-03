@@ -10,7 +10,7 @@ services:
       - .env
     environment:
       CADDY_CONFIG_PATH: /config/Caddyfile
-      CADDYMGM_SETTINGS_PATH: /caddymgm-config/caddymgm-settings.json
+      CADDYMGM_SETTINGS_PATH: /caddymgm/caddymgm-settings.json
       CADDYMGM_CADDY_DATA_DIR: /caddy-data
       CADDYMGM_CA_CERT_DIR: /ca-certificates
       CADDYMGM_LOCALAUTH_ENABLED: "false"
@@ -20,8 +20,8 @@ services:
       - ./caddy-config:/config
       - ./caddy-logs:/logs
       - ./caddy-data:/caddy-data
-      - ./ca-certificates:/ca-certificates
-      - ./caddymgm-config:/caddymgm-config
+      - ./caddy-data/ca-certificates:/ca-certificates
+      - ./caddymgm:/caddymgm
 
   caddy:
     image: ${CADDY_IMAGE:-caddy:2-alpine}
@@ -48,4 +48,4 @@ services:
       - ./caddy-logs:/logs
       - ./caddy-data:/data
       - ./caddy-data/state:/config
-      - ./ca-certificates:/ca-certificates:ro
+      - ./caddy-data/ca-certificates:/ca-certificates:ro

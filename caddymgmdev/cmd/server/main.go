@@ -179,7 +179,7 @@ type oidcRuntime struct {
 
 func main() {
 	configPath := env("CADDY_CONFIG_PATH", "/config/Caddyfile")
-	settingsPath := env("CADDYMGM_SETTINGS_PATH", "/caddymgm-config/caddymgm-settings.json")
+	settingsPath := env("CADDYMGM_SETTINGS_PATH", "/caddymgm/caddymgm-settings.json")
 	caddyMode := normalizeCaddyMode(env("CADDYMGM_CADDY_MODE", "file"))
 	caddyAPIURL := env("CADDYMGM_CADDY_API_URL", defaultCaddyAPIURL(caddyMode))
 	accessLogDir := env("CADDYMGM_ACCESS_LOG_DIR", "/logs")

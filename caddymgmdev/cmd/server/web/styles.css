@@ -119,6 +119,20 @@ button.danger {
   color: #001226;
 }
 
+.brand-logo {
+  overflow: hidden;
+  background: rgba(35, 137, 255, 0.12);
+  border: 1px solid rgba(91, 184, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .nav {
   display: grid;
   gap: 8px;
@@ -127,6 +141,7 @@ button.danger {
 .nav-item {
   display: flex;
   align-items: center;
+  gap: 10px;
   min-height: 38px;
   width: 100%;
   border: 0;
@@ -146,9 +161,41 @@ button.danger {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+.nav-item span:last-child {
+  flex: 1;
+}
+
 .nav-item:hover {
   background: #1a1c22;
   filter: none;
+}
+
+.nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  color: #7ca0c5;
+}
+
+.nav-icon svg,
+.icon-button svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nav-item.active .nav-icon {
+  color: var(--accent);
+}
+
+.nav-item:hover .nav-icon {
+  color: #9fcbf0;
 }
 
 .profile {
@@ -203,6 +250,12 @@ button.danger {
   border-color: #333642;
 }
 
+.icon-button svg {
+  width: 16px;
+  height: 16px;
+  color: #b9d7f2;
+}
+
 .content {
   min-width: 0;
   padding: 18px 20px 24px;
@@ -214,6 +267,17 @@ button.danger {
   justify-content: space-between;
   gap: 16px;
   min-height: 50px;
+}
+
+.page-title-block {
+  display: grid;
+  gap: 4px;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 h1,
@@ -232,14 +296,30 @@ h2 {
   font-weight: 650;
 }
 
+.panel-heading h2,
+.dialog-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .eyebrow,
-.panel-heading span {
+.panel-heading > span {
   display: block;
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+
+.panel-heading h2 > span:last-child,
+.dialog-head h2 > span:last-child {
+  display: inline;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: none;
 }
 
 .actions,
@@ -265,8 +345,56 @@ h2 {
   gap: 9px;
 }
 
-.shield {
-  color: var(--blue);
+.title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(35, 137, 255, 0.12);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(91, 184, 255, 0.18);
+}
+
+.title-icon svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.section-icon {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.panel-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(35, 137, 255, 0.1);
+  color: #8fcaff;
+  box-shadow: inset 0 0 0 1px rgba(91, 184, 255, 0.16);
+}
+
+.panel-title-icon svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .status-pill {

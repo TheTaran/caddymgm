@@ -12,12 +12,12 @@ RUN apk add --no-cache ca-certificates \
   && adduser -D -H -u 10001 caddymgm
 WORKDIR /app
 COPY --from=build /out/caddymgm /app/caddymgm
-RUN mkdir -p /config /logs /caddymgm-config && chown -R caddymgm:caddymgm /config /logs /caddymgm-config
+RUN mkdir -p /config /logs /caddymgm && chown -R caddymgm:caddymgm /config /logs /caddymgm
 
 USER caddymgm
 EXPOSE 8080
 ENV CADDY_CONFIG_PATH=/config/Caddyfile
 ENV CADDYMGM_ACCESS_LOG_DIR=/logs
 ENV CADDYMGM_WEB_LISTEN=:8080
-ENV CADDYMGM_SETTINGS_PATH=/caddymgm-config/caddymgm-settings.json
+ENV CADDYMGM_SETTINGS_PATH=/caddymgm/caddymgm-settings.json
 ENTRYPOINT ["/app/caddymgm"]

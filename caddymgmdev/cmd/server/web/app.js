@@ -1,7 +1,9 @@
 const els = {
   status: document.querySelector("#status"),
   pageTitle: document.querySelector("#page-title"),
+  pageTitleIcon: document.querySelector("#page-title-icon"),
   sectionTitle: document.querySelector("#section-title"),
+  sectionTitleIcon: document.querySelector("#section-title-icon"),
   metrics: document.querySelector("#metrics"),
   profileAvatar: document.querySelector("#profile-avatar"),
   profileUsername: document.querySelector("#profile-username"),
@@ -82,6 +84,44 @@ const viewTitles = {
   settings: ["Settings", "CaddyMGM Settings"],
 };
 
+const viewIcons = {
+  dashboard: `
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M4 13.5 12 5l8 8.5" />
+      <path d="M6.5 11.5V20h11V11.5" />
+      <path d="M10 20v-5h4v5" />
+    </svg>
+  `,
+  "proxy-hosts": `
+    <svg viewBox="0 0 24 24" fill="none">
+      <rect x="4" y="6" width="16" height="5" rx="2.5" />
+      <rect x="4" y="13" width="16" height="5" rx="2.5" />
+      <path d="M8 8.5h.01M8 15.5h.01" />
+      <path d="M13 8.5h4M13 15.5h4" />
+    </svg>
+  `,
+  certificates: `
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M12 3 6 5.5v5.5c0 4 2.56 7.2 6 10 3.44-2.8 6-6 6-10V5.5L12 3Z" />
+      <path d="m9.5 12 1.8 1.8 3.7-4" />
+    </svg>
+  `,
+  logs: `
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M5 6.5h14" />
+      <path d="M5 12h14" />
+      <path d="M5 17.5h9" />
+      <path d="M15 15.5 17.5 18 20 15.5" />
+    </svg>
+  `,
+  settings: `
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
+      <path d="M19 12a7 7 0 0 0-.08-1l2-1.54-2-3.46-2.4.83a7.77 7.77 0 0 0-1.74-1L14.5 3h-5l-.28 2.83a7.77 7.77 0 0 0-1.74 1l-2.4-.83-2 3.46 2 1.54a7 7 0 0 0 0 2l-2 1.54 2 3.46 2.4-.83a7.77 7.77 0 0 0 1.74 1L9.5 21h5l.28-2.83a7.77 7.77 0 0 0 1.74-1l2.4.83 2-3.46-2-1.54c.05-.33.08-.67.08-1Z" />
+    </svg>
+  `,
+};
+
 let sites = [];
 let settings = null;
 let logPollTimer = null;
@@ -153,6 +193,9 @@ function showView(view) {
   const [title, section] = viewTitles[view] || viewTitles.dashboard;
   els.pageTitle.textContent = title;
   els.sectionTitle.textContent = section;
+  const icon = viewIcons[view] || viewIcons.dashboard;
+  els.pageTitleIcon.innerHTML = icon;
+  els.sectionTitleIcon.innerHTML = icon;
 
   if (view === "proxy-hosts") closeEditor();
   if (view === "logs") {

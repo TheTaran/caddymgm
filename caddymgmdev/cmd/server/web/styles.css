@@ -213,11 +213,11 @@ button.danger {
 }
 
 .profile strong,
-.profile span {
+.profile span:not(.avatar) {
   display: block;
 }
 
-.profile span {
+.profile span:not(.avatar) {
   color: var(--muted);
   font-size: 12px;
 }
@@ -226,6 +226,7 @@ button.danger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 32px;
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -233,6 +234,7 @@ button.danger {
   color: #fff;
   font-size: 12px;
   font-weight: 650;
+  line-height: 1;
 }
 
 .icon-button {
@@ -500,10 +502,16 @@ h2 {
 
 .table-head {
   min-height: 36px;
+  padding: 0 10px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
+}
+
+.table-head > :last-child {
+  justify-self: end;
+  text-align: right;
 }
 
 .site-row + .site-row {

@@ -43,6 +43,7 @@ const els = {
   settingsForm: document.querySelector("#settings-form"),
   settingsUsername: document.querySelector("#settings-username"),
   settingsPassword: document.querySelector("#settings-password"),
+  settingsPasswordConfirm: document.querySelector("#settings-password-confirm"),
   settingsOIDCEnabled: document.querySelector("#settings-oidc-enabled"),
   settingsOIDCIssuer: document.querySelector("#settings-oidc-issuer"),
   settingsOIDCClientID: document.querySelector("#settings-oidc-client-id"),
@@ -148,6 +149,8 @@ els.logSiteFilter.addEventListener("change", () => {
 els.serviceLogToggle.addEventListener("click", toggleServiceLogsExpanded);
 els.siteLogToggle.addEventListener("click", toggleSiteLogsExpanded);
 els.settingsForm.addEventListener("submit", saveSettings);
+els.settingsPassword.addEventListener("input", syncSettingsPasswordConfirmation);
+els.settingsPasswordConfirm.addEventListener("input", syncSettingsPasswordConfirmation);
 els.settingsWebTLSEnabled.addEventListener("change", syncSettingsWebTLS);
 els.certificateForm.addEventListener("submit", saveIssuer);
 els.issuerNew.addEventListener("click", () => editIssuer({}));
@@ -229,6 +232,7 @@ async function loadSettings() {
     settings = await request("/api/settings");
     els.settingsUsername.value = settings.username || "admin";
     els.settingsPassword.value = "";
+    els.settingsPasswordConfirm.value = "";
     els.settingsOIDCEnabled.checked = !!settings.oidc?.enabled;
     els.settingsOIDCIssuer.value = settings.oidc?.issuerUrl || "";
     els.settingsOIDCClientID.value = settings.oidc?.clientId || "";
@@ -243,6 +247,7 @@ async function loadSettings() {
     renderCertificatesView();
     renderIssuerOptions();
     els.settingsWebACME.value = settings.webInterface?.acmeIssuerId || "";
+    syncSettingsPasswordConfirmation();
     syncSettingsWebTLS();
   } catch (err) {
     setStatus(err.message);
@@ -251,6 +256,11 @@ async function loadSettings() {
 
 async function saveSettings(event) {
   event.preventDefault();
+  if (!syncSettingsPasswordConfirmation()) {
+    setStatus("The new passwords do not match");
+    els.settingsPasswordConfirm.focus({ preventScroll: true });
+    return;
+  }
   const payload = {
     appName: settings?.appName || "CaddyMGM",
     authEnabled: settings?.authEnabled ?? true,
@@ -278,6 +288,8 @@ async function saveSettings(event) {
       body: JSON.stringify(payload),
     });
     els.settingsPassword.value = "";
+    els.settingsPasswordConfirm.value = "";
+    syncSettingsPasswordConfirmation();
     setStatus("Settings saved");
     renderCertificatesView();
     renderIssuerOptions();
@@ -465,6 +477,18 @@ function syncSettingsWebTLS() {
   } else if (!els.settingsWebACME.value && els.settingsWebACME.options.length > 0) {
     els.settingsWebACME.value = els.settingsWebACME.options[0].value;
   }
+}
+
+function syncSettingsPasswordConfirmation() {
+  const password = els.settingsPassword.value;
+  const confirmation = els.settingsPasswordConfirm.value;
+  const mismatch = password !== confirmation;
+  const message = mismatch ? "The new passwords do not match" : "";
+  els.settingsPasswordConfirm.setCustomValidity(message);
+  if (confirmation) {
+    els.settingsPasswordConfirm.reportValidity();
+  }
+  return !mismatch;
 }
 
 function editIssuer(issuer = null) {

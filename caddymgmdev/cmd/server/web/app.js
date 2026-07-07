@@ -997,9 +997,16 @@ async function renewCertificate(site) {
 }
 
 async function request(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (needsCSRFFromMethod(options.method || "GET")) {
+    headers.set("X-CSRF-Token", getCSRFToken());
+  }
   const response = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers,
   });
   if (response.status === 401) {
     window.location.assign("/login.html");
@@ -1012,7 +1019,11 @@ async function request(url, options = {}) {
 }
 
 async function uploadRequest(url, body) {
-  const response = await fetch(url, { method: "POST", body });
+  const response = await fetch(url, {
+    method: "POST",
+    body,
+    headers: { "X-CSRF-Token": getCSRFToken() },
+  });
   if (response.status === 401) {
     window.location.assign("/login.html");
     throw new Error("authentication required");
@@ -1023,8 +1034,21 @@ async function uploadRequest(url, body) {
 }
 
 async function logout() {
-  await fetch("/api/auth/logout", { method: "POST" });
+  await fetch("/api/auth/logout", {
+    method: "POST",
+    headers: { "X-CSRF-Token": getCSRFToken() },
+  });
   window.location.assign("/login.html");
+}
+
+function getCSRFToken() {
+  const match = document.cookie.match(/(?:^|; )caddymgm_csrf=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+function needsCSRFFromMethod(method) {
+  const normalized = String(method || "GET").toUpperCase();
+  return !["GET", "HEAD", "OPTIONS"].includes(normalized);
 }
 
 function initialsForUser(value) {

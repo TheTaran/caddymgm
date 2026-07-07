@@ -85,7 +85,10 @@ form.addEventListener("submit", async (event) => {
   try {
     const response = await fetch("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": getCSRFToken(),
+      },
       body: JSON.stringify(payload),
     });
     const data = await response.json();
@@ -117,7 +120,14 @@ function friendlyError(code) {
       return "The ID token could not be verified.";
     case "invalid_oidc_claims":
       return "The ID token claims could not be read.";
+    case "insecure_transport":
+      return "Remote login requires HTTPS. Use localhost for local-only access.";
     default:
       return "Login failed.";
   }
+}
+
+function getCSRFToken() {
+  const match = document.cookie.match(/(?:^|; )caddymgm_csrf=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : "";
 }

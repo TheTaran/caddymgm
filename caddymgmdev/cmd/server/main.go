@@ -32,12 +32,16 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 )
 
 const (
-	managedStart = "# caddymgm:start"
-	managedEnd   = "# caddymgm:end"
+	managedStart        = "# caddymgm:start"
+	managedEnd          = "# caddymgm:end"
+	sessionCookieName   = "caddymgm_session"
+	oidcStateCookieName = "caddymgm_oidc_state"
+	csrfCookieName      = "caddymgm_csrf"
 )
 
 //go:embed web/*
@@ -145,24 +149,25 @@ type LogEntry struct {
 }
 
 type App struct {
-	mu           sync.Mutex
-	configPath   string
-	settingsPath string
-	caddyMode    string
-	caddyAPIURL  string
-	accessLogDir string
-	caddyLogDir  string
-	serviceLog   string
-	caddyDataDir string
-	caCertDir    string
-	webListen    string
-	webPort      string
-	httpClient   *http.Client
-	settings     Settings
-	logs         []LogEntry
-	sessions     map[string]Session
-	oidcStates   map[string]time.Time
-	oidcCache    map[string]*oidcRuntime
+	mu             sync.Mutex
+	configPath     string
+	settingsPath   string
+	caddyMode      string
+	caddyAPIURL    string
+	accessLogDir   string
+	caddyLogDir    string
+	serviceLog     string
+	caddyDataDir   string
+	caCertDir      string
+	staticRootBase string
+	webListen      string
+	webPort        string
+	httpClient     *http.Client
+	settings       Settings
+	logs           []LogEntry
+	sessions       map[string]Session
+	oidcStates     map[string]time.Time
+	oidcCache      map[string]*oidcRuntime
 }
 
 type Session struct {
@@ -187,6 +192,7 @@ func main() {
 	serviceLog := env("CADDYMGM_CADDY_SERVICE_LOG", filepath.Join(accessLogDir, "caddy-service.log"))
 	caddyDataDir := env("CADDYMGM_CADDY_DATA_DIR", "/caddy-data")
 	caCertDir := env("CADDYMGM_CA_CERT_DIR", "/ca-certificates")
+	staticRootBase := env("CADDYMGM_STATIC_ROOT_BASE", "/srv")
 	webListen := env("CADDYMGM_WEB_LISTEN", ":8080")
 	webPort := strings.TrimSpace(env("CADDYMGM_WEB_PORT", "8080"))
 	if _, err := net.LookupPort("tcp", webPort); err != nil {
@@ -194,21 +200,22 @@ func main() {
 	}
 
 	app := &App{
-		configPath:   configPath,
-		settingsPath: settingsPath,
-		caddyMode:    caddyMode,
-		caddyAPIURL:  strings.TrimRight(caddyAPIURL, "/"),
-		accessLogDir: accessLogDir,
-		caddyLogDir:  caddyLogDir,
-		serviceLog:   serviceLog,
-		caddyDataDir: caddyDataDir,
-		caCertDir:    caCertDir,
-		webListen:    webListen,
-		webPort:      webPort,
-		httpClient:   &http.Client{Timeout: 15 * time.Second},
-		sessions:     make(map[string]Session),
-		oidcStates:   make(map[string]time.Time),
-		oidcCache:    make(map[string]*oidcRuntime),
+		configPath:     configPath,
+		settingsPath:   settingsPath,
+		caddyMode:      caddyMode,
+		caddyAPIURL:    strings.TrimRight(caddyAPIURL, "/"),
+		accessLogDir:   accessLogDir,
+		caddyLogDir:    caddyLogDir,
+		serviceLog:     serviceLog,
+		caddyDataDir:   caddyDataDir,
+		caCertDir:      caCertDir,
+		staticRootBase: staticRootBase,
+		webListen:      webListen,
+		webPort:        webPort,
+		httpClient:     &http.Client{Timeout: 15 * time.Second},
+		sessions:       make(map[string]Session),
+		oidcStates:     make(map[string]time.Time),
+		oidcCache:      make(map[string]*oidcRuntime),
 	}
 	if err := app.ensureConfig(); err != nil {
 		log.Fatalf("prepare config: %v", err)
@@ -246,7 +253,7 @@ func main() {
 	mux.HandleFunc("GET /auth/oidc/callback", app.handleOIDCCallback)
 
 	listenAddr := app.webListen
-	handler := logRequest(app.requireAuth(mux))
+	handler := logRequest(app.securityHeaders(app.ensureCSRFCookie(app.requireCSRF(app.requireAuth(mux)))))
 	server := &http.Server{
 		Addr:    listenAddr,
 		Handler: handler,
@@ -285,7 +292,7 @@ func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if err := a.validateSiteTLSLocked(site); err != nil {
+	if err := a.validateSiteLocked(site); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -331,7 +338,7 @@ func (a *App) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if err := a.validateSiteTLSLocked(updated); err != nil {
+	if err := a.validateSiteLocked(updated); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -458,6 +465,10 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	next.ACMEIssuers = issuers
 	if err := validateWebInterface(next.WebInterface, issuers); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(next.Password) != "" && len(next.Password) > 72 {
+		writeError(w, http.StatusBadRequest, errors.New("password must be 72 characters or fewer"))
 		return
 	}
 
@@ -653,9 +664,20 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errors.New("local authentication is disabled"))
 		return
 	}
+	if !secureSessionTransportAllowed(r) {
+		writeError(w, http.StatusForbidden, errors.New("login requires HTTPS unless you are connecting from localhost"))
+		return
+	}
 
 	if a.validCredentialsLocked(payload.Username, payload.Password) {
-		a.createSessionLocked(w, a.settings.Username, "local")
+		if passwordNeedsUpgrade(a.settings.PasswordHash) {
+			a.settings.PasswordHash = hashPassword(payload.Password)
+			if err := a.saveSettingsLocked(); err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+		}
+		a.createSessionLocked(w, r, a.settings.Username, "local")
 		writeJSON(w, http.StatusOK, map[string]any{
 			"authenticated": true,
 			"username":      a.settings.Username,
@@ -666,13 +688,17 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if !secureSessionTransportAllowed(r) {
+		writeError(w, http.StatusForbidden, errors.New("logout requires HTTPS unless you are connecting from localhost"))
+		return
+	}
 	a.mu.Lock()
-	if cookie, err := r.Cookie("caddymgm_session"); err == nil {
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		delete(a.sessions, cookie.Value)
 	}
 	a.mu.Unlock()
 
-	expired := sessionCookie("", -time.Hour)
+	expired := sessionCookie("", -time.Hour, isSecureRequest(r))
 	http.SetCookie(w, expired)
 	writeJSON(w, http.StatusOK, map[string]bool{"loggedOut": true})
 }
@@ -683,7 +709,7 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 	username := a.settings.Username
 	provider := "local"
 	authenticated := a.hasValidSessionLocked(r)
-	if cookie, err := r.Cookie("caddymgm_session"); err == nil {
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		if session, ok := a.sessions[cookie.Value]; ok {
 			username = session.Username
 			provider = session.Provider
@@ -715,6 +741,11 @@ func (a *App) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
+	if !secureSessionTransportAllowed(r) {
+		a.mu.Unlock()
+		http.Redirect(w, r, "/login.html?error=insecure_transport", http.StatusFound)
+		return
+	}
 	runtime, err := a.oidcRuntimeLocked(r.Context())
 	if err != nil {
 		a.mu.Unlock()
@@ -725,7 +756,7 @@ func (a *App) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 	a.oidcStates[state] = time.Now().Add(10 * time.Minute)
 	a.mu.Unlock()
 
-	http.SetCookie(w, oidcStateCookie(state, 10*time.Minute))
+	http.SetCookie(w, oidcStateCookie(state, 10*time.Minute, isSecureRequest(r)))
 	http.Redirect(w, r, runtime.Config.AuthCodeURL(state), http.StatusFound)
 }
 
@@ -740,25 +771,31 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	if !a.settings.AuthEnabled {
 		a.mu.Unlock()
-		http.SetCookie(w, oidcStateCookie("", -time.Hour))
+		http.SetCookie(w, oidcStateCookie("", -time.Hour, isSecureRequest(r)))
 		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	if !secureSessionTransportAllowed(r) {
+		a.mu.Unlock()
+		http.SetCookie(w, oidcStateCookie("", -time.Hour, isSecureRequest(r)))
+		http.Redirect(w, r, "/login.html?error=insecure_transport", http.StatusFound)
 		return
 	}
 	runtime, err := a.oidcRuntimeLocked(r.Context())
 	if err != nil {
 		a.mu.Unlock()
-		http.SetCookie(w, oidcStateCookie("", -time.Hour))
+		http.SetCookie(w, oidcStateCookie("", -time.Hour, isSecureRequest(r)))
 		http.Redirect(w, r, "/login.html?error=oidc_not_available", http.StatusFound)
 		return
 	}
 	if err := a.consumeOIDCStateLocked(r, state); err != nil {
 		a.mu.Unlock()
-		http.SetCookie(w, oidcStateCookie("", -time.Hour))
+		http.SetCookie(w, oidcStateCookie("", -time.Hour, isSecureRequest(r)))
 		http.Redirect(w, r, "/login.html?error=invalid_oidc_state", http.StatusFound)
 		return
 	}
 	a.mu.Unlock()
-	http.SetCookie(w, oidcStateCookie("", -time.Hour))
+	http.SetCookie(w, oidcStateCookie("", -time.Hour, isSecureRequest(r)))
 
 	token, err := runtime.Config.Exchange(r.Context(), code)
 	if err != nil {
@@ -791,7 +828,7 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.mu.Lock()
-	a.createSessionLocked(w, username, "oidc")
+	a.createSessionLocked(w, r, username, "oidc")
 	a.mu.Unlock()
 	http.Redirect(w, r, "/", http.StatusFound)
 }
@@ -879,7 +916,9 @@ func (a *App) applySettingsEnvOverridesLocked(settings *Settings) {
 		settings.Username = username
 	}
 	if password := strings.TrimSpace(env("CADDYMGM_ADMIN_PASSWORD", "")); password != "" {
-		settings.PasswordHash = hashPassword(password)
+		if !passwordMatchesHash(password, settings.PasswordHash) {
+			settings.PasswordHash = hashPassword(password)
+		}
 	}
 	if settings.PasswordHash == "" {
 		settings.PasswordHash = hashPassword("changeme")
@@ -1305,7 +1344,12 @@ func parseManagedComment(raw string) string {
 	return strings.TrimSpace(raw)
 }
 
-func (a *App) validateSiteTLSLocked(site Site) error {
+func (a *App) validateSiteLocked(site Site) error {
+	if site.Mode == "static" {
+		if err := validateStaticRoot(site.Root, a.staticRootBase); err != nil {
+			return err
+		}
+	}
 	if site.TLSMode != "acme" {
 		return nil
 	}
@@ -1314,6 +1358,31 @@ func (a *App) validateSiteTLSLocked(site Site) error {
 	}
 	if _, ok := findACMEIssuer(a.settings.ACMEIssuers, site.ACMEIssuerID); !ok {
 		return errors.New("selected acme certificate authority was not found")
+	}
+	return nil
+}
+
+func validateStaticRoot(root, base string) error {
+	root = filepath.Clean(strings.TrimSpace(root))
+	base = filepath.Clean(strings.TrimSpace(base))
+	if root == "" {
+		return errors.New("root path is required")
+	}
+	if base == "" || !filepath.IsAbs(base) {
+		return errors.New("static root base must be an absolute path")
+	}
+	if strings.ContainsAny(root, "\r\n\t") {
+		return errors.New("root path contains unsupported characters")
+	}
+	if !filepath.IsAbs(root) {
+		return fmt.Errorf("root path must stay under %s", base)
+	}
+	rel, err := filepath.Rel(base, root)
+	if err != nil {
+		return fmt.Errorf("root path must stay under %s", base)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("root path must stay under %s", base)
 	}
 	return nil
 }
@@ -2135,8 +2204,11 @@ func newID() string {
 }
 
 func hashPassword(password string) string {
-	sum := sha256.Sum256([]byte(password))
-	return hex.EncodeToString(sum[:])
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		panic(fmt.Sprintf("hash password: %v", err))
+	}
+	return string(hash)
 }
 
 func (a *App) requireAuth(next http.Handler) http.Handler {
@@ -2171,12 +2243,11 @@ func (a *App) validCredentialsLocked(username, password string) bool {
 	if subtle.ConstantTimeCompare([]byte(username), []byte(a.settings.Username)) != 1 {
 		return false
 	}
-	passHash := hashPassword(password)
-	return subtle.ConstantTimeCompare([]byte(passHash), []byte(a.settings.PasswordHash)) == 1
+	return passwordMatchesHash(password, a.settings.PasswordHash)
 }
 
 func (a *App) hasValidSessionLocked(r *http.Request) bool {
-	cookie, err := r.Cookie("caddymgm_session")
+	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || cookie.Value == "" {
 		return false
 	}
@@ -2212,40 +2283,54 @@ func newSessionToken() string {
 	return hex.EncodeToString(b[:])
 }
 
-func sessionCookie(value string, maxAge time.Duration) *http.Cookie {
+func sessionCookie(value string, maxAge time.Duration, secure bool) *http.Cookie {
 	return &http.Cookie{
-		Name:     "caddymgm_session",
+		Name:     sessionCookieName,
 		Value:    value,
 		Path:     "/",
 		MaxAge:   int(maxAge.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
 	}
 }
 
-func oidcStateCookie(value string, maxAge time.Duration) *http.Cookie {
+func oidcStateCookie(value string, maxAge time.Duration, secure bool) *http.Cookie {
 	return &http.Cookie{
-		Name:     "caddymgm_oidc_state",
+		Name:     oidcStateCookieName,
 		Value:    value,
 		Path:     "/",
 		MaxAge:   int(maxAge.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
 	}
 }
 
-func (a *App) createSessionLocked(w http.ResponseWriter, username, provider string) {
+func csrfCookie(value string, maxAge time.Duration, secure bool) *http.Cookie {
+	return &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   int(maxAge.Seconds()),
+		HttpOnly: false,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
+	}
+}
+
+func (a *App) createSessionLocked(w http.ResponseWriter, r *http.Request, username, provider string) {
 	token := newSessionToken()
 	a.sessions[token] = Session{
 		ExpiresAt: time.Now().Add(12 * time.Hour),
 		Username:  username,
 		Provider:  provider,
 	}
-	http.SetCookie(w, sessionCookie(token, 12*time.Hour))
+	http.SetCookie(w, sessionCookie(token, 12*time.Hour, isSecureRequest(r)))
 }
 
 func (a *App) consumeOIDCStateLocked(r *http.Request, state string) error {
-	cookie, err := r.Cookie("caddymgm_oidc_state")
+	cookie, err := r.Cookie(oidcStateCookieName)
 	if err != nil || cookie.Value == "" || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {
 		return errors.New("state cookie mismatch")
 	}
@@ -2372,6 +2457,192 @@ func envBool(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+func passwordMatchesHash(password, stored string) bool {
+	if strings.HasPrefix(stored, "$2a$") || strings.HasPrefix(stored, "$2b$") || strings.HasPrefix(stored, "$2y$") {
+		return bcrypt.CompareHashAndPassword([]byte(stored), []byte(password)) == nil
+	}
+	sum := sha256.Sum256([]byte(password))
+	legacy := hex.EncodeToString(sum[:])
+	return subtle.ConstantTimeCompare([]byte(legacy), []byte(stored)) == 1
+}
+
+func passwordNeedsUpgrade(stored string) bool {
+	return !(strings.HasPrefix(stored, "$2a$") || strings.HasPrefix(stored, "$2b$") || strings.HasPrefix(stored, "$2y$"))
+}
+
+func secureSessionTransportAllowed(r *http.Request) bool {
+	return isSecureRequest(r) || isLoopbackHost(requestHost(r))
+}
+
+func isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(forwardedProto(r))) {
+	case "https", "wss":
+		return true
+	default:
+		return false
+	}
+}
+
+func forwardedProto(r *http.Request) string {
+	if value := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); value != "" {
+		if proto, _, ok := strings.Cut(value, ","); ok {
+			return strings.TrimSpace(proto)
+		}
+		return value
+	}
+	for _, part := range strings.Split(r.Header.Get("Forwarded"), ";") {
+		key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok || !strings.EqualFold(key, "proto") {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(value), `"`)
+	}
+	return ""
+}
+
+func requestScheme(r *http.Request) string {
+	if isSecureRequest(r) {
+		return "https"
+	}
+	return "http"
+}
+
+func requestHost(r *http.Request) string {
+	host := strings.TrimSpace(r.Host)
+	if host == "" {
+		return ""
+	}
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		return strings.Trim(parsedHost, "[]")
+	}
+	return strings.Trim(host, "[]")
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func (a *App) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "same-origin")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'")
+		if isSecureRequest(r) {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (a *App) ensureCSRFCookie(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := ""
+		if cookie, err := r.Cookie(csrfCookieName); err == nil && validCSRFToken(cookie.Value) {
+			token = cookie.Value
+		}
+		if token == "" {
+			token = newSessionToken()
+			http.SetCookie(w, csrfCookie(token, 12*time.Hour, isSecureRequest(r)))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (a *App) requireCSRF(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !csrfProtectionRequired(r.Method) || !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if err := validateRequestOrigin(r); err != nil {
+			writeError(w, http.StatusForbidden, err)
+			return
+		}
+		cookie, err := r.Cookie(csrfCookieName)
+		if err != nil || !validCSRFToken(cookie.Value) {
+			writeError(w, http.StatusForbidden, errors.New("missing csrf cookie"))
+			return
+		}
+		token := strings.TrimSpace(r.Header.Get("X-CSRF-Token"))
+		if !validCSRFToken(token) || subtle.ConstantTimeCompare([]byte(token), []byte(cookie.Value)) != 1 {
+			writeError(w, http.StatusForbidden, errors.New("invalid csrf token"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func csrfProtectionRequired(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateRequestOrigin(r *http.Request) error {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	referer := strings.TrimSpace(r.Header.Get("Referer"))
+	source := origin
+	if source == "" {
+		source = referer
+	}
+	if source == "" {
+		return errors.New("missing request origin")
+	}
+	parsed, err := url.Parse(source)
+	if err != nil || parsed.Host == "" {
+		return errors.New("invalid request origin")
+	}
+	if !strings.EqualFold(parsed.Scheme, requestScheme(r)) {
+		return errors.New("request origin scheme mismatch")
+	}
+	if !sameHost(parsed.Host, r.Host) {
+		return errors.New("request origin host mismatch")
+	}
+	return nil
+}
+
+func sameHost(left, right string) bool {
+	return strings.EqualFold(normalizeHost(left), normalizeHost(right))
+}
+
+func normalizeHost(value string) string {
+	value = strings.TrimSpace(value)
+	if host, port, err := net.SplitHostPort(value); err == nil {
+		return strings.ToLower(net.JoinHostPort(strings.Trim(host, "[]"), port))
+	}
+	return strings.ToLower(strings.Trim(value, "[]"))
+}
+
+func validCSRFToken(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func logRequest(next http.Handler) http.Handler {

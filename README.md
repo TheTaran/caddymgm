@@ -41,6 +41,9 @@ http://localhost:8080
 
 4. Log in with the credentials from `.env`.
 
+For remote access, publish CaddyMGM only behind HTTPS.
+Local `http://localhost:8080` access remains supported for development on the same machine.
+
 ## Optional Caddy Service
 
 If you also want Docker Compose to run Caddy, enable the profile:
@@ -92,6 +95,7 @@ The repository root is the runtime structure:
 - New web hosts have logs enabled by default.
 - New web hosts have TLS disabled by default.
 - TLS is only requested when you enable it for a host and select an ACME authority.
+- Static websites must use a document root under `/srv` inside the Caddy container.
 - `Certificates` shows configured ACME authorities and issued certificates.
 - `Logs` shows realtime Caddy service logs and website access logs.
 
@@ -134,7 +138,7 @@ The following variables are used by Docker Compose and CaddyMGM.
 | `PUID` | `1000` | User id used for container file ownership |
 | `PGID` | `1000` | Group id used for container file ownership |
 | `CADDYMGM_ADMIN_USER` | `admin` | Initial local admin username |
-| `CADDYMGM_ADMIN_PASSWORD` | `changeme` | Initial local admin password |
+| `CADDYMGM_ADMIN_PASSWORD` | no fixed default in production | Initial local admin password |
 | `CADDYMGM_AUTH_ENABLED` | `true` | Enables the login portal |
 | `CADDYMGM_LOCALAUTH_ENABLED` | `true` | Enables local username/password login |
 | `CADDYMGM_OIDCAUTH_ENABLED` | `false` | Enables OIDC login |
@@ -143,6 +147,7 @@ The following variables are used by Docker Compose and CaddyMGM.
 | `CADDYMGM_ACCESS_LOG_DIR` | `/logs` | Directory from which CaddyMGM reads website logs |
 | `CADDYMGM_CADDY_DATA_DIR` | `/caddy-data` | Directory used to inspect certificate data |
 | `CADDYMGM_CA_CERT_DIR` | `/ca-certificates` | Directory for uploaded or mounted Root CAs |
+| `CADDYMGM_STATIC_ROOT_BASE` | `/srv` | Allowed base path for static website document roots |
 | `CADDYMGM_WEB_LISTEN` | `:8080` | Internal listen address of the Go web server |
 | `CADDYMGM_WEB_PORT` | `8080` | Public management port used through Caddy |
 | `CADDYMGM_SETTINGS_PATH` | `/caddymgm/caddymgm-settings.json` | Path to the CaddyMGM settings file |
@@ -158,12 +163,13 @@ The following variables are used by Docker Compose and CaddyMGM.
 PUID=1000
 PGID=1000
 CADDYMGM_ADMIN_USER=admin
-CADDYMGM_ADMIN_PASSWORD=changeme
+CADDYMGM_ADMIN_PASSWORD=replace-with-a-strong-password
 CADDYMGM_AUTH_ENABLED=true
 CADDYMGM_LOCALAUTH_ENABLED=true
 CADDYMGM_OIDCAUTH_ENABLED=false
 CADDYMGM_CADDY_MODE=file
 CADDYMGM_CADDY_API_URL=http://caddy:2019
+CADDYMGM_STATIC_ROOT_BASE=/srv
 CADDYMGM_WEB_PORT=8080
 COMPOSE_PROFILES=docker-caddy
 ```

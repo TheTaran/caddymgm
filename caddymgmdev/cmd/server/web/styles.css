@@ -493,11 +493,20 @@ h2 {
 .table-head,
 .site-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) fit-content(88px) fit-content(110px) minmax(180px, 1fr) fit-content(96px) minmax(160px, 0.95fr) fit-content(220px);
   align-items: center;
   gap: 12px;
   min-height: 58px;
   margin: 0 14px;
+}
+
+#view-dashboard .table-head,
+.site-row-dashboard {
+  grid-template-columns: minmax(180px, 1fr) fit-content(88px) fit-content(110px) minmax(180px, 1fr) fit-content(96px) fit-content(90px) minmax(160px, 0.95fr);
+}
+
+#view-proxy-hosts .table-head,
+.site-row-editable {
+  grid-template-columns: minmax(180px, 1fr) fit-content(88px) fit-content(110px) minmax(180px, 1fr) fit-content(96px) fit-content(90px) minmax(160px, 0.95fr) fit-content(220px);
 }
 
 .table-head {
@@ -509,7 +518,12 @@ h2 {
   text-transform: uppercase;
 }
 
-.table-head > :last-child {
+#view-dashboard .table-head > :last-child {
+  justify-self: start;
+  text-align: left;
+}
+
+#view-proxy-hosts .table-head > :last-child {
   justify-self: end;
   text-align: right;
 }
@@ -593,6 +607,11 @@ h2 {
 .badge.off {
   background: #292b33;
   color: var(--disabled);
+}
+
+.badge.warn {
+  background: rgba(255, 174, 54, 0.14);
+  color: var(--warning);
 }
 
 .editor-card[hidden] {

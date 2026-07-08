@@ -20,8 +20,10 @@ const els = {
   address: document.querySelector("#address"),
   comment: document.querySelector("#comment"),
   upstream: document.querySelector("#upstream"),
+  skipTlsVerify: document.querySelector("#skip-tls-verify"),
   root: document.querySelector("#root"),
   upstreamRow: document.querySelector("#upstream-row"),
+  skipTlsVerifyRow: document.querySelector("#skip-tls-verify-row"),
   rootRow: document.querySelector("#root-row"),
   extra: document.querySelector("#extra"),
   enabled: document.querySelector("#enabled"),
@@ -541,30 +543,44 @@ function renderSiteList(container, editable) {
 
   for (const site of sites) {
     const row = document.createElement("div");
-    row.className = "site-row";
-    row.innerHTML = `
-      <strong></strong>
-      <span class="badge"></span>
-      <span></span>
-      <span class="target"></span>
-      <span class="badge"></span>
-      <span class="target"></span>
-      <div class="site-actions"></div>
-    `;
+    row.className = `site-row ${editable ? "site-row-editable" : "site-row-dashboard"}`;
+    row.innerHTML = editable
+      ? `
+          <strong></strong>
+          <span class="badge"></span>
+          <span></span>
+          <span class="target"></span>
+          <span class="badge"></span>
+          <span class="badge"></span>
+          <span class="target"></span>
+          <div class="site-actions"></div>
+        `
+      : `
+          <strong></strong>
+          <span class="badge"></span>
+          <span></span>
+          <span class="target"></span>
+          <span class="badge"></span>
+          <span class="badge"></span>
+          <span class="target"></span>
+        `;
     row.children[0].textContent = site.address;
     row.children[1].textContent = protocolForSite(site);
     row.children[2].textContent = site.mode === "static" ? "Static" : "Proxy";
     row.children[3].textContent = site.mode === "static" ? site.root : site.upstream;
-    row.children[4].textContent = site.enabled ? "Active" : "Inactive";
-    row.children[4].classList.toggle("off", !site.enabled);
-    row.children[5].textContent = site.comment || "-";
-    row.children[5].title = site.comment || "";
-    const actions = row.children[6];
-    actions.append(createSiteActionButton(editable ? "Edit" : "Open", "secondary", () => {
-      showView("proxy-hosts");
-      editSite(site);
-    }));
+    row.children[4].textContent = site.mode === "proxy" ? (site.skipTlsVerify ? "Skipped" : "Verified") : "-";
+    row.children[4].classList.toggle("warn", site.mode === "proxy" && !!site.skipTlsVerify);
+    row.children[4].classList.toggle("off", site.mode !== "proxy");
+    row.children[5].textContent = site.enabled ? "Active" : "Inactive";
+    row.children[5].classList.toggle("off", !site.enabled);
+    row.children[6].textContent = site.comment || "-";
+    row.children[6].title = site.comment || "";
     if (editable) {
+      const actions = row.children[7];
+      actions.append(createSiteActionButton("Edit", "secondary", () => {
+        showView("proxy-hosts");
+        editSite(site);
+      }));
       actions.append(
         createSiteActionButton(site.enabled ? "Deactivate" : "Activate", "secondary", () => toggleSiteEnabled(site)),
       );
@@ -593,6 +609,7 @@ async function toggleSiteEnabled(site) {
         comment: site.comment || "",
         mode: site.mode,
         upstream: site.upstream || "",
+        skipTlsVerify: !!site.skipTlsVerify,
         root: site.root || "",
         extraDirectives: site.extraDirectives || "",
         logsEnabled: !!site.logsEnabled,
@@ -777,6 +794,7 @@ function editSite(site = null) {
   els.address.value = site?.address || "";
   els.comment.value = site?.comment || "";
   els.upstream.value = site?.upstream || "";
+  els.skipTlsVerify.checked = !!site?.skipTlsVerify;
   els.root.value = site?.root || "";
   els.extra.value = site?.extraDirectives || "";
   els.enabled.checked = site?.enabled ?? true;
@@ -807,17 +825,21 @@ function closeEditor() {
 function syncMode() {
   const mode = getMode();
   setFieldVisible(els.upstreamRow, mode === "proxy");
+  setFieldVisible(els.skipTlsVerifyRow, mode === "proxy");
   setFieldVisible(els.rootRow, mode === "static");
   els.upstream.required = mode === "proxy";
   els.root.required = mode === "static";
   els.upstream.disabled = mode !== "proxy";
+  els.skipTlsVerify.disabled = mode !== "proxy";
   els.root.disabled = mode !== "static";
   if (mode === "proxy") {
     els.root.value = "";
   } else if (mode === "static") {
     els.upstream.value = "";
+    els.skipTlsVerify.checked = false;
   } else {
     els.upstream.value = "";
+    els.skipTlsVerify.checked = false;
     els.root.value = "";
   }
 }
@@ -852,6 +874,7 @@ async function saveSite(event) {
     comment: els.comment.value,
     mode,
     upstream: els.upstream.value,
+    skipTlsVerify: els.skipTlsVerify.checked,
     root: els.root.value,
     extraDirectives: els.extra.value,
     logsEnabled: els.logsEnabled.checked,

@@ -145,9 +145,9 @@
               <span>Protocol</span>
               <span>Type</span>
               <span>Target</span>
+              <span>Upstream TLS</span>
               <span>Status</span>
               <span>Comment</span>
-              <span>Actions</span>
             </div>
             <div id="dashboard-site-list" class="site-list"></div>
           </section>
@@ -175,6 +175,7 @@
                 <span>Protocol</span>
                 <span>Type</span>
                 <span>Target</span>
+                <span>Upstream TLS</span>
                 <span>Status</span>
                 <span>Comment</span>
                 <span>Actions</span>
@@ -236,6 +237,11 @@
                 <label id="upstream-row" hidden>
                   Upstream
                   <input id="upstream" placeholder="http://app:3000" autocomplete="off" />
+                </label>
+
+                <label id="skip-tls-verify-row" class="switch" hidden>
+                  <input id="skip-tls-verify" type="checkbox" />
+                  <span>Skip upstream TLS verification</span>
                 </label>
 
                 <label id="root-row" hidden>

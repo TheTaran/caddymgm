@@ -53,6 +53,7 @@ type Site struct {
 	Comment              string `json:"comment,omitempty"`
 	Mode                 string `json:"mode"`
 	Upstream             string `json:"upstream,omitempty"`
+	SkipTLSVerify        bool   `json:"skipTlsVerify,omitempty"`
 	Root                 string `json:"root,omitempty"`
 	ExtraDirectives      string `json:"extraDirectives,omitempty"`
 	LogsEnabled          bool   `json:"logsEnabled"`
@@ -67,6 +68,7 @@ type sitePayload struct {
 	Comment         string `json:"comment,omitempty"`
 	Mode            string `json:"mode"`
 	Upstream        string `json:"upstream,omitempty"`
+	SkipTLSVerify   bool   `json:"skipTlsVerify,omitempty"`
 	Root            string `json:"root,omitempty"`
 	ExtraDirectives string `json:"extraDirectives,omitempty"`
 	LogsEnabled     *bool  `json:"logsEnabled,omitempty"`
@@ -86,6 +88,7 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		Comment:         p.Comment,
 		Mode:            p.Mode,
 		Upstream:        p.Upstream,
+		SkipTLSVerify:   p.SkipTLSVerify,
 		Root:            p.Root,
 		ExtraDirectives: p.ExtraDirectives,
 		LogsEnabled:     logsEnabled,
@@ -1108,7 +1111,11 @@ func parseSite(id string, lines []string) (Site, error) {
 	var extra []string
 	inTLS := false
 	inLog := false
+	inReverseProxy := false
+	inTransport := false
 	logDepth := 0
+	reverseProxyDepth := 0
+	transportDepth := 0
 	for _, raw := range lines[1:] {
 		line := strings.TrimSpace(strings.TrimPrefix(raw, "#"))
 		line = strings.TrimSpace(line)
@@ -1116,6 +1123,35 @@ func parseSite(id string, lines []string) (Site, error) {
 			logDepth += braceDelta(line)
 			if logDepth <= 0 {
 				inLog = false
+			}
+			continue
+		}
+		if inTransport {
+			if line == "tls_insecure_skip_verify" {
+				site.SkipTLSVerify = true
+			}
+			transportDepth += braceDelta(line)
+			if transportDepth <= 0 {
+				inTransport = false
+			}
+			continue
+		}
+		if inReverseProxy {
+			if line == "transport http {" {
+				inTransport = true
+				transportDepth = braceDelta(line)
+				if transportDepth <= 0 {
+					transportDepth = 1
+				}
+				continue
+			}
+			reverseProxyDepth += braceDelta(line)
+			if reverseProxyDepth <= 0 {
+				inReverseProxy = false
+				continue
+			}
+			if line != "" {
+				extra = append(extra, line)
 			}
 			continue
 		}
@@ -1135,6 +1171,8 @@ func parseSite(id string, lines []string) (Site, error) {
 			continue
 		case strings.HasPrefix(line, "# caddymgm:comment "):
 			site.Comment = parseManagedComment(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:comment ")))
+		case line == "# caddymgm:skip-tls-verify":
+			site.SkipTLSVerify = true
 		case strings.HasPrefix(line, "# caddymgm:tls-issuer "):
 			site.ACMEIssuerID = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:tls-issuer "))
 		case line == "tls internal":
@@ -1142,6 +1180,14 @@ func parseSite(id string, lines []string) (Site, error) {
 		case line == "tls {" || strings.HasPrefix(line, "tls {"):
 			site.TLSMode = "acme"
 			inTLS = true
+		case strings.HasPrefix(line, "reverse_proxy ") && strings.HasSuffix(line, "{"):
+			site.Mode = "proxy"
+			site.Upstream = strings.TrimSpace(strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "reverse_proxy "), "{")))
+			inReverseProxy = true
+			reverseProxyDepth = braceDelta(line)
+			if reverseProxyDepth <= 0 {
+				reverseProxyDepth = 1
+			}
 		case strings.HasPrefix(line, "reverse_proxy "):
 			site.Mode = "proxy"
 			site.Upstream = strings.TrimSpace(strings.TrimPrefix(line, "reverse_proxy "))
@@ -1239,7 +1285,16 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir string) string {
 		out.WriteString(prefix + "\troot * " + site.Root + "\n")
 		out.WriteString(prefix + "\tfile_server\n")
 	} else {
-		out.WriteString(prefix + "\treverse_proxy " + site.Upstream + "\n")
+		if site.SkipTLSVerify {
+			out.WriteString(prefix + "\t# caddymgm:skip-tls-verify\n")
+			out.WriteString(prefix + "\treverse_proxy " + site.Upstream + " {\n")
+			out.WriteString(prefix + "\t\ttransport http {\n")
+			out.WriteString(prefix + "\t\t\ttls_insecure_skip_verify\n")
+			out.WriteString(prefix + "\t\t}\n")
+			out.WriteString(prefix + "\t}\n")
+		} else {
+			out.WriteString(prefix + "\treverse_proxy " + site.Upstream + "\n")
+		}
 	}
 	switch site.TLSMode {
 	case "internal":
@@ -1311,6 +1366,7 @@ func normalizeSite(site *Site) error {
 		}
 		site.Upstream = upstream
 	case "static":
+		site.SkipTLSVerify = false
 		if site.Root == "" {
 			return errors.New("root path is required")
 		}

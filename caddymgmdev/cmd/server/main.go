@@ -258,8 +258,13 @@ func main() {
 	listenAddr := app.webListen
 	handler := logRequest(app.securityHeaders(app.ensureCSRFCookie(app.requireCSRF(app.requireAuth(mux)))))
 	server := &http.Server{
-		Addr:    listenAddr,
-		Handler: handler,
+		Addr:              listenAddr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 	log.Printf("caddymgm listening on %s, config=%s, settings=%s, caddy_mode=%s, caddy_api=%s, access_logs=%s", listenAddr, configPath, settingsPath, app.caddyMode, app.caddyAPIURL, app.accessLogDir)
 	log.Fatal(server.ListenAndServe())

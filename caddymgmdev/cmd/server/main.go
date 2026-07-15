@@ -51,6 +51,7 @@ const (
 	oidcStateLifetime   = 10 * time.Minute
 	loginJSONBodyLimit  = 64 << 10
 	adminJSONBodyLimit  = 1 << 20
+	rootCAUploadLimit   = 4 << 20
 )
 
 //go:embed web/*
@@ -182,6 +183,7 @@ type App struct {
 	oidcCache      map[string]*oidcRuntime
 	loginLimiter   *loginLimiter
 	trustedProxies *trustedProxySet
+	oidcProvider   func(context.Context, string) (*oidc.Provider, error)
 }
 
 type Session struct {
@@ -279,6 +281,7 @@ func main() {
 		oidcCache:      make(map[string]*oidcRuntime),
 		loginLimiter:   newLoginLimiter(),
 		trustedProxies: trustedProxies,
+		oidcProvider:   oidc.NewProvider,
 	}
 	if err := app.ensureConfig(); err != nil {
 		log.Fatalf("prepare config: %v", err)
@@ -618,10 +621,16 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUploadRootCA(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(4 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, rootCAUploadLimit)
+	if err := r.ParseMultipartForm(rootCAUploadLimit); err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("invalid upload"))
 		return
 	}
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 	file, header, err := r.FormFile("certificate")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("certificate file is required"))
@@ -629,7 +638,7 @@ func (a *App) handleUploadRootCA(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	content, err := io.ReadAll(io.LimitReader(file, 4<<20))
+	content, err := io.ReadAll(io.LimitReader(file, rootCAUploadLimit))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -817,6 +826,12 @@ func (a *App) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
+	runtime, err := a.oidcRuntime(r.Context())
+	if err != nil {
+		http.Redirect(w, r, "/login.html?error=oidc_not_available", http.StatusFound)
+		return
+	}
+
 	a.mu.Lock()
 	if !a.settings.AuthEnabled {
 		a.mu.Unlock()
@@ -826,12 +841,6 @@ func (a *App) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 	if !a.secureSessionTransportAllowed(r) {
 		a.mu.Unlock()
 		http.Redirect(w, r, "/login.html?error=insecure_transport", http.StatusFound)
-		return
-	}
-	runtime, err := a.oidcRuntimeLocked(r.Context())
-	if err != nil {
-		a.mu.Unlock()
-		http.Redirect(w, r, "/login.html?error=oidc_not_available", http.StatusFound)
 		return
 	}
 	now := time.Now()
@@ -856,6 +865,13 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	runtime, err := a.oidcRuntime(r.Context())
+	if err != nil {
+		http.SetCookie(w, oidcStateCookie("", -time.Hour, a.isSecureRequest(r)))
+		http.Redirect(w, r, "/login.html?error=oidc_not_available", http.StatusFound)
+		return
+	}
+
 	a.mu.Lock()
 	if !a.settings.AuthEnabled {
 		a.mu.Unlock()
@@ -867,13 +883,6 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		a.mu.Unlock()
 		http.SetCookie(w, oidcStateCookie("", -time.Hour, a.isSecureRequest(r)))
 		http.Redirect(w, r, "/login.html?error=insecure_transport", http.StatusFound)
-		return
-	}
-	runtime, err := a.oidcRuntimeLocked(r.Context())
-	if err != nil {
-		a.mu.Unlock()
-		http.SetCookie(w, oidcStateCookie("", -time.Hour, a.isSecureRequest(r)))
-		http.Redirect(w, r, "/login.html?error=oidc_not_available", http.StatusFound)
 		return
 	}
 	if err := a.consumeOIDCStateLocked(r, state); err != nil {
@@ -2511,42 +2520,58 @@ func (a *App) createOIDCStateLocked(now time.Time) (string, bool) {
 	return state, true
 }
 
-func (a *App) oidcRuntimeLocked(ctx context.Context) (*oidcRuntime, error) {
-	if !oidcAuthEnabledFromEnv() || !a.settings.OIDC.Enabled {
+func (a *App) oidcRuntime(ctx context.Context) (*oidcRuntime, error) {
+	a.mu.Lock()
+	settings := a.settings
+	cache := a.oidcCache
+	a.mu.Unlock()
+
+	if !oidcAuthEnabledFromEnv() || !settings.OIDC.Enabled {
 		return nil, errors.New("oidc authentication is disabled")
 	}
-	if err := validateOIDCSettings(a.settings.OIDC); err != nil {
+	if err := validateOIDCSettings(settings.OIDC); err != nil {
 		return nil, err
 	}
 	cacheKey := strings.Join([]string{
-		a.settings.OIDC.IssuerURL,
-		a.settings.OIDC.ClientID,
-		a.settings.OIDC.RedirectURL,
-		a.settings.OIDC.Scopes,
+		settings.OIDC.IssuerURL,
+		settings.OIDC.ClientID,
+		settings.OIDC.RedirectURL,
+		settings.OIDC.Scopes,
 	}, "|")
-	if cached, ok := a.oidcCache[cacheKey]; ok {
+	if cached, ok := cache[cacheKey]; ok {
 		return cached, nil
 	}
-	provider, err := oidc.NewProvider(ctx, a.settings.OIDC.IssuerURL)
+	providerLoader := a.oidcProvider
+	if providerLoader == nil {
+		providerLoader = oidc.NewProvider
+	}
+	provider, err := providerLoader(ctx, settings.OIDC.IssuerURL)
 	if err != nil {
 		return nil, err
 	}
-	scopes := strings.Fields(a.settings.OIDC.Scopes)
+	scopes := strings.Fields(settings.OIDC.Scopes)
 	if len(scopes) == 0 {
 		scopes = []string{oidc.ScopeOpenID, "profile", "email"}
 	}
 	runtime := &oidcRuntime{
 		Provider: provider,
-		Verifier: provider.Verifier(&oidc.Config{ClientID: a.settings.OIDC.ClientID}),
+		Verifier: provider.Verifier(&oidc.Config{ClientID: settings.OIDC.ClientID}),
 		Config: oauth2.Config{
-			ClientID:     a.settings.OIDC.ClientID,
-			ClientSecret: a.settings.OIDC.ClientSecret,
+			ClientID:     settings.OIDC.ClientID,
+			ClientSecret: settings.OIDC.ClientSecret,
 			Endpoint:     provider.Endpoint(),
-			RedirectURL:  a.settings.OIDC.RedirectURL,
+			RedirectURL:  settings.OIDC.RedirectURL,
 			Scopes:       scopes,
 		},
 	}
+
+	a.mu.Lock()
+	if cached, ok := a.oidcCache[cacheKey]; ok {
+		a.mu.Unlock()
+		return cached, nil
+	}
 	a.oidcCache[cacheKey] = runtime
+	a.mu.Unlock()
 	return runtime, nil
 }
 

@@ -118,6 +118,26 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Decision: File ownership and permissions are managed as a server concern and were intentionally not changed by the application fixes.
 - Server recommendation: Review permissions, owner/group membership, backup access, and host-level secret-management policy separately.
 
+### 11. Unbounded multipart request body for Root CA uploads
+
+- Severity: Medium
+- Status: Fixed for `v0.9.3`
+- Finding: The Root CA upload handler parsed multipart form data without a hard cap on the overall request body.
+- Location: `caddymgmdev/cmd/server/main.go:620`
+- Risk: An authenticated attacker could send oversized multipart requests that spill to temporary files and consume disk and I/O resources.
+- Fix: Added `http.MaxBytesReader` with a strict 4 MiB upload limit before multipart parsing. The handler now also removes temporary multipart files with `MultipartForm.RemoveAll()` after processing.
+- Verification: Added a regression test that submits an oversized multipart upload and confirms the request is rejected without writing a certificate file. Normal tests, the race detector, `go vet`, Docker build, and `govulncheck` passed.
+
+### 12. OIDC provider discovery under global application mutex
+
+- Severity: Medium
+- Status: Fixed for `v0.9.3`
+- Finding: OIDC provider discovery was performed while holding the global `App` mutex during the OIDC start and callback flows.
+- Locations: `caddymgmdev/cmd/server/main.go:819`, `:851`, and `:2514`
+- Risk: A slow or unreachable OIDC issuer could block concurrent requests that need the same mutex, creating an application-level denial-of-service window.
+- Fix: Refactored OIDC runtime loading so provider discovery runs outside the global mutex. Cached runtimes are still reused, and new runtimes are published with a locked double-check to avoid cache races.
+- Verification: Added a regression test that stalls provider discovery and confirms the global mutex remains available to concurrent callers. Normal tests, the race detector, `go vet`, Docker build, and `govulncheck` passed.
+
 ## Positive controls observed
 
 - Anonymous API access is rejected when authentication is enabled.
@@ -127,6 +147,7 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - OIDC state values are cryptographically generated, expire, and are single-use.
 - Password hashes use bcrypt.
 - Certificate uploads are size-limited, parsed as X.509 certificates, and written with sanitized filenames.
+- Root CA uploads now enforce a hard multipart body limit and clean up temporary upload files.
 - Runtime secrets, settings, Caddy configuration, logs, and certificate data are excluded from Git.
 
 ## Release record
@@ -139,3 +160,4 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Finding 8 was fixed for release `v0.8.6`.
 - Finding 9 was fixed for release `v0.9.2`.
 - Finding 10 belongs to server administration and must not be changed as part of an application update without separate approval.
+- Findings 11 and 12 were fixed for release `v0.9.3`.

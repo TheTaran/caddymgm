@@ -138,7 +138,7 @@ The following variables are used by Docker Compose and CaddyMGM.
 | `PUID` | `1000` | User id used for container file ownership |
 | `PGID` | `1000` | Group id used for container file ownership |
 | `CADDYMGM_ADMIN_USER` | `admin` | Initial local admin username |
-| `CADDYMGM_ADMIN_PASSWORD` | no fixed default in production | Initial local admin password |
+| `CADDYMGM_ADMIN_PASSWORD` | required for first startup | Initial local admin password; no default password is generated |
 | `CADDYMGM_AUTH_ENABLED` | `true` | Enables the login portal |
 | `CADDYMGM_LOCALAUTH_ENABLED` | `true` | Enables local username/password login |
 | `CADDYMGM_OIDCAUTH_ENABLED` | `false` | Enables OIDC login |

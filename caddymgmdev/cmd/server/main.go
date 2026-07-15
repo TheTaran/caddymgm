@@ -544,6 +544,10 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(next.Password) != "" {
 		next.PasswordHash = hashPassword(next.Password)
 	}
+	if strings.TrimSpace(next.PasswordHash) == "" {
+		writeError(w, http.StatusBadRequest, errors.New("administrator password is not configured"))
+		return
+	}
 	next.Password = ""
 	next.OIDC = normalizeOIDCSettings(next.OIDC, a.settings.OIDC)
 	if err := validateOIDCSettings(next.OIDC); err != nil {
@@ -932,16 +936,23 @@ func (a *App) ensureSettings() error {
 			return err
 		}
 		a.applySettingsEnvOverridesLocked(&a.settings)
+		if strings.TrimSpace(a.settings.PasswordHash) == "" {
+			return errors.New("CADDYMGM_ADMIN_PASSWORD is required when no administrator password is configured")
+		}
 		return a.saveSettingsLocked()
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 
+	adminPassword := strings.TrimSpace(env("CADDYMGM_ADMIN_PASSWORD", ""))
+	if adminPassword == "" {
+		return errors.New("CADDYMGM_ADMIN_PASSWORD is required for first startup")
+	}
 	a.settings = Settings{
 		AppName:      "CaddyMGM",
 		Username:     env("CADDYMGM_ADMIN_USER", "admin"),
-		PasswordHash: hashPassword(env("CADDYMGM_ADMIN_PASSWORD", "changeme")),
+		PasswordHash: hashPassword(adminPassword),
 		ConfigPath:   a.configPath,
 		LogRetention: 100,
 		ACMEIssuers:  ensureBuiltInACMEIssuers(nil),
@@ -993,9 +1004,6 @@ func (a *App) applySettingsEnvOverridesLocked(settings *Settings) {
 		if !passwordMatchesHash(password, settings.PasswordHash) {
 			settings.PasswordHash = hashPassword(password)
 		}
-	}
-	if settings.PasswordHash == "" {
-		settings.PasswordHash = hashPassword("changeme")
 	}
 	if settings.LogRetention == 0 {
 		settings.LogRetention = 100

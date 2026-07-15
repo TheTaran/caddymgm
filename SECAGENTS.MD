@@ -70,6 +70,51 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Additional hardening: The local-HTTP login exception now checks the actual TCP peer for a loopback address instead of trusting a client-controlled `Host` header.
 - Verification: Tests cover trusted and untrusted sources, exact IPs, CIDRs, hostname resolution and caching, direct TLS, Secure-cookie behavior, invalid configuration, and spoofed localhost hostnames.
 
+### 6. Fixed default administrator password on first start
+
+- Severity: High
+- Status: Fixed for `v0.8.5`
+- Finding: If the settings file and `CADDYMGM_ADMIN_PASSWORD` are both absent, the application creates the administrator hash from the fixed password `changeme`.
+- Location: `caddymgmdev/cmd/server/main.go:944` and `caddymgmdev/cmd/server/main.go:998`.
+- Risk: A fresh installation with authentication enabled can be accessed with publicly predictable credentials.
+- Fix: Removed the fixed fallback. First startup now aborts with a clear error unless `CADDYMGM_ADMIN_PASSWORD` is provided; existing settings without a password hash are rejected as well. Settings updates cannot clear the administrator password hash.
+- Verification: Added tests for missing, configured, and incomplete administrator credentials. Normal tests, the race detector, and `go vet` passed.
+
+### 7. Unbounded JSON request bodies
+
+- Severity: Medium
+- Status: Open
+- Finding: Several handlers decode `r.Body` directly with `json.NewDecoder` without an explicit request-body limit. This includes the public login endpoint.
+- Locations: `caddymgmdev/cmd/server/main.go:341`, `:387`, `:502`, and `:719`.
+- Risk: Oversized JSON requests can consume unnecessary memory and CPU and may enable resource-exhaustion attacks.
+- Recommended fix: Wrap JSON bodies with `http.MaxBytesReader` before decoding. Use a small limit for login and a bounded limit such as 1 MiB for administrative payloads.
+
+### 8. Unbounded OIDC state storage
+
+- Severity: Medium
+- Status: Open
+- Finding: Every request to the public OIDC start endpoint adds an entry to `a.oidcStates`; expired entries are not periodically removed.
+- Locations: `caddymgmdev/cmd/server/main.go:811` and `:830`.
+- Risk: Repeated OIDC start requests can grow the in-memory state map without a fixed bound.
+- Recommended fix: Periodically remove expired states, enforce a maximum number of outstanding states, and rate-limit OIDC start requests.
+
+### 9. DNS lookup while holding the trusted-proxy cache mutex
+
+- Severity: Low
+- Status: Open
+- Finding: Hostname-based trusted-proxy checks perform DNS resolution while holding the cache mutex.
+- Location: `caddymgmdev/cmd/server/main.go:2763`.
+- Risk: Slow or unavailable DNS can briefly block concurrent trusted-proxy checks and request processing.
+- Recommended fix: Resolve outside the mutex and atomically publish the result afterward. Prefer fixed IPs or CIDRs for production trusted-proxy configuration.
+
+### 10. Local `.env` permissions
+
+- Classification: Server-level hardening, not an application finding
+- Status: Excluded from application remediation
+- Observation: The local `.env` file uses mode `0664` and may contain secrets. It remains excluded from Git.
+- Decision: File ownership and permissions are managed as a server concern and were intentionally not changed by the application fixes.
+- Server recommendation: Review permissions, owner/group membership, backup access, and host-level secret-management policy separately.
+
 ## Positive controls observed
 
 - Anonymous API access is rejected when authentication is enabled.
@@ -86,4 +131,6 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Security fixes 1-3 were released in commit `bbbf327` with tag `v0.8.2`.
 - Finding 4 was fixed for release `v0.8.3`.
 - Finding 5 was fixed for release `v0.8.4`.
-- Finding 6 belongs to server administration and must not be changed as part of an application update without separate approval.
+- Finding 6 was fixed for release `v0.8.5`.
+- Findings 7-9 remain open application findings for a future security release.
+- Finding 10 belongs to server administration and must not be changed as part of an application update without separate approval.

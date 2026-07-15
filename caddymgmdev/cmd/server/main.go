@@ -49,6 +49,8 @@ const (
 	loginAttemptLimit   = 10_000
 	oidcStateLimit      = 1_000
 	oidcStateLifetime   = 10 * time.Minute
+	loginJSONBodyLimit  = 64 << 10
+	adminJSONBodyLimit  = 1 << 20
 )
 
 //go:embed web/*
@@ -340,7 +342,7 @@ func (a *App) handleListSites(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 	var payload sitePayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, &payload, adminJSONBodyLimit); err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON body"))
 		return
 	}
@@ -386,7 +388,7 @@ func (a *App) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload sitePayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, &payload, adminJSONBodyLimit); err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON body"))
 		return
 	}
@@ -501,7 +503,7 @@ func (a *App) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var next Settings
-	if err := json.NewDecoder(r.Body).Decode(&next); err != nil {
+	if err := decodeJSONBody(w, r, &next, adminJSONBodyLimit); err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON body"))
 		return
 	}
@@ -722,7 +724,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, &payload, loginJSONBodyLimit); err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON body"))
 		return
 	}
@@ -2586,6 +2588,22 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, destination any, limit int64) error {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return errors.New("request body contains multiple JSON values")
+		}
+		return err
+	}
+	return nil
 }
 
 func env(key, fallback string) string {

@@ -83,11 +83,12 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 ### 7. Unbounded JSON request bodies
 
 - Severity: Medium
-- Status: Open
+- Status: Fixed for `v0.9.1`
 - Finding: Several handlers decode `r.Body` directly with `json.NewDecoder` without an explicit request-body limit. This includes the public login endpoint.
 - Locations: `caddymgmdev/cmd/server/main.go:341`, `:387`, `:502`, and `:719`.
 - Risk: Oversized JSON requests can consume unnecessary memory and CPU and may enable resource-exhaustion attacks.
-- Recommended fix: Wrap JSON bodies with `http.MaxBytesReader` before decoding. Use a small limit for login and a bounded limit such as 1 MiB for administrative payloads.
+- Fix: Added a shared bounded JSON decoder using `http.MaxBytesReader`. Login payloads are limited to 64 KiB; administrative JSON payloads are limited to 1 MiB. Trailing additional JSON documents are rejected.
+- Verification: Added tests for oversized payloads, multiple JSON values, and valid trailing whitespace. Normal tests, the race detector, and `go vet` passed.
 
 ### 8. Unbounded OIDC state storage
 
@@ -133,6 +134,7 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Finding 4 was fixed for release `v0.8.3`.
 - Finding 5 was fixed for release `v0.8.4`.
 - Finding 6 was fixed for release `v0.8.5`.
+- Finding 7 was fixed for release `v0.9.1`.
 - Finding 8 was fixed for release `v0.8.6`.
-- Findings 7 and 9 remain open application findings for a future security release.
+- Finding 9 remains open for a future security release.
 - Finding 10 belongs to server administration and must not be changed as part of an application update without separate approval.

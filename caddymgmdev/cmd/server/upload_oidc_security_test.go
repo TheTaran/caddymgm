@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -105,5 +107,44 @@ func TestOIDCRuntimeLookupDoesNotHoldAppMutex(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("OIDC runtime lookup did not finish")
+	}
+}
+
+func TestExpectedTLSHandshakeTriggerError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "unknown authority",
+			err:  x509.UnknownAuthorityError{},
+			want: true,
+		},
+		{
+			name: "hostname mismatch",
+			err:  x509.HostnameError{},
+			want: true,
+		},
+		{
+			name: "expired certificate",
+			err: x509.CertificateInvalidError{
+				Reason: x509.Expired,
+			},
+			want: true,
+		},
+		{
+			name: "wrapped certificate error",
+			err:  errors.New("plain transport error"),
+			want: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isExpectedTLSHandshakeTriggerError(test.err); got != test.want {
+				t.Fatalf("isExpectedTLSHandshakeTriggerError(%v) = %v, want %v", test.err, got, test.want)
+			}
+		})
 	}
 }

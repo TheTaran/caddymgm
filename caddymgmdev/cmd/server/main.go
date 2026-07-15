@@ -2078,19 +2078,40 @@ func (a *App) triggerTLSHandshake(domain string) error {
 		Timeout: 15 * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-				ServerName:         host,
+				ServerName: host,
 			},
 		},
 	}
 
 	resp, err := client.Get("https://" + host)
 	if err != nil {
+		if isExpectedTLSHandshakeTriggerError(err) {
+			return nil
+		}
 		return err
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
+}
+
+func isExpectedTLSHandshakeTriggerError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var unknownAuthority x509.UnknownAuthorityError
+	if errors.As(err, &unknownAuthority) {
+		return true
+	}
+	var hostnameError x509.HostnameError
+	if errors.As(err, &hostnameError) {
+		return true
+	}
+	var invalidCertificate x509.CertificateInvalidError
+	if errors.As(err, &invalidCertificate) {
+		return true
+	}
+	return false
 }
 
 func noCacheFileServer(next http.Handler) http.Handler {

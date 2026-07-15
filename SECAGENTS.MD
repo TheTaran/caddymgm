@@ -138,6 +138,16 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Fix: Refactored OIDC runtime loading so provider discovery runs outside the global mutex. Cached runtimes are still reused, and new runtimes are published with a locked double-check to avoid cache races.
 - Verification: Added a regression test that stalls provider discovery and confirms the global mutex remains available to concurrent callers. Normal tests, the race detector, `go vet`, Docker build, and `govulncheck` passed.
 
+### 13. Renewal handshake disabled TLS certificate verification
+
+- Severity: Medium
+- Status: Fixed for `v0.9.5`
+- Finding: The forced certificate-renewal helper triggered an HTTPS request with TLS certificate verification disabled.
+- Location: `caddymgmdev/cmd/server/main.go:2071`
+- Risk: A network attacker on the request path could impersonate the target during the renewal trigger request. The response body was not trusted, but the request still accepted a man-in-the-middle certificate unconditionally.
+- Fix: Removed `InsecureSkipVerify`. The renewal trigger now uses normal TLS verification and only treats expected certificate-validation failures as a successful renewal trigger condition, because those failures still prove that a TLS handshake was attempted.
+- Verification: Added regression tests for expected TLS certificate validation errors. Normal tests, the race detector, `go vet`, and `gosec` passed; the prior high-severity `InsecureSkipVerify` finding no longer appears.
+
 ## Positive controls observed
 
 - Anonymous API access is rejected when authentication is enabled.
@@ -148,6 +158,7 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Password hashes use bcrypt.
 - Certificate uploads are size-limited, parsed as X.509 certificates, and written with sanitized filenames.
 - Root CA uploads now enforce a hard multipart body limit and clean up temporary upload files.
+- Certificate-renewal TLS triggers no longer disable certificate verification.
 - Runtime secrets, settings, Caddy configuration, logs, and certificate data are excluded from Git.
 
 ## Release record
@@ -161,3 +172,4 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Finding 9 was fixed for release `v0.9.2`.
 - Finding 10 belongs to server administration and must not be changed as part of an application update without separate approval.
 - Findings 11 and 12 were fixed for release `v0.9.3`.
+- Finding 13 was fixed for release `v0.9.5`.

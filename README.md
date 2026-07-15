@@ -144,6 +144,7 @@ The following variables are used by Docker Compose and CaddyMGM.
 | `CADDYMGM_OIDCAUTH_ENABLED` | `false` | Enables OIDC login |
 | `CADDYMGM_CADDY_MODE` | `file` | Caddy integration mode |
 | `CADDYMGM_CADDY_API_URL` | `http://caddy:2019` in example | Caddy Admin API URL for reloads |
+| `CADDYMGM_TRUSTED_PROXIES` | empty | Comma-separated proxy IPs, CIDRs, or hostnames allowed to supply forwarded HTTPS headers |
 | `CADDYMGM_ACCESS_LOG_DIR` | `/logs` | Directory from which CaddyMGM reads website logs |
 | `CADDYMGM_CADDY_DATA_DIR` | `/caddy-data` | Directory used to inspect certificate data |
 | `CADDYMGM_CA_CERT_DIR` | `/ca-certificates` | Directory for uploaded or mounted Root CAs |
@@ -169,6 +170,7 @@ CADDYMGM_LOCALAUTH_ENABLED=true
 CADDYMGM_OIDCAUTH_ENABLED=false
 CADDYMGM_CADDY_MODE=file
 CADDYMGM_CADDY_API_URL=http://caddy:2019
+CADDYMGM_TRUSTED_PROXIES=caddy-admin
 CADDYMGM_STATIC_ROOT_BASE=/srv
 CADDYMGM_WEB_PORT=8080
 COMPOSE_PROFILES=docker-caddy

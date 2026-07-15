@@ -64,10 +64,11 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 ### 5. Unrestricted trust in forwarded proxy headers
 
 - Severity: Low to Medium
-- Status: Open
+- Status: Fixed for `v0.8.4`
 - Finding: `X-Forwarded-Proto` and `Forwarded` are accepted regardless of the request source. If CaddyMGM is ever exposed directly or placed behind a proxy that preserves attacker-supplied headers, transport and Secure-cookie decisions could be influenced.
-- Recommended fix: Add a configurable trusted-proxy list and only honor forwarded headers from those addresses. Continue preventing direct external access to the CaddyMGM container.
-- Required verification: Tests for trusted and untrusted proxy sources, HTTPS detection, Secure cookies, CSRF origin validation, and OIDC redirects.
+- Fix: Added `CADDYMGM_TRUSTED_PROXIES`, accepting explicit proxy IPs, CIDRs, and hostnames. Forwarded transport headers are ignored unless the direct peer matches that allowlist. The Compose deployment trusts only the internal `caddy-admin` alias.
+- Additional hardening: The local-HTTP login exception now checks the actual TCP peer for a loopback address instead of trusting a client-controlled `Host` header.
+- Verification: Tests cover trusted and untrusted sources, exact IPs, CIDRs, hostname resolution and caching, direct TLS, Secure-cookie behavior, invalid configuration, and spoofed localhost hostnames.
 
 ## Positive controls observed
 
@@ -84,5 +85,5 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 
 - Security fixes 1-3 were released in commit `bbbf327` with tag `v0.8.2`.
 - Finding 4 was fixed for release `v0.8.3`.
-- Finding 5 remains a candidate for a future application-security release.
+- Finding 5 was fixed for release `v0.8.4`.
 - Finding 6 belongs to server administration and must not be changed as part of an application update without separate approval.

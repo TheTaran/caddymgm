@@ -20,6 +20,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -176,6 +177,7 @@ type App struct {
 	oidcStates     map[string]time.Time
 	oidcCache      map[string]*oidcRuntime
 	loginLimiter   *loginLimiter
+	trustedProxies *trustedProxySet
 }
 
 type Session struct {
@@ -208,6 +210,20 @@ type loginLimiter struct {
 	now             func() time.Time
 }
 
+type trustedProxyCacheEntry struct {
+	addresses []netip.Addr
+	expiresAt time.Time
+}
+
+type trustedProxySet struct {
+	mu        sync.Mutex
+	prefixes  []netip.Prefix
+	hostnames []string
+	cache     map[string]trustedProxyCacheEntry
+	lookup    func(context.Context, string, string) ([]netip.Addr, error)
+	now       func() time.Time
+}
+
 func newLoginLimiter() *loginLimiter {
 	return &loginLimiter{
 		attempts:        make(map[string]loginAttempt),
@@ -235,6 +251,10 @@ func main() {
 	if _, err := net.LookupPort("tcp", webPort); err != nil {
 		log.Fatalf("invalid CADDYMGM_WEB_PORT %q: %v", webPort, err)
 	}
+	trustedProxies, err := newTrustedProxySet(env("CADDYMGM_TRUSTED_PROXIES", ""))
+	if err != nil {
+		log.Fatalf("invalid CADDYMGM_TRUSTED_PROXIES: %v", err)
+	}
 
 	app := &App{
 		configPath:     configPath,
@@ -254,6 +274,7 @@ func main() {
 		oidcStates:     make(map[string]time.Time),
 		oidcCache:      make(map[string]*oidcRuntime),
 		loginLimiter:   newLoginLimiter(),
+		trustedProxies: trustedProxies,
 	}
 	if err := app.ensureConfig(); err != nil {
 		log.Fatalf("prepare config: %v", err)
@@ -712,7 +733,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errors.New("local authentication is disabled"))
 		return
 	}
-	if !secureSessionTransportAllowed(r) {
+	if !a.secureSessionTransportAllowed(r) {
 		writeError(w, http.StatusForbidden, errors.New("login requires HTTPS unless you are connecting from localhost"))
 		return
 	}
@@ -741,7 +762,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if !secureSessionTransportAllowed(r) {
+	if !a.secureSessionTransportAllowed(r) {
 		writeError(w, http.StatusForbidden, errors.New("logout requires HTTPS unless you are connecting from localhost"))
 		return
 	}
@@ -751,7 +772,7 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Unlock()
 
-	expired := sessionCookie("", -time.Hour, isSecureRequest(r))
+	expired := sessionCookie("", -time.Hour, a.isSecureRequest(r))
 	http.SetCookie(w, expired)
 	writeJSON(w, http.StatusOK, map[string]bool{"loggedOut": true})
 }
@@ -794,7 +815,7 @@ func (a *App) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
-	if !secureSessionTransportAllowed(r) {
+	if !a.secureSessionTransportAllowed(r) {
 		a.mu.Unlock()
 		http.Redirect(w, r, "/login.html?error=insecure_transport", http.StatusFound)
 		return
@@ -809,7 +830,7 @@ func (a *App) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 	a.oidcStates[state] = time.Now().Add(10 * time.Minute)
 	a.mu.Unlock()
 
-	http.SetCookie(w, oidcStateCookie(state, 10*time.Minute, isSecureRequest(r)))
+	http.SetCookie(w, oidcStateCookie(state, 10*time.Minute, a.isSecureRequest(r)))
 	http.Redirect(w, r, runtime.Config.AuthCodeURL(state), http.StatusFound)
 }
 
@@ -824,31 +845,31 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	if !a.settings.AuthEnabled {
 		a.mu.Unlock()
-		http.SetCookie(w, oidcStateCookie("", -time.Hour, isSecureRequest(r)))
+		http.SetCookie(w, oidcStateCookie("", -time.Hour, a.isSecureRequest(r)))
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
-	if !secureSessionTransportAllowed(r) {
+	if !a.secureSessionTransportAllowed(r) {
 		a.mu.Unlock()
-		http.SetCookie(w, oidcStateCookie("", -time.Hour, isSecureRequest(r)))
+		http.SetCookie(w, oidcStateCookie("", -time.Hour, a.isSecureRequest(r)))
 		http.Redirect(w, r, "/login.html?error=insecure_transport", http.StatusFound)
 		return
 	}
 	runtime, err := a.oidcRuntimeLocked(r.Context())
 	if err != nil {
 		a.mu.Unlock()
-		http.SetCookie(w, oidcStateCookie("", -time.Hour, isSecureRequest(r)))
+		http.SetCookie(w, oidcStateCookie("", -time.Hour, a.isSecureRequest(r)))
 		http.Redirect(w, r, "/login.html?error=oidc_not_available", http.StatusFound)
 		return
 	}
 	if err := a.consumeOIDCStateLocked(r, state); err != nil {
 		a.mu.Unlock()
-		http.SetCookie(w, oidcStateCookie("", -time.Hour, isSecureRequest(r)))
+		http.SetCookie(w, oidcStateCookie("", -time.Hour, a.isSecureRequest(r)))
 		http.Redirect(w, r, "/login.html?error=invalid_oidc_state", http.StatusFound)
 		return
 	}
 	a.mu.Unlock()
-	http.SetCookie(w, oidcStateCookie("", -time.Hour, isSecureRequest(r)))
+	http.SetCookie(w, oidcStateCookie("", -time.Hour, a.isSecureRequest(r)))
 
 	token, err := runtime.Config.Exchange(r.Context(), code)
 	if err != nil {
@@ -2432,7 +2453,7 @@ func (a *App) createSessionLocked(w http.ResponseWriter, r *http.Request, userna
 		Username:  username,
 		Provider:  provider,
 	}
-	http.SetCookie(w, sessionCookie(token, 12*time.Hour, isSecureRequest(r)))
+	http.SetCookie(w, sessionCookie(token, 12*time.Hour, a.isSecureRequest(r)))
 }
 
 func (a *App) consumeOIDCStateLocked(r *http.Request, state string) error {
@@ -2688,13 +2709,90 @@ func writeLoginRateLimit(w http.ResponseWriter, retryAfter time.Duration) {
 	writeError(w, http.StatusTooManyRequests, errors.New("too many login attempts; try again later"))
 }
 
-func secureSessionTransportAllowed(r *http.Request) bool {
-	return isSecureRequest(r) || isLoopbackHost(requestHost(r))
+func newTrustedProxySet(value string) (*trustedProxySet, error) {
+	set := &trustedProxySet{
+		cache:  make(map[string]trustedProxyCacheEntry),
+		lookup: net.DefaultResolver.LookupNetIP,
+		now:    time.Now,
+	}
+	hostnamePattern := regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$`)
+	for _, entry := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' }) {
+		entry = strings.TrimSpace(entry)
+		if prefix, err := netip.ParsePrefix(entry); err == nil {
+			set.prefixes = append(set.prefixes, prefix.Masked())
+			continue
+		}
+		if address, err := netip.ParseAddr(entry); err == nil {
+			set.prefixes = append(set.prefixes, netip.PrefixFrom(address.Unmap(), address.Unmap().BitLen()))
+			continue
+		}
+		if len(entry) > 253 || !hostnamePattern.MatchString(entry) {
+			return nil, fmt.Errorf("invalid proxy address or hostname %q", entry)
+		}
+		set.hostnames = append(set.hostnames, strings.ToLower(entry))
+	}
+	return set, nil
 }
 
-func isSecureRequest(r *http.Request) bool {
+func (s *trustedProxySet) contains(ctx context.Context, remoteAddr string) bool {
+	if s == nil {
+		return false
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
+	if err != nil {
+		host = strings.Trim(strings.TrimSpace(remoteAddr), "[]")
+	}
+	address, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	address = address.Unmap()
+	for _, prefix := range s.prefixes {
+		if prefix.Contains(address) {
+			return true
+		}
+	}
+	for _, hostname := range s.hostnames {
+		if s.hostnameContains(ctx, hostname, address) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *trustedProxySet) hostnameContains(ctx context.Context, hostname string, address netip.Addr) bool {
+	now := s.now()
+	s.mu.Lock()
+	entry, ok := s.cache[hostname]
+	if !ok || !entry.expiresAt.After(now) {
+		addresses, err := s.lookup(ctx, "ip", hostname)
+		if err != nil {
+			delete(s.cache, hostname)
+			s.mu.Unlock()
+			return false
+		}
+		entry = trustedProxyCacheEntry{addresses: addresses, expiresAt: now.Add(time.Minute)}
+		s.cache[hostname] = entry
+	}
+	s.mu.Unlock()
+	for _, candidate := range entry.addresses {
+		if candidate.Unmap() == address {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) secureSessionTransportAllowed(r *http.Request) bool {
+	return a.isSecureRequest(r) || isLoopbackRemoteAddr(r.RemoteAddr)
+}
+
+func (a *App) isSecureRequest(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
+	}
+	if a.trustedProxies == nil || !a.trustedProxies.contains(r.Context(), r.RemoteAddr) {
+		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(forwardedProto(r))) {
 	case "https", "wss":
@@ -2721,31 +2819,17 @@ func forwardedProto(r *http.Request) string {
 	return ""
 }
 
-func requestScheme(r *http.Request) string {
-	if isSecureRequest(r) {
+func (a *App) requestScheme(r *http.Request) string {
+	if a.isSecureRequest(r) {
 		return "https"
 	}
 	return "http"
 }
 
-func requestHost(r *http.Request) string {
-	host := strings.TrimSpace(r.Host)
-	if host == "" {
-		return ""
-	}
-	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
-		return strings.Trim(parsedHost, "[]")
-	}
-	return strings.Trim(host, "[]")
-}
-
-func isLoopbackHost(host string) bool {
-	host = strings.ToLower(strings.TrimSpace(host))
-	if host == "" {
-		return false
-	}
-	if host == "localhost" {
-		return true
+func isLoopbackRemoteAddr(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
+	if err != nil {
+		host = strings.Trim(strings.TrimSpace(remoteAddr), "[]")
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
@@ -2757,7 +2841,7 @@ func (a *App) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'")
-		if isSecureRequest(r) {
+		if a.isSecureRequest(r) {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 		next.ServeHTTP(w, r)
@@ -2772,7 +2856,7 @@ func (a *App) ensureCSRFCookie(next http.Handler) http.Handler {
 		}
 		if token == "" {
 			token = newSessionToken()
-			http.SetCookie(w, csrfCookie(token, 12*time.Hour, isSecureRequest(r)))
+			http.SetCookie(w, csrfCookie(token, 12*time.Hour, a.isSecureRequest(r)))
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -2784,7 +2868,7 @@ func (a *App) requireCSRF(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if err := validateRequestOrigin(r); err != nil {
+		if err := a.validateRequestOrigin(r); err != nil {
 			writeError(w, http.StatusForbidden, err)
 			return
 		}
@@ -2811,7 +2895,7 @@ func csrfProtectionRequired(method string) bool {
 	}
 }
 
-func validateRequestOrigin(r *http.Request) error {
+func (a *App) validateRequestOrigin(r *http.Request) error {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	referer := strings.TrimSpace(r.Header.Get("Referer"))
 	source := origin
@@ -2825,7 +2909,7 @@ func validateRequestOrigin(r *http.Request) error {
 	if err != nil || parsed.Host == "" {
 		return errors.New("invalid request origin")
 	}
-	if !strings.EqualFold(parsed.Scheme, requestScheme(r)) {
+	if !strings.EqualFold(parsed.Scheme, a.requestScheme(r)) {
 		return errors.New("request origin scheme mismatch")
 	}
 	if !sameHost(parsed.Host, r.Host) {

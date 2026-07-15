@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -135,5 +136,47 @@ func TestTrustedHostnameCacheExpires(t *testing.T) {
 	set.contains(context.Background(), "172.20.0.3:4321")
 	if lookupCalls != 2 {
 		t.Fatalf("hostname lookups after cache expiry = %d, want 2", lookupCalls)
+	}
+}
+
+func TestTrustedHostnameLookupDoesNotHoldCacheMutex(t *testing.T) {
+	set := mustTrustedProxySet(t, "caddy-admin")
+	lookupStarted := make(chan struct{})
+	releaseLookup := make(chan struct{})
+	var calls sync.Mutex
+	lookupCalls := 0
+	set.lookup = func(context.Context, string, string) ([]netip.Addr, error) {
+		calls.Lock()
+		lookupCalls++
+		call := lookupCalls
+		calls.Unlock()
+		if call == 1 {
+			close(lookupStarted)
+			<-releaseLookup
+		}
+		return []netip.Addr{netip.MustParseAddr("172.20.0.3")}, nil
+	}
+
+	firstDone := make(chan struct{})
+	go func() {
+		set.contains(context.Background(), "172.20.0.3:4321")
+		close(firstDone)
+	}()
+	<-lookupStarted
+	secondDone := make(chan struct{})
+	go func() {
+		set.contains(context.Background(), "172.20.0.3:4321")
+		close(secondDone)
+	}()
+	select {
+	case <-secondDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("second trusted-proxy check blocked behind DNS resolution")
+	}
+	close(releaseLookup)
+	select {
+	case <-firstDone:
+	case <-time.After(time.Second):
+		t.Fatal("first trusted-proxy check did not finish")
 	}
 }

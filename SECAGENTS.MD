@@ -103,11 +103,12 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 ### 9. DNS lookup while holding the trusted-proxy cache mutex
 
 - Severity: Low
-- Status: Open
+- Status: Fixed for `v0.9.2`
 - Finding: Hostname-based trusted-proxy checks perform DNS resolution while holding the cache mutex.
 - Location: `caddymgmdev/cmd/server/main.go:2763`.
 - Risk: Slow or unavailable DNS can briefly block concurrent trusted-proxy checks and request processing.
-- Recommended fix: Resolve outside the mutex and atomically publish the result afterward. Prefer fixed IPs or CIDRs for production trusted-proxy configuration.
+- Fix: DNS resolution now runs outside the cache mutex. Results are published with a locked, double-checked cache update so concurrent request checks are not blocked by slow DNS.
+- Verification: Added a concurrent regression test that holds one DNS lookup open and confirms another trusted-proxy check can complete. Normal tests, the race detector, and `go vet` passed.
 
 ### 10. Local `.env` permissions
 
@@ -136,5 +137,5 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Finding 6 was fixed for release `v0.8.5`.
 - Finding 7 was fixed for release `v0.9.1`.
 - Finding 8 was fixed for release `v0.8.6`.
-- Finding 9 remains open for a future security release.
+- Finding 9 was fixed for release `v0.9.2`.
 - Finding 10 belongs to server administration and must not be changed as part of an application update without separate approval.

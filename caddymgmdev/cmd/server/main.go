@@ -2819,17 +2819,27 @@ func (s *trustedProxySet) hostnameContains(ctx context.Context, hostname string,
 	now := s.now()
 	s.mu.Lock()
 	entry, ok := s.cache[hostname]
-	if !ok || !entry.expiresAt.After(now) {
+	cacheValid := ok && entry.expiresAt.After(now)
+	s.mu.Unlock()
+	if !cacheValid {
 		addresses, err := s.lookup(ctx, "ip", hostname)
 		if err != nil {
+			s.mu.Lock()
 			delete(s.cache, hostname)
 			s.mu.Unlock()
 			return false
 		}
-		entry = trustedProxyCacheEntry{addresses: addresses, expiresAt: now.Add(time.Minute)}
-		s.cache[hostname] = entry
+		freshEntry := trustedProxyCacheEntry{addresses: addresses, expiresAt: now.Add(time.Minute)}
+		s.mu.Lock()
+		current, currentOK := s.cache[hostname]
+		if !currentOK || !current.expiresAt.After(now) {
+			s.cache[hostname] = freshEntry
+			entry = freshEntry
+		} else {
+			entry = current
+		}
+		s.mu.Unlock()
 	}
-	s.mu.Unlock()
 	for _, candidate := range entry.addresses {
 		if candidate.Unmap() == address {
 			return true

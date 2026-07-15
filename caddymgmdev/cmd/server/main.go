@@ -42,6 +42,10 @@ const (
 	sessionCookieName   = "caddymgm_session"
 	oidcStateCookieName = "caddymgm_oidc_state"
 	csrfCookieName      = "caddymgm_csrf"
+	loginMaxFailures    = 5
+	loginFailureWindow  = 15 * time.Minute
+	loginLockout        = 15 * time.Minute
+	loginAttemptLimit   = 10_000
 )
 
 //go:embed web/*
@@ -171,6 +175,7 @@ type App struct {
 	sessions       map[string]Session
 	oidcStates     map[string]time.Time
 	oidcCache      map[string]*oidcRuntime
+	loginLimiter   *loginLimiter
 }
 
 type Session struct {
@@ -183,6 +188,35 @@ type oidcRuntime struct {
 	Provider *oidc.Provider
 	Verifier *oidc.IDTokenVerifier
 	Config   oauth2.Config
+}
+
+type loginAttempt struct {
+	failures      int
+	windowStarted time.Time
+	lockedUntil   time.Time
+	lastSeen      time.Time
+}
+
+type loginLimiter struct {
+	mu              sync.Mutex
+	attempts        map[string]loginAttempt
+	maxFailures     int
+	failureWindow   time.Duration
+	lockoutDuration time.Duration
+	maxEntries      int
+	nextCleanup     time.Time
+	now             func() time.Time
+}
+
+func newLoginLimiter() *loginLimiter {
+	return &loginLimiter{
+		attempts:        make(map[string]loginAttempt),
+		maxFailures:     loginMaxFailures,
+		failureWindow:   loginFailureWindow,
+		lockoutDuration: loginLockout,
+		maxEntries:      loginAttemptLimit,
+		now:             time.Now,
+	}
 }
 
 func main() {
@@ -219,6 +253,7 @@ func main() {
 		sessions:       make(map[string]Session),
 		oidcStates:     make(map[string]time.Time),
 		oidcCache:      make(map[string]*oidcRuntime),
+		loginLimiter:   newLoginLimiter(),
 	}
 	if err := app.ensureConfig(); err != nil {
 		log.Fatalf("prepare config: %v", err)
@@ -664,6 +699,11 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON body"))
 		return
 	}
+	loginKeys := loginAttemptKeys(payload.Username, r.RemoteAddr)
+	if retryAfter, blocked := a.loginLimiter.retryAfterAny(loginKeys); blocked {
+		writeLoginRateLimit(w, retryAfter)
+		return
+	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -678,6 +718,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if a.validCredentialsLocked(payload.Username, payload.Password) {
+		a.loginLimiter.reset(loginKeys...)
 		if passwordNeedsUpgrade(a.settings.PasswordHash) {
 			a.settings.PasswordHash = hashPassword(payload.Password)
 			if err := a.saveSettingsLocked(); err != nil {
@@ -690,6 +731,10 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 			"authenticated": true,
 			"username":      a.settings.Username,
 		})
+		return
+	}
+	if retryAfter, blocked := a.loginLimiter.recordFailure(loginKeys...); blocked {
+		writeLoginRateLimit(w, retryAfter)
 		return
 	}
 	writeError(w, http.StatusUnauthorized, errors.New("invalid username or password"))
@@ -2531,6 +2576,116 @@ func passwordMatchesHash(password, stored string) bool {
 
 func passwordNeedsUpgrade(stored string) bool {
 	return !(strings.HasPrefix(stored, "$2a$") || strings.HasPrefix(stored, "$2b$") || strings.HasPrefix(stored, "$2y$"))
+}
+
+func loginAttemptKeys(username, remoteAddr string) []string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(remoteAddr)
+	}
+	normalizedUsername := strings.ToLower(strings.TrimSpace(username))
+	normalizedHost := strings.ToLower(strings.Trim(host, "[]"))
+	return []string{
+		hashLoginAttemptKey("username\x00" + normalizedUsername),
+		hashLoginAttemptKey("username-source\x00" + normalizedUsername + "\x00" + normalizedHost),
+	}
+}
+
+func hashLoginAttemptKey(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
+
+func (l *loginLimiter) retryAfterAny(keys []string) (time.Duration, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	l.cleanupLocked(now)
+	var longest time.Duration
+	for _, key := range keys {
+		attempt, ok := l.attempts[key]
+		if !ok || !attempt.lockedUntil.After(now) {
+			continue
+		}
+		attempt.lastSeen = now
+		l.attempts[key] = attempt
+		if remaining := attempt.lockedUntil.Sub(now); remaining > longest {
+			longest = remaining
+		}
+	}
+	return longest, longest > 0
+}
+
+func (l *loginLimiter) recordFailure(keys ...string) (time.Duration, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	l.cleanupLocked(now)
+	var longest time.Duration
+	for _, key := range keys {
+		attempt := l.attempts[key]
+		if attempt.windowStarted.IsZero() || now.Sub(attempt.windowStarted) >= l.failureWindow {
+			attempt = loginAttempt{windowStarted: now}
+		}
+		attempt.failures++
+		attempt.lastSeen = now
+		if attempt.failures >= l.maxFailures {
+			attempt.lockedUntil = now.Add(l.lockoutDuration)
+		}
+		if _, exists := l.attempts[key]; !exists && len(l.attempts) >= l.maxEntries {
+			l.evictOldestLocked()
+		}
+		l.attempts[key] = attempt
+		if remaining := attempt.lockedUntil.Sub(now); remaining > longest {
+			longest = remaining
+		}
+	}
+	return longest, longest > 0
+}
+
+func (l *loginLimiter) reset(keys ...string) {
+	l.mu.Lock()
+	for _, key := range keys {
+		delete(l.attempts, key)
+	}
+	l.mu.Unlock()
+}
+
+func (l *loginLimiter) cleanupLocked(now time.Time) {
+	if !l.nextCleanup.IsZero() && now.Before(l.nextCleanup) {
+		return
+	}
+	for key, attempt := range l.attempts {
+		windowExpired := !attempt.windowStarted.IsZero() && now.Sub(attempt.windowStarted) >= l.failureWindow
+		lockExpired := attempt.lockedUntil.IsZero() || !attempt.lockedUntil.After(now)
+		if windowExpired && lockExpired {
+			delete(l.attempts, key)
+		}
+	}
+	l.nextCleanup = now.Add(time.Minute)
+}
+
+func (l *loginLimiter) evictOldestLocked() {
+	oldestKey := ""
+	var oldestTime time.Time
+	for key, attempt := range l.attempts {
+		if oldestKey == "" || attempt.lastSeen.Before(oldestTime) {
+			oldestKey = key
+			oldestTime = attempt.lastSeen
+		}
+	}
+	if oldestKey != "" {
+		delete(l.attempts, oldestKey)
+	}
+}
+
+func writeLoginRateLimit(w http.ResponseWriter, retryAfter time.Duration) {
+	seconds := int64((retryAfter + time.Second - 1) / time.Second)
+	if seconds < 1 {
+		seconds = 1
+	}
+	w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
+	writeError(w, http.StatusTooManyRequests, errors.New("too many login attempts; try again later"))
 }
 
 func secureSessionTransportAllowed(r *http.Request) bool {

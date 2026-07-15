@@ -92,11 +92,12 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 ### 8. Unbounded OIDC state storage
 
 - Severity: Medium
-- Status: Open
+- Status: Fixed for `v0.8.6`
 - Finding: Every request to the public OIDC start endpoint adds an entry to `a.oidcStates`; expired entries are not periodically removed.
 - Locations: `caddymgmdev/cmd/server/main.go:811` and `:830`.
 - Risk: Repeated OIDC start requests can grow the in-memory state map without a fixed bound.
-- Recommended fix: Periodically remove expired states, enforce a maximum number of outstanding states, and rate-limit OIDC start requests.
+- Fix: Expired states are removed before new state creation. Outstanding states are capped at 1,000; when capacity is exhausted, the endpoint returns HTTP `429` with `Retry-After: 60` and does not allocate another state.
+- Verification: Added tests for expiry cleanup, capacity enforcement, capacity recovery, and the ten-minute state lifetime.
 
 ### 9. DNS lookup while holding the trusted-proxy cache mutex
 
@@ -132,5 +133,6 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Finding 4 was fixed for release `v0.8.3`.
 - Finding 5 was fixed for release `v0.8.4`.
 - Finding 6 was fixed for release `v0.8.5`.
-- Findings 7-9 remain open application findings for a future security release.
+- Finding 8 was fixed for release `v0.8.6`.
+- Findings 7 and 9 remain open application findings for a future security release.
 - Finding 10 belongs to server administration and must not be changed as part of an application update without separate approval.

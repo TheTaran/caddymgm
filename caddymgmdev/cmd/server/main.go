@@ -47,6 +47,8 @@ const (
 	loginFailureWindow  = 15 * time.Minute
 	loginLockout        = 15 * time.Minute
 	loginAttemptLimit   = 10_000
+	oidcStateLimit      = 1_000
+	oidcStateLifetime   = 10 * time.Minute
 )
 
 //go:embed web/*
@@ -830,11 +832,17 @@ func (a *App) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login.html?error=oidc_not_available", http.StatusFound)
 		return
 	}
-	state := newSessionToken()
-	a.oidcStates[state] = time.Now().Add(10 * time.Minute)
+	now := time.Now()
+	state, ok := a.createOIDCStateLocked(now)
+	if !ok {
+		a.mu.Unlock()
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, errors.New("too many pending OIDC login requests; try again later"))
+		return
+	}
 	a.mu.Unlock()
 
-	http.SetCookie(w, oidcStateCookie(state, 10*time.Minute, a.isSecureRequest(r)))
+	http.SetCookie(w, oidcStateCookie(state, oidcStateLifetime, a.isSecureRequest(r)))
 	http.Redirect(w, r, runtime.Config.AuthCodeURL(state), http.StatusFound)
 }
 
@@ -2478,6 +2486,27 @@ func (a *App) consumeOIDCStateLocked(r *http.Request, state string) error {
 		return errors.New("state expired")
 	}
 	return nil
+}
+
+func (a *App) cleanupOIDCStatesLocked(now time.Time) {
+	for state, expiresAt := range a.oidcStates {
+		if !expiresAt.After(now) {
+			delete(a.oidcStates, state)
+		}
+	}
+}
+
+func (a *App) createOIDCStateLocked(now time.Time) (string, bool) {
+	if a.oidcStates == nil {
+		a.oidcStates = make(map[string]time.Time)
+	}
+	a.cleanupOIDCStatesLocked(now)
+	if len(a.oidcStates) >= oidcStateLimit {
+		return "", false
+	}
+	state := newSessionToken()
+	a.oidcStates[state] = now.Add(oidcStateLifetime)
+	return state, true
 }
 
 func (a *App) oidcRuntimeLocked(ctx context.Context) (*oidcRuntime, error) {

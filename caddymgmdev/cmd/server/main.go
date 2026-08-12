@@ -47,6 +47,8 @@ const (
 	loginFailureWindow  = 15 * time.Minute
 	loginLockout        = 15 * time.Minute
 	loginAttemptLimit   = 10_000
+	sessionLimit        = 10_000
+	sessionLifetime     = 12 * time.Hour
 	oidcStateLimit      = 1_000
 	oidcStateLifetime   = 10 * time.Minute
 	loginJSONBodyLimit  = 64 << 10
@@ -653,12 +655,12 @@ func (a *App) handleUploadRootCA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filename := rootCAFilename(header.Filename)
-	if err := os.MkdirAll(a.caCertDir, 0o755); err != nil {
+	if err := os.MkdirAll(a.caCertDir, 0o750); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	path := filepath.Join(a.caCertDir, filename)
-	if err := os.WriteFile(path, pemContent, 0o644); err != nil {
+	if err := os.WriteFile(path, pemContent, 0o640); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -931,10 +933,10 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) ensureConfig() error {
-	if err := os.MkdirAll(filepath.Dir(a.configPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(a.configPath), 0o750); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(a.accessLogDir, 0o755); err != nil {
+	if err := os.MkdirAll(a.accessLogDir, 0o750); err != nil {
 		return err
 	}
 	if _, err := os.Stat(a.configPath); err == nil {
@@ -942,11 +944,11 @@ func (a *App) ensureConfig() error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return os.WriteFile(a.configPath, []byte(managedStart+"\n"+managedEnd+"\n"), 0o644)
+	return os.WriteFile(a.configPath, []byte(managedStart+"\n"+managedEnd+"\n"), 0o640)
 }
 
 func (a *App) ensureSettings() error {
-	if err := os.MkdirAll(filepath.Dir(a.settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(a.settingsPath), 0o750); err != nil {
 		return err
 	}
 	content, err := os.ReadFile(a.settingsPath)
@@ -1072,7 +1074,7 @@ func (a *App) save(head string, sites []Site, tail string) error {
 	}
 
 	tmp := fmt.Sprintf("%s.tmp.%d", a.configPath, time.Now().UnixNano())
-	if err := os.WriteFile(tmp, out.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(tmp, out.Bytes(), 0o640); err != nil {
 		return err
 	}
 	return os.Rename(tmp, a.configPath)
@@ -1679,8 +1681,8 @@ func validateOIDCSettings(settings OIDCSettings) error {
 	if !settings.Enabled {
 		return nil
 	}
-	if strings.TrimSpace(settings.IssuerURL) == "" {
-		return errors.New("oidc issuer url is required")
+	if err := validateOIDCURL(settings.IssuerURL, "issuer"); err != nil {
+		return err
 	}
 	if strings.TrimSpace(settings.ClientID) == "" {
 		return errors.New("oidc client id is required")
@@ -1688,10 +1690,36 @@ func validateOIDCSettings(settings OIDCSettings) error {
 	if strings.TrimSpace(settings.ClientSecret) == "" {
 		return errors.New("oidc client secret is required")
 	}
-	if strings.TrimSpace(settings.RedirectURL) == "" {
-		return errors.New("oidc redirect url is required")
+	if err := validateOIDCURL(settings.RedirectURL, "redirect"); err != nil {
+		return err
 	}
 	return nil
+}
+
+func validateOIDCURL(raw, name string) error {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return fmt.Errorf("oidc %s url is required", name)
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || parsed.User != nil {
+		return fmt.Errorf("oidc %s url is invalid", name)
+	}
+	if parsed.Scheme == "https" {
+		return nil
+	}
+	if parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()) {
+		return nil
+	}
+	return fmt.Errorf("oidc %s url must use HTTPS unless it targets loopback", name)
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(strings.TrimSpace(host), "localhost") {
+		return true
+	}
+	address := net.ParseIP(strings.Trim(strings.TrimSpace(host), "[]"))
+	return address != nil && address.IsLoopback()
 }
 
 func isRootCAFile(path string) bool {
@@ -2371,11 +2399,7 @@ func effectiveWebInterfaceUpstream(webInterface WebInterface, caddyMode string) 
 }
 
 func newID() string {
-	var b [6]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(b[:])
+	return secureRandomHex(6)
 }
 
 func hashPassword(password string) string {
@@ -2451,14 +2475,19 @@ func isPublicPath(path string) bool {
 }
 
 func newSessionToken() string {
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
+	return secureRandomHex(32)
+}
+
+func secureRandomHex(size int) string {
+	b := make([]byte, size)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("generate cryptographic random value: %v", err))
 	}
-	return hex.EncodeToString(b[:])
+	return hex.EncodeToString(b)
 }
 
 func sessionCookie(value string, maxAge time.Duration, secure bool) *http.Cookie {
+	// Secure is enabled for every non-loopback request; local HTTP is an intentional development exception.
 	return &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    value,
@@ -2471,6 +2500,7 @@ func sessionCookie(value string, maxAge time.Duration, secure bool) *http.Cookie
 }
 
 func oidcStateCookie(value string, maxAge time.Duration, secure bool) *http.Cookie {
+	// Secure is enabled for every non-loopback request; local HTTP is an intentional development exception.
 	return &http.Cookie{
 		Name:     oidcStateCookieName,
 		Value:    value,
@@ -2483,6 +2513,7 @@ func oidcStateCookie(value string, maxAge time.Duration, secure bool) *http.Cook
 }
 
 func csrfCookie(value string, maxAge time.Duration, secure bool) *http.Cookie {
+	// Secure is enabled for every non-loopback request; local HTTP is an intentional development exception.
 	return &http.Cookie{
 		Name:     csrfCookieName,
 		Value:    value,
@@ -2495,13 +2526,40 @@ func csrfCookie(value string, maxAge time.Duration, secure bool) *http.Cookie {
 }
 
 func (a *App) createSessionLocked(w http.ResponseWriter, r *http.Request, username, provider string) {
+	now := time.Now()
+	a.cleanupSessionsLocked(now)
+	if len(a.sessions) >= sessionLimit {
+		a.evictEarliestSessionLocked()
+	}
 	token := newSessionToken()
 	a.sessions[token] = Session{
-		ExpiresAt: time.Now().Add(12 * time.Hour),
+		ExpiresAt: now.Add(sessionLifetime),
 		Username:  username,
 		Provider:  provider,
 	}
-	http.SetCookie(w, sessionCookie(token, 12*time.Hour, a.isSecureRequest(r)))
+	http.SetCookie(w, sessionCookie(token, sessionLifetime, a.isSecureRequest(r)))
+}
+
+func (a *App) cleanupSessionsLocked(now time.Time) {
+	for token, session := range a.sessions {
+		if !session.ExpiresAt.After(now) {
+			delete(a.sessions, token)
+		}
+	}
+}
+
+func (a *App) evictEarliestSessionLocked() {
+	earliestToken := ""
+	var earliestExpiry time.Time
+	for token, session := range a.sessions {
+		if earliestToken == "" || session.ExpiresAt.Before(earliestExpiry) {
+			earliestToken = token
+			earliestExpiry = session.ExpiresAt
+		}
+	}
+	if earliestToken != "" {
+		delete(a.sessions, earliestToken)
+	}
 }
 
 func (a *App) consumeOIDCStateLocked(r *http.Request, state string) error {
@@ -3060,6 +3118,15 @@ func logRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+		log.Printf("%s %s %s", sanitizeLogValue(r.Method), sanitizeLogValue(r.URL.Path), time.Since(start).Round(time.Millisecond))
 	})
+}
+
+func sanitizeLogValue(value string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return '_'
+		}
+		return r
+	}, value)
 }

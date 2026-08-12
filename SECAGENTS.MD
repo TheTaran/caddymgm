@@ -1,4 +1,4 @@
-# Anweisungen für Security Tests
+# Instructions for Security Tests
 - Act as a Principal Security Engineer.
 - Systematically scan the entire codebase systematically, file by file. 
 - List every vulnerability found including its file path, line number, severity (Critical/High/Medium/Low), and technical explanation.
@@ -173,3 +173,19 @@ The review used static code inspection, `go test`, `go vet`, `govulncheck`, Dock
 - Finding 10 belongs to server administration and must not be changed as part of an application update without separate approval.
 - Findings 11 and 12 were fixed for release `v0.9.3`.
 - Finding 13 was fixed for release `v0.9.5`.
+
+## Follow-up security review for v0.9.7
+
+- Session storage was bounded to 10,000 entries with expiry cleanup and earliest-expiry eviction. This prevents unbounded memory growth through repeated successful logins.
+- OIDC issuer and redirect URLs now require HTTPS, with HTTP allowed only for loopback development endpoints.
+- Cryptographic ID and session-token generation now fails closed if the system CSPRNG fails; it no longer falls back to timestamps.
+- Configuration, certificate, and log directories/files now use restrictive permissions (`0750`/`0640`).
+- Request method and path values are sanitized before request logging to prevent control-character log injection.
+- Verification: `go test ./...`, `go test -race ./...`, `go vet ./...`, `govulncheck ./...`, and Compose validation passed.
+- `gosec` still reports conservative warnings for transport-dependent cookie flags, internally controlled file paths, bounded multipart parsing, and secret-pattern serialization. These were reviewed and are not exploitable in the current trust boundaries.
+
+## Self-critique and residual risks
+
+- A compromised trusted proxy can still provide false transport headers; deployment must keep `CADDYMGM_TRUSTED_PROXIES` restricted to the actual Caddy peers.
+- Loopback HTTP OIDC remains intentionally permitted for development; production deployments must use HTTPS issuer and redirect URLs.
+- Runtime secret exposure remains dependent on host permissions for `.env`, mounted settings, and certificate directories; host-level permissions and backups require separate operational controls.

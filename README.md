@@ -19,6 +19,38 @@ CaddyMGM gives you a web UI to:
 The Caddy configuration stays outside the container.
 Caddy can run separately and can be updated independently from CaddyMGM.
 
+## Screenshots
+
+### Dashboard
+
+See all managed web hosts and their current state at a glance.
+
+![CaddyMGM Dashboard interface](./caddymgmdev/cmd/server/web/dashboard.png)
+
+### Web Hosts
+
+Create and edit reverse proxies and static websites from the rule editor.
+
+![CaddyMGM Web Hosts interface](./caddymgmdev/cmd/server/web/web-hosts.png)
+
+### Certificates
+
+Manage built-in and custom ACME authorities and inspect issued certificates.
+
+![CaddyMGM Certificates interface](./caddymgmdev/cmd/server/web/certificates.png)
+
+### Logs
+
+Follow the Caddy service log and per-host access logs in realtime.
+
+![CaddyMGM Logs interface](./caddymgmdev/cmd/server/web/logs.png)
+
+### Settings
+
+Configure authentication, the management interface, and log retention.
+
+![CaddyMGM Settings interface](./caddymgmdev/cmd/server/web/settings.png)
+
 ## Quick Start
 
 1. Copy the example environment file:

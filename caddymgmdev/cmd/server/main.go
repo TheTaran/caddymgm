@@ -820,10 +820,11 @@ func (a *App) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"authEnabled":      a.settings.AuthEnabled,
-		"localAuthEnabled": localAuthEnabledFromEnv(),
-		"oidcAuthEnabled":  oidcAuthEnabledFromEnv() && a.settings.OIDC.Enabled,
-		"appName":          a.settings.AppName,
+		"authEnabled":         a.settings.AuthEnabled,
+		"localAuthEnabled":    localAuthEnabledFromEnv(),
+		"oidcAuthEnabled":     oidcAuthEnabledFromEnv() && a.settings.OIDC.Enabled,
+		"insecureHTTPAllowed": insecureHTTPAllowedFromEnv(),
+		"appName":             a.settings.AppName,
 	})
 }
 
@@ -2730,6 +2731,10 @@ func oidcAuthEnabledFromEnv() bool {
 	return envBool("CADDYMGM_OIDCAUTH_ENABLED", false)
 }
 
+func insecureHTTPAllowedFromEnv() bool {
+	return envBool("CADDYMGM_ALLOW_INSECURE_HTTP", false)
+}
+
 func envBool(key string, fallback bool) bool {
 	value := strings.ToLower(env(key, ""))
 	if value == "" {
@@ -2953,7 +2958,7 @@ func (s *trustedProxySet) hostnameContains(ctx context.Context, hostname string,
 }
 
 func (a *App) secureSessionTransportAllowed(r *http.Request) bool {
-	return a.isSecureRequest(r) || isLoopbackRemoteAddr(r.RemoteAddr)
+	return insecureHTTPAllowedFromEnv() || a.isSecureRequest(r) || isLoopbackRemoteAddr(r.RemoteAddr)
 }
 
 func (a *App) isSecureRequest(r *http.Request) bool {

@@ -24,6 +24,7 @@ async function init() {
     const authEnabled = !!config.authEnabled;
     const localEnabled = !!config.localAuthEnabled;
     const oidcEnabled = !!config.oidcAuthEnabled;
+    const insecureHTTPAllowed = !!config.insecureHTTPAllowed;
 
     if (!authEnabled) {
       applyLoginModes(false, false, true);
@@ -52,6 +53,11 @@ async function init() {
     } else if (oidcEnabled) {
       methodNote.hidden = true;
       methodNote.textContent = "";
+    }
+
+    if (insecureHTTPAllowed && window.location.protocol === "http:" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" && window.location.hostname !== "::1") {
+      methodNote.hidden = false;
+      methodNote.textContent += " Warning: insecure HTTP login is enabled. Configure HTTPS and disable it after initial setup.";
     }
   } catch (err) {
     errorBox.textContent = err.message;

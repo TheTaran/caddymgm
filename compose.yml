@@ -15,7 +15,8 @@ services:
       CADDYMGM_CA_CERT_DIR: /ca-certificates
       CADDYMGM_CADDY_API_URL: http://caddy-admin:2019
       CADDYMGM_TRUSTED_PROXIES: caddy,caddy-admin
-      CADDYMGM_LOCALAUTH_ENABLED: "false"
+      CADDYMGM_LOCALAUTH_ENABLED: "true"
+      CADDYMGM_ALLOW_INSECURE_HTTP: "true"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

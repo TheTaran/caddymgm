@@ -141,6 +141,7 @@ The following variables are used by Docker Compose and CaddyMGM.
 | `CADDYMGM_ADMIN_PASSWORD` | required for first startup | Initial local admin password; no default password is generated |
 | `CADDYMGM_AUTH_ENABLED` | `true` | Enables the login portal |
 | `CADDYMGM_LOCALAUTH_ENABLED` | `true` | Enables local username/password login |
+| `CADDYMGM_ALLOW_INSECURE_HTTP` | `false` | Allows remote login over unencrypted HTTP for initial setup; disable after HTTPS is configured |
 | `CADDYMGM_OIDCAUTH_ENABLED` | `false` | Enables OIDC login |
 | `CADDYMGM_CADDY_MODE` | `file` | Caddy integration mode |
 | `CADDYMGM_CADDY_API_URL` | `http://caddy:2019` in example | Caddy Admin API URL for reloads |
@@ -167,6 +168,7 @@ CADDYMGM_ADMIN_USER=admin
 CADDYMGM_ADMIN_PASSWORD=replace-with-a-strong-password
 CADDYMGM_AUTH_ENABLED=true
 CADDYMGM_LOCALAUTH_ENABLED=true
+CADDYMGM_ALLOW_INSECURE_HTTP=true
 CADDYMGM_OIDCAUTH_ENABLED=false
 CADDYMGM_CADDY_MODE=file
 CADDYMGM_CADDY_API_URL=http://caddy:2019
@@ -175,6 +177,10 @@ CADDYMGM_STATIC_ROOT_BASE=/srv
 CADDYMGM_WEB_PORT=8080
 COMPOSE_PROFILES=docker-caddy
 ```
+
+`CADDYMGM_ALLOW_INSECURE_HTTP=true` is intended only for initial setup on a trusted network.
+Set it to `false` and restart CaddyMGM as soon as HTTPS is available. Credentials and session
+cookies are otherwise transmitted without transport encryption.
 
 ## Update
 

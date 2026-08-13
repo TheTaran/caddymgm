@@ -84,6 +84,7 @@ func TestSecureRequestAlwaysAcceptsDirectTLS(t *testing.T) {
 }
 
 func TestInsecureTransportExceptionRequiresLoopbackPeer(t *testing.T) {
+	t.Setenv("CADDYMGM_ALLOW_INSECURE_HTTP", "false")
 	app := &App{trustedProxies: mustTrustedProxySet(t, "")}
 	spoofedHost := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login", nil)
 	spoofedHost.RemoteAddr = "192.0.2.10:4321"
@@ -95,6 +96,20 @@ func TestInsecureTransportExceptionRequiresLoopbackPeer(t *testing.T) {
 	loopback.RemoteAddr = "127.0.0.1:4321"
 	if !app.secureSessionTransportAllowed(loopback) {
 		t.Fatal("real loopback peer was not allowed to use local HTTP")
+	}
+}
+
+func TestInsecureTransportCanBeExplicitlyEnabled(t *testing.T) {
+	t.Setenv("CADDYMGM_ALLOW_INSECURE_HTTP", "true")
+	app := &App{trustedProxies: mustTrustedProxySet(t, "")}
+	request := httptest.NewRequest(http.MethodPost, "http://admin.example.test/api/auth/login", nil)
+	request.RemoteAddr = "192.0.2.10:4321"
+
+	if !app.secureSessionTransportAllowed(request) {
+		t.Fatal("explicit insecure HTTP opt-in did not allow a remote HTTP login")
+	}
+	if app.isSecureRequest(request) {
+		t.Fatal("insecure HTTP opt-in incorrectly marked the request as HTTPS")
 	}
 }
 

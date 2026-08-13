@@ -369,15 +369,15 @@ func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	site.ID = uniqueSiteID(site.Address, sites, "")
-	sites = append(sites, site)
-	if err := a.save(head, sites, tail); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+	if duplicateSiteAddress(site.Address, sites, "") {
+		writeError(w, http.StatusConflict, errors.New("a web host with this address already exists"))
 		return
 	}
-	if err := a.applyCaddyConfigLocked(); err != nil {
+	site.ID = uniqueSiteID(site.Address, sites, "")
+	sites = append(sites, site)
+	if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
 		a.addLogLocked(site, "reload failed", err.Error())
-		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
+		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy rejected the change; previous config restored: %w", err))
 		return
 	}
 	a.populateSiteCertificateMetadata(&site)
@@ -415,22 +415,22 @@ func (a *App) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if duplicateSiteAddress(updated.Address, sites, id) {
+		writeError(w, http.StatusConflict, errors.New("a web host with this address already exists"))
+		return
+	}
 	for i := range sites {
 		if sites[i].ID == id {
 			oldID := sites[i].ID
 			updated.ID = uniqueSiteID(updated.Address, sites, oldID)
 			sites[i] = updated
+			if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
+				a.addLogLocked(updated, "reload failed", err.Error())
+				writeError(w, http.StatusBadGateway, fmt.Errorf("caddy rejected the change; previous config restored: %w", err))
+				return
+			}
 			if err := a.renameAccessLog(oldID, updated.ID); err != nil {
 				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-			if err := a.save(head, sites, tail); err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-			if err := a.applyCaddyConfigLocked(); err != nil {
-				a.addLogLocked(updated, "reload failed", err.Error())
-				writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
 				return
 			}
 			a.populateSiteCertificateMetadata(&updated)
@@ -473,13 +473,9 @@ func (a *App) handleDeleteSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errors.New("site not found"))
 		return
 	}
-	if err := a.save(head, next, tail); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	if err := a.applyCaddyConfigLocked(); err != nil {
+	if err := a.saveAndApplyCaddyConfigLocked(head, next, tail); err != nil {
 		a.addLogLocked(removed, "reload failed", err.Error())
-		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
+		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy rejected the change; previous config restored: %w", err))
 		return
 	}
 	if err := a.deleteSiteArtifacts(removed); err != nil {
@@ -569,17 +565,24 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	previousSettings := a.settings
+	previousSettingsFile, err := os.ReadFile(a.settingsPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	a.settings = next
 	if err := a.saveSettingsLocked(); err != nil {
+		a.settings = previousSettings
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if err := a.save(head, sites, tail); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	if err := a.applyCaddyConfigLocked(); err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy config saved but reload failed: %w", err))
+	if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
+		a.settings = previousSettings
+		if restoreErr := writeFileAtomically(a.settingsPath, previousSettingsFile, 0o600); restoreErr != nil {
+			err = fmt.Errorf("%w; restoring previous settings failed: %v", err, restoreErr)
+		}
+		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy rejected the settings change; previous config restored: %w", err))
 		return
 	}
 	a.trimLogsLocked()
@@ -1062,6 +1065,7 @@ func (a *App) load() ([]Site, string, string, error) {
 }
 
 func (a *App) save(head string, sites []Site, tail string) error {
+	sites = deduplicateSitesByAddress(sites)
 	normalizeSiteIDs(sites)
 	var out bytes.Buffer
 	out.WriteString(strings.TrimRight(head, "\n"))
@@ -1074,11 +1078,36 @@ func (a *App) save(head string, sites []Site, tail string) error {
 		out.WriteString(strings.TrimLeft(tail, "\n"))
 	}
 
-	tmp := fmt.Sprintf("%s.tmp.%d", a.configPath, time.Now().UnixNano())
-	if err := os.WriteFile(tmp, out.Bytes(), 0o640); err != nil {
+	return writeFileAtomically(a.configPath, out.Bytes(), 0o640)
+}
+
+func (a *App) saveAndApplyCaddyConfigLocked(head string, sites []Site, tail string) error {
+	previous, err := os.ReadFile(a.configPath)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, a.configPath)
+	if err := a.save(head, sites, tail); err != nil {
+		return err
+	}
+	if err := a.applyCaddyConfigLocked(); err != nil {
+		if restoreErr := writeFileAtomically(a.configPath, previous, 0o640); restoreErr != nil {
+			return fmt.Errorf("%w; restoring previous config failed: %v", err, restoreErr)
+		}
+		return err
+	}
+	return nil
+}
+
+func writeFileAtomically(path string, content []byte, mode os.FileMode) error {
+	tmp := fmt.Sprintf("%s.tmp.%d", path, time.Now().UnixNano())
+	if err := os.WriteFile(tmp, content, mode); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func (a *App) applyCaddyConfigLocked() error {
@@ -1386,7 +1415,7 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir string) string {
 		out.WriteString(prefix + "\troot * " + site.Root + "\n")
 		out.WriteString(prefix + "\tfile_server\n")
 	} else {
-		if site.SkipTLSVerify {
+		if site.SkipTLSVerify && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(site.Upstream)), "http://") {
 			out.WriteString(prefix + "\t# caddymgm:skip-tls-verify\n")
 			out.WriteString(prefix + "\treverse_proxy " + site.Upstream + " {\n")
 			out.WriteString(prefix + "\t\ttransport http {\n")
@@ -1466,6 +1495,9 @@ func normalizeSite(site *Site) error {
 			return err
 		}
 		site.Upstream = upstream
+		if site.SkipTLSVerify && strings.HasPrefix(strings.ToLower(site.Upstream), "http://") {
+			return errors.New("skip upstream TLS verification requires an HTTPS upstream")
+		}
 	case "static":
 		site.SkipTLSVerify = false
 		if site.Root == "" {
@@ -1489,6 +1521,30 @@ func normalizeSite(site *Site) error {
 		site.ACMEIssuerID = ""
 	}
 	return nil
+}
+
+func duplicateSiteAddress(address string, sites []Site, excludedID string) bool {
+	address = strings.ToLower(strings.TrimSpace(address))
+	for _, site := range sites {
+		if site.ID != excludedID && strings.ToLower(strings.TrimSpace(site.Address)) == address {
+			return true
+		}
+	}
+	return false
+}
+
+func deduplicateSitesByAddress(sites []Site) []Site {
+	seen := make(map[string]struct{}, len(sites))
+	unique := make([]Site, 0, len(sites))
+	for _, site := range sites {
+		address := strings.ToLower(strings.TrimSpace(site.Address))
+		if _, exists := seen[address]; exists {
+			continue
+		}
+		seen[address] = struct{}{}
+		unique = append(unique, site)
+	}
+	return unique
 }
 
 func parseManagedComment(raw string) string {

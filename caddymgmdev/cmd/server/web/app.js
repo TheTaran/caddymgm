@@ -160,6 +160,7 @@ els.issuerReset.addEventListener("click", closeIssuerForm);
 els.issuerDelete.addEventListener("click", deleteIssuer);
 els.issuerRootCAUploadButton.addEventListener("click", uploadRootCA);
 els.tlsEnabled.addEventListener("change", syncTLSMode);
+els.upstream.addEventListener("input", syncUpstreamTLS);
 els.acmeDialogClose.addEventListener("click", closeACMEStatus);
 els.acmeDialog.addEventListener("close", stopACMEStatusPolling);
 els.acmeDialog.addEventListener("cancel", stopACMEStatusPolling);
@@ -842,6 +843,13 @@ function syncMode() {
     els.skipTlsVerify.checked = false;
     els.root.value = "";
   }
+  syncUpstreamTLS();
+}
+
+function syncUpstreamTLS() {
+  const usesPlainHTTP = /^http:\/\//i.test(els.upstream.value.trim());
+  if (usesPlainHTTP) els.skipTlsVerify.checked = false;
+  els.skipTlsVerify.disabled = getMode() !== "proxy" || usesPlainHTTP;
 }
 
 function setFieldVisible(row, visible) {

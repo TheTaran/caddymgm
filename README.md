@@ -19,6 +19,21 @@ CaddyMGM gives you a web UI to:
 The Caddy configuration stays outside the container.
 Caddy can run separately and can be updated independently from CaddyMGM.
 
+## Planned Upcoming Features
+
+- OIDC Authentication for Website access
+- Integration of LDAP for authentication of websites or OIDC
+- GEO IP Map on Dashboard for Accessed Websites
+- Security features to protect managed websites, including:
+  - security headers
+  - HTTP Strict Transport Security (HSTS)
+  - access policies for everyone, allowed IPs, or blocked IPs
+  - IP address and CIDR lists
+  - basic authentication with username and password
+  - maximum request body size limits
+  - allowed HTTP methods
+  - blocked paths
+
 ## Screenshots
 
 | View | Preview |

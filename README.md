@@ -21,35 +21,13 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 ## Screenshots
 
-### Dashboard
-
-See all managed web hosts and their current state at a glance.
-
-![CaddyMGM Dashboard interface](./caddymgmdev/cmd/server/web/dashboard.png)
-
-### Web Hosts
-
-Create and edit reverse proxies and static websites from the rule editor.
-
-![CaddyMGM Web Hosts interface](./caddymgmdev/cmd/server/web/web-hosts.png)
-
-### Certificates
-
-Manage built-in and custom ACME authorities and inspect issued certificates.
-
-![CaddyMGM Certificates interface](./caddymgmdev/cmd/server/web/certificates.png)
-
-### Logs
-
-Follow the Caddy service log and per-host access logs in realtime.
-
-![CaddyMGM Logs interface](./caddymgmdev/cmd/server/web/logs.png)
-
-### Settings
-
-Configure authentication, the management interface, and log retention.
-
-![CaddyMGM Settings interface](./caddymgmdev/cmd/server/web/settings.png)
+| View | Preview |
+| --- | --- |
+| **Dashboard**<br>See all managed web hosts and their current state at a glance. | <img src="./caddymgmdev/cmd/server/web/dashboard.png" alt="CaddyMGM Dashboard interface" width="760" /> |
+| **Web Hosts**<br>Create and edit reverse proxies and static websites from the rule editor. | <img src="./caddymgmdev/cmd/server/web/web-hosts.png" alt="CaddyMGM Web Hosts interface" width="760" /> |
+| **Certificates**<br>Manage built-in and custom ACME authorities and inspect issued certificates. | <img src="./caddymgmdev/cmd/server/web/certificates.png" alt="CaddyMGM Certificates interface" width="760" /> |
+| **Logs**<br>Follow the Caddy service log and per-host access logs in realtime. | <img src="./caddymgmdev/cmd/server/web/logs.png" alt="CaddyMGM Logs interface" width="760" /> |
+| **Settings**<br>Configure authentication, the management interface, and log retention. | <img src="./caddymgmdev/cmd/server/web/settings.png" alt="CaddyMGM Settings interface" width="760" /> |
 
 ## Quick Start
 

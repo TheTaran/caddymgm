@@ -130,6 +130,11 @@ const hostSort = {
   dashboard: { key: "address", direction: "asc" },
   "web-hosts": { key: "address", direction: "asc" },
 };
+const auxiliarySort = {
+  certificates: { key: "domain", direction: "asc" },
+  "service-logs": { key: "time", direction: "desc" },
+  "site-logs": { key: "time", direction: "desc" },
+};
 const hostCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 let settings = null;
 let logPollTimer = null;
@@ -138,6 +143,9 @@ let acmeDialogContext = null;
 let serviceLogsExpanded = false;
 let siteLogsExpanded = false;
 let editingSite = null;
+let latestSiteLogs = [];
+let latestServiceLogs = [];
+let latestServiceLogsAvailable = true;
 const LOG_PREVIEW_LIMIT = 10;
 
 document.querySelector("#logout").addEventListener("click", logout);
@@ -175,14 +183,15 @@ document.querySelectorAll("[data-sort-table]").forEach((header) => {
     const button = event.target.closest(".sort-button");
     if (!button) return;
     const table = header.dataset.sortTable;
-    const sort = hostSort[table];
+    const sort = hostSort[table] || auxiliarySort[table];
+    if (!sort) return;
     if (sort.key === button.dataset.sort) {
       sort.direction = sort.direction === "asc" ? "desc" : "asc";
     } else {
       sort.key = button.dataset.sort;
       sort.direction = "asc";
     }
-    renderHostLists();
+    renderSortedTable(table);
   });
 });
 document.querySelectorAll("input[name='mode']").forEach((input) => {
@@ -430,7 +439,8 @@ function renderCertificatesView() {
 
 function renderIssuedCertificates() {
   els.certificateList.innerHTML = "";
-  const tlsSites = sites.filter((site) => site.tlsMode && site.tlsMode !== "off");
+  updateSortHeaders();
+  const tlsSites = sortedCertificates();
   if (!tlsSites.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
@@ -458,6 +468,31 @@ function renderIssuedCertificates() {
     row.children[4].addEventListener("click", () => renewCertificate(site));
     els.certificateList.append(row);
   }
+}
+
+function sortedCertificates() {
+  const sort = auxiliarySort.certificates;
+  const direction = sort.direction === "desc" ? -1 : 1;
+  const tlsSites = sites.filter((site) => site.tlsMode && site.tlsMode !== "off");
+  return tlsSites.map((site, index) => ({ site, index })).sort((left, right) => {
+    let result;
+    if (sort.key === "expires") {
+      result = certificateExpiryValue(left.site) - certificateExpiryValue(right.site);
+    } else {
+      const value = (site) => {
+        if (sort.key === "issuer") return certificateIssuerName(site);
+        if (sort.key === "status") return site.enabled ? "Active" : "Disabled";
+        return site.address || "";
+      };
+      result = hostCollator.compare(value(left.site), value(right.site));
+    }
+    return result === 0 ? left.index - right.index : result * direction;
+  }).map(({ site }) => site);
+}
+
+function certificateExpiryValue(site) {
+  const value = new Date(site.certificateExpiresAt || 0).getTime();
+  return Number.isNaN(value) ? 0 : value;
 }
 
 function formatCertificateExpiry(value) {
@@ -548,14 +583,15 @@ function renderMetrics() {
 }
 
 function renderHostLists() {
-  updateHostSortHeaders();
+  updateSortHeaders();
   renderSiteList(els.dashboardSiteList, false, "dashboard");
   renderSiteList(els.siteList, true, "web-hosts");
 }
 
-function updateHostSortHeaders() {
+function updateSortHeaders() {
   document.querySelectorAll("[data-sort-table]").forEach((header) => {
-    const sort = hostSort[header.dataset.sortTable];
+    const sort = hostSort[header.dataset.sortTable] || auxiliarySort[header.dataset.sortTable];
+    if (!sort) return;
     header.querySelectorAll(".sort-button").forEach((button) => {
       const active = button.dataset.sort === sort.key;
       button.dataset.direction = active ? sort.direction : "";
@@ -563,6 +599,42 @@ function updateHostSortHeaders() {
       button.parentElement.setAttribute("aria-sort", active ? (sort.direction === "asc" ? "ascending" : "descending") : "none");
     });
   });
+}
+
+function renderSortedTable(table) {
+  updateSortHeaders();
+  if (table === "dashboard" || table === "web-hosts") {
+    renderHostLists();
+  } else if (table === "certificates") {
+    renderIssuedCertificates();
+  } else if (table === "service-logs") {
+    renderServiceLogs(latestServiceLogs, latestServiceLogsAvailable);
+  } else if (table === "site-logs") {
+    renderLogs(latestSiteLogs);
+  }
+}
+
+function sortedLogs(logs, table) {
+  const sort = auxiliarySort[table];
+  const direction = sort.direction === "desc" ? -1 : 1;
+  return logs.map((entry, index) => ({ entry, index })).sort((left, right) => {
+    let result;
+    if (sort.key === "time") {
+      const leftTime = new Date(left.entry.time || 0).getTime();
+      const rightTime = new Date(right.entry.time || 0).getTime();
+      result = (Number.isNaN(leftTime) ? 0 : leftTime) - (Number.isNaN(rightTime) ? 0 : rightTime);
+    } else {
+      const value = (entry) => {
+        if (sort.key === "type") return entry.action || "service";
+        if (sort.key === "method") return entry.method || "";
+        if (sort.key === "message") return entry.message || "";
+        if (sort.key === "path") return entry.path || entry.message || "";
+        return String(entry.status || "");
+      };
+      result = hostCollator.compare(value(left.entry), value(right.entry));
+    }
+    return result === 0 ? left.index - right.index : result * direction;
+  }).map(({ entry }) => entry);
 }
 
 function hostSortValue(site, key) {
@@ -728,8 +800,10 @@ async function loadServiceLogs() {
 }
 
 function renderLogs(logs) {
+  latestSiteLogs = logs;
   els.logList.innerHTML = "";
   els.siteLogToggle.hidden = true;
+  updateSortHeaders();
   if (!els.logSiteFilter.value) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
@@ -745,7 +819,8 @@ function renderLogs(logs) {
     return;
   }
 
-  const visibleLogs = siteLogsExpanded ? logs : logs.slice(0, LOG_PREVIEW_LIMIT);
+  const sorted = sortedLogs(logs, "site-logs");
+  const visibleLogs = siteLogsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
   for (const entry of visibleLogs) {
     const row = document.createElement("div");
     row.className = "log-row";
@@ -768,8 +843,11 @@ function renderLogs(logs) {
 }
 
 function renderServiceLogs(logs, available = true) {
+  latestServiceLogs = logs;
+  latestServiceLogsAvailable = available;
   els.serviceLogList.innerHTML = "";
   els.serviceLogToggle.hidden = true;
+  updateSortHeaders();
   if (!available) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
@@ -785,7 +863,8 @@ function renderServiceLogs(logs, available = true) {
     return;
   }
 
-  const visibleLogs = serviceLogsExpanded ? logs : logs.slice(0, LOG_PREVIEW_LIMIT);
+  const sorted = sortedLogs(logs, "service-logs");
+  const visibleLogs = serviceLogsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
   for (const entry of visibleLogs) {
     const row = document.createElement("div");
     row.className = "log-row service-log-row";

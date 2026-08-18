@@ -325,11 +325,11 @@
                 </h2>
                 <span>Managed hosts with TLS enabled</span>
               </div>
-              <div class="certificate-head">
-                <span>Domain</span>
-                <span>Issuer</span>
-                <span>Expires</span>
-                <span>Status</span>
+              <div class="certificate-head" data-sort-table="certificates">
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="domain">Domain</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="issuer">Issuer</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="expires">Expires</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
                 <span></span>
               </div>
               <div id="certificate-list" class="certificate-list"></div>
@@ -357,6 +357,12 @@
               <div id="service-log-stream-label" class="log-stream-label">
                 <span>Service</span>
                 <strong>Caddy</strong>
+              </div>
+              <div class="log-head service-log-head" data-sort-table="service-logs">
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="type">Type</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="message">Message</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
               </div>
               <div id="service-log-list" class="log-list"></div>
               <div class="log-actions">
@@ -388,6 +394,12 @@
               <div id="log-stream-label" class="log-stream-label" hidden>
                 <span>Realtime Logs</span>
                 <strong></strong>
+              </div>
+              <div class="log-head" data-sort-table="site-logs">
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="method">Method</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="path">Path</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
               </div>
               <div id="log-list" class="log-list"></div>
               <div class="log-actions">

@@ -126,6 +126,11 @@ const viewIcons = {
 };
 
 let sites = [];
+const hostSort = {
+  dashboard: { key: "address", direction: "asc" },
+  "web-hosts": { key: "address", direction: "asc" },
+};
+const hostCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 let settings = null;
 let logPollTimer = null;
 let acmeDialogTimer = null;
@@ -165,6 +170,21 @@ els.acmeDialogClose.addEventListener("click", closeACMEStatus);
 els.acmeDialog.addEventListener("close", stopACMEStatusPolling);
 els.acmeDialog.addEventListener("cancel", stopACMEStatusPolling);
 els.navItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
+document.querySelectorAll("[data-sort-table]").forEach((header) => {
+  header.addEventListener("click", (event) => {
+    const button = event.target.closest(".sort-button");
+    if (!button) return;
+    const table = header.dataset.sortTable;
+    const sort = hostSort[table];
+    if (sort.key === button.dataset.sort) {
+      sort.direction = sort.direction === "asc" ? "desc" : "asc";
+    } else {
+      sort.key = button.dataset.sort;
+      sort.direction = "asc";
+    }
+    renderHostLists();
+  });
+});
 document.querySelectorAll("input[name='mode']").forEach((input) => {
   input.addEventListener("change", syncMode);
 });
@@ -528,11 +548,46 @@ function renderMetrics() {
 }
 
 function renderHostLists() {
-  renderSiteList(els.dashboardSiteList, false);
-  renderSiteList(els.siteList, true);
+  updateHostSortHeaders();
+  renderSiteList(els.dashboardSiteList, false, "dashboard");
+  renderSiteList(els.siteList, true, "web-hosts");
 }
 
-function renderSiteList(container, editable) {
+function updateHostSortHeaders() {
+  document.querySelectorAll("[data-sort-table]").forEach((header) => {
+    const sort = hostSort[header.dataset.sortTable];
+    header.querySelectorAll(".sort-button").forEach((button) => {
+      const active = button.dataset.sort === sort.key;
+      button.dataset.direction = active ? sort.direction : "";
+      button.setAttribute("aria-label", `${button.textContent}: ${active ? (sort.direction === "asc" ? "sorted ascending" : "sorted descending") : "not sorted"}`);
+      button.parentElement.setAttribute("aria-sort", active ? (sort.direction === "asc" ? "ascending" : "descending") : "none");
+    });
+  });
+}
+
+function hostSortValue(site, key) {
+  switch (key) {
+    case "protocol": return protocolForSite(site);
+    case "mode": return site.mode === "static" ? "Static" : "Proxy";
+    case "target": return site.mode === "static" ? site.root : site.upstream;
+    case "upstreamTls": return site.mode === "proxy" ? (site.skipTlsVerify ? "Skipped" : "Verified") : "-";
+    case "status": return site.enabled ? "Active" : "Inactive";
+    case "comment": return site.comment || "";
+    default: return site.address || "";
+  }
+}
+
+function sortedSitesFor(table) {
+  const sort = hostSort[table];
+  if (!sort.key) return sites;
+  const direction = sort.direction === "desc" ? -1 : 1;
+  return sites.map((site, index) => ({ site, index })).sort((left, right) => {
+    const result = hostCollator.compare(hostSortValue(left.site, sort.key), hostSortValue(right.site, sort.key));
+    return result === 0 ? left.index - right.index : result * direction;
+  }).map(({ site }) => site);
+}
+
+function renderSiteList(container, editable, table) {
   container.innerHTML = "";
   if (!sites.length) {
     const empty = document.createElement("div");
@@ -542,7 +597,7 @@ function renderSiteList(container, editable) {
     return;
   }
 
-  for (const site of sites) {
+  for (const site of sortedSitesFor(table)) {
     const row = document.createElement("div");
     row.className = `site-row ${editable ? "site-row-editable" : "site-row-dashboard"}`;
     row.innerHTML = editable
@@ -566,10 +621,14 @@ function renderSiteList(container, editable) {
           <span class="target"></span>
         `;
     row.children[0].textContent = site.address;
-    row.children[1].textContent = protocolForSite(site);
+    const protocol = protocolForSite(site);
+    row.children[1].textContent = protocol;
+    row.children[1].classList.toggle("secure", protocol === "https");
+    row.children[1].classList.toggle("warn", protocol === "http");
     row.children[2].textContent = site.mode === "static" ? "Static" : "Proxy";
     row.children[3].textContent = site.mode === "static" ? site.root : site.upstream;
     row.children[4].textContent = site.mode === "proxy" ? (site.skipTlsVerify ? "Skipped" : "Verified") : "-";
+    row.children[4].classList.toggle("secure", site.mode === "proxy" && !site.skipTlsVerify);
     row.children[4].classList.toggle("warn", site.mode === "proxy" && !!site.skipTlsVerify);
     row.children[4].classList.toggle("off", site.mode !== "proxy");
     row.children[5].textContent = site.enabled ? "Active" : "Inactive";

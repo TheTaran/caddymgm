@@ -1,4 +1,5 @@
 .env
+compose.yml
 caddy-config/*
 !caddy-config/.gitkeep
 caddymgm/*

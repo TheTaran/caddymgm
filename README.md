@@ -46,9 +46,10 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 ## Quick Start
 
-1. Copy the example environment file:
+1. Create the local Compose and environment files from their templates:
 
 ```bash
+cp compose-template.yml compose.yml
 cp .env.example .env
 ```
 

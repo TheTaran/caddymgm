@@ -170,7 +170,6 @@ type ComponentVersion struct {
 	Latest          string `json:"latest,omitempty"`
 	UpdateAvailable bool   `json:"updateAvailable"`
 	ReleaseURL      string `json:"releaseUrl,omitempty"`
-	ReleaseNotes    string `json:"releaseNotes,omitempty"`
 }
 
 type App struct {
@@ -184,7 +183,6 @@ type App struct {
 	serviceLog       string
 	caddyDataDir     string
 	caddyVersionFile string
-	updaterSocket    string
 	caCertDir        string
 	staticRootBase   string
 	webListen        string
@@ -268,7 +266,6 @@ func main() {
 	serviceLog := env("CADDYMGM_CADDY_SERVICE_LOG", filepath.Join(accessLogDir, "caddy-service.log"))
 	caddyDataDir := env("CADDYMGM_CADDY_DATA_DIR", "/caddy-data")
 	caddyVersionFile := env("CADDYMGM_CADDY_VERSION_FILE", filepath.Join(accessLogDir, "caddy-version"))
-	updaterSocket := env("CADDYMGM_UPDATER_SOCKET", "/run/caddymgm-updater/updater.sock")
 	caCertDir := env("CADDYMGM_CA_CERT_DIR", "/ca-certificates")
 	staticRootBase := env("CADDYMGM_STATIC_ROOT_BASE", "/srv")
 	webListen := env("CADDYMGM_WEB_LISTEN", ":8080")
@@ -291,7 +288,6 @@ func main() {
 		serviceLog:       serviceLog,
 		caddyDataDir:     caddyDataDir,
 		caddyVersionFile: caddyVersionFile,
-		updaterSocket:    updaterSocket,
 		caCertDir:        caCertDir,
 		staticRootBase:   staticRootBase,
 		webListen:        webListen,
@@ -327,7 +323,6 @@ func main() {
 	mux.HandleFunc("DELETE /api/sites/", app.handleDeleteSite)
 	mux.HandleFunc("GET /api/config", app.handleConfig)
 	mux.HandleFunc("GET /api/versions", app.handleVersions)
-	mux.HandleFunc("POST /api/updates/", app.handleTriggerUpdate)
 	mux.HandleFunc("GET /api/settings", app.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", app.handleUpdateSettings)
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
@@ -557,24 +552,22 @@ func (a *App) getLatestVersions(ctx context.Context) map[string]ComponentVersion
 	}
 	results := make(chan result, 2)
 	go func() {
-		tag, _, notes := a.fetchLatestGitHubRelease(ctx, "caddyserver", "caddy")
+		tag, _ := a.fetchLatestGitHubRelease(ctx, "caddyserver", "caddy")
 		results <- result{
 			name: "caddy",
 			info: ComponentVersion{
-				Latest:       tag,
-				ReleaseURL:   "https://github.com/caddyserver/caddy/releases/latest",
-				ReleaseNotes: notes,
+				Latest:     tag,
+				ReleaseURL: "https://github.com/caddyserver/caddy/releases/latest",
 			},
 		}
 	}()
 	go func() {
-		tag, _, notes := a.fetchLatestGitHubRelease(ctx, "TheTaran", "caddymgm")
+		tag, _ := a.fetchLatestGitHubRelease(ctx, "TheTaran", "caddymgm")
 		results <- result{
 			name: "caddymgm",
 			info: ComponentVersion{
-				Latest:       tag,
-				ReleaseURL:   "https://github.com/TheTaran/caddymgm/releases/latest",
-				ReleaseNotes: notes,
+				Latest:     tag,
+				ReleaseURL: "https://github.com/TheTaran/caddymgm/releases/latest",
 			},
 		}
 	}()
@@ -597,33 +590,32 @@ func cloneVersions(input map[string]ComponentVersion) map[string]ComponentVersio
 	return result
 }
 
-func (a *App) fetchLatestGitHubRelease(parent context.Context, owner, repository string) (string, string, string) {
+func (a *App) fetchLatestGitHubRelease(parent context.Context, owner, repository string) (string, string) {
 	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repository)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return "", "", ""
+		return "", ""
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "CaddyMGM/"+version)
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return "", "", ""
+		return "", ""
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", "", ""
+		return "", ""
 	}
 	var release struct {
 		TagName string `json:"tag_name"`
 		HTMLURL string `json:"html_url"`
-		Body    string `json:"body"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&release); err != nil {
-		return "", "", ""
+		return "", ""
 	}
-	return strings.TrimSpace(release.TagName), strings.TrimSpace(release.HTMLURL), strings.TrimSpace(release.Body)
+	return strings.TrimSpace(release.TagName), strings.TrimSpace(release.HTMLURL)
 }
 
 func isVersionNewer(candidate, current string) bool {
@@ -657,53 +649,6 @@ func numericVersion(value string) ([3]int, bool) {
 		result[index] = number
 	}
 	return result, true
-}
-
-func (a *App) handleTriggerUpdate(w http.ResponseWriter, r *http.Request) {
-	component := strings.TrimPrefix(r.URL.Path, "/api/updates/")
-	if component != "caddy" && component != "caddymgm" {
-		writeError(w, http.StatusBadRequest, errors.New("unsupported update component"))
-		return
-	}
-
-	current := version
-	if component == "caddy" {
-		current = a.currentCaddyVersion()
-	}
-	latest := a.getLatestVersions(r.Context())[component]
-	if !isVersionNewer(latest.Latest, current) {
-		writeError(w, http.StatusConflict, errors.New("no newer version is available"))
-		return
-	}
-
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "unix", a.updaterSocket)
-		},
-	}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
-	updaterURL := "http://updater/update/" + component
-	if component == "caddymgm" {
-		updaterURL += "?version=" + url.QueryEscape(latest.Latest)
-	}
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, updaterURL, nil)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, errors.New("prepare updater request"))
-		return
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("updater is unavailable: %w", err))
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusAccepted {
-		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		writeError(w, http.StatusBadGateway, fmt.Errorf("updater rejected request: %s", strings.TrimSpace(string(message))))
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "started", "component": component})
 }
 
 func (a *App) handleGetSettings(w http.ResponseWriter, r *http.Request) {

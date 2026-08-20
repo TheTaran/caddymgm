@@ -939,6 +939,7 @@ legend {
   flex: 0 0 auto;
   justify-content: center;
   border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
   color: var(--muted);
 }
@@ -1111,61 +1112,6 @@ dialog {
   justify-content: space-between;
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
-}
-
-.update-dialog-body {
-  display: grid;
-  gap: 16px;
-  padding: 16px;
-}
-
-.update-version-summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px 14px;
-  background: var(--panel-soft);
-}
-
-.update-version-summary span {
-  color: var(--muted);
-}
-
-.update-changelog {
-  max-height: 42vh;
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.update-warning {
-  margin: 0;
-  color: var(--warning);
-}
-
-.update-warning.error {
-  color: var(--danger);
-}
-
-.update-dialog-actions {
-  justify-content: flex-end;
-}
-
-.secondary-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 34px;
-  border: 1px solid #333642;
-  border-radius: 999px;
-  padding: 0 16px;
-  background: linear-gradient(180deg, #262832, #1d1f27);
-  color: var(--text);
-  text-decoration: none;
 }
 
 .acme-status {

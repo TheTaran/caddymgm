@@ -15,7 +15,6 @@ services:
       CADDYMGM_SETTINGS_PATH: /caddymgm/caddymgm-settings.json
       CADDYMGM_CADDY_DATA_DIR: /caddy-data
       CADDYMGM_CADDY_VERSION_FILE: /logs/caddy-version
-      CADDYMGM_UPDATER_SOCKET: /run/caddymgm-updater/updater.sock
       CADDYMGM_CA_CERT_DIR: /ca-certificates
       CADDYMGM_CADDY_API_URL: http://caddy-admin:2019
       CADDYMGM_TRUSTED_PROXIES: caddy,caddy-admin
@@ -29,28 +28,8 @@ services:
       - ./caddy-data:/caddy-data
       - ./caddy-data/ca-certificates:/ca-certificates
       - ./caddymgm:/caddymgm
-      - updater-state:/run/caddymgm-updater
     networks:
       - default
-      - management
-
-  updater:
-    image: caddymgm-updater:local
-    build:
-      context: ./caddymgmdev
-      target: updater
-      args:
-        VERSION: ${CADDYMGM_VERSION:-development}
-    container_name: caddymgm-updater
-    restart: unless-stopped
-    environment:
-      CADDYMGM_PROJECT_DIR: ${PWD}
-      CADDYMGM_COMPOSE_FILE: ${PWD}/compose.yml
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${PWD}:${PWD}:ro
-      - updater-state:/run/caddymgm-updater
-    networks:
       - management
 
   caddy:
@@ -89,6 +68,3 @@ services:
 networks:
   management:
     internal: true
-
-volumes:
-  updater-state:

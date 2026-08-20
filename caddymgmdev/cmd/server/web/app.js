@@ -40,15 +40,6 @@ const els = {
   caddyVersion: document.querySelector("#caddy-version"),
   caddymgmUpdate: document.querySelector("#caddymgm-update"),
   caddyUpdate: document.querySelector("#caddy-update"),
-  updateDialog: document.querySelector("#update-dialog"),
-  updateDialogClose: document.querySelector("#update-dialog-close"),
-  updateComponent: document.querySelector("#update-component"),
-  updateCurrentVersion: document.querySelector("#update-current-version"),
-  updateLatestVersion: document.querySelector("#update-latest-version"),
-  updateChangelog: document.querySelector("#update-changelog"),
-  updateWarning: document.querySelector("#update-warning"),
-  updateReleaseLink: document.querySelector("#update-release-link"),
-  updateConfirm: document.querySelector("#update-confirm"),
   logSiteFilter: document.querySelector("#log-site-filter"),
   logStreamLabel: document.querySelector("#log-stream-label"),
   logList: document.querySelector("#log-list"),
@@ -150,8 +141,6 @@ const auxiliarySort = {
 };
 const hostCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 let settings = null;
-let componentVersions = {};
-let pendingUpdateComponent = "";
 let logPollTimer = null;
 let acmeDialogTimer = null;
 let acmeDialogContext = null;
@@ -193,10 +182,6 @@ els.acmeDialogClose.addEventListener("click", closeACMEStatus);
 els.acmeDialog.addEventListener("close", stopACMEStatusPolling);
 els.acmeDialog.addEventListener("cancel", stopACMEStatusPolling);
 els.navItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
-els.caddymgmUpdate.addEventListener("click", (event) => openUpdateDialog(event, "caddymgm"));
-els.caddyUpdate.addEventListener("click", (event) => openUpdateDialog(event, "caddy"));
-els.updateDialogClose.addEventListener("click", () => els.updateDialog.close());
-els.updateConfirm.addEventListener("click", triggerUpdate);
 document.querySelectorAll("[data-settings-tab]").forEach((tab) => {
   tab.addEventListener("click", () => showSettingsTab(tab.dataset.settingsTab));
   tab.addEventListener("keydown", handleSettingsTabKeydown);
@@ -236,7 +221,6 @@ async function init() {
 async function loadVersions() {
   try {
     const versions = await request("/api/versions");
-    componentVersions = versions;
     renderVersionStatus("caddymgm", versions.caddymgm);
     renderVersionStatus("caddy", versions.caddy);
   } catch (_err) {
@@ -259,41 +243,6 @@ function renderVersionStatus(name, info = {}) {
     updateElement.textContent = "Up to date";
   } else {
     updateElement.textContent = "Update check unavailable";
-  }
-}
-
-function openUpdateDialog(event, component) {
-  const info = componentVersions[component];
-  if (!info?.updateAvailable) return;
-  event.preventDefault();
-  pendingUpdateComponent = component;
-  const label = component === "caddymgm" ? "CaddyMGM" : "Caddy";
-  els.updateComponent.textContent = label;
-  els.updateCurrentVersion.textContent = info.current || "unknown";
-  els.updateLatestVersion.textContent = info.latest || "unknown";
-  els.updateChangelog.textContent = info.releaseNotes || "No changelog was provided for this release.";
-  els.updateReleaseLink.href = info.releaseUrl;
-  els.updateWarning.textContent = "The selected container will be recreated and may be briefly unavailable.";
-  els.updateWarning.classList.remove("error");
-  els.updateConfirm.disabled = false;
-  els.updateConfirm.hidden = false;
-  els.updateConfirm.textContent = "Update now";
-  els.updateDialog.showModal();
-}
-
-async function triggerUpdate() {
-  if (!pendingUpdateComponent) return;
-  els.updateConfirm.disabled = true;
-  els.updateConfirm.textContent = "Starting update…";
-  try {
-    await request(`/api/updates/${pendingUpdateComponent}`, { method: "POST" });
-    els.updateWarning.textContent = "Update started. The interface may disconnect while the container is recreated.";
-    els.updateConfirm.hidden = true;
-  } catch (err) {
-    els.updateWarning.textContent = err.message;
-    els.updateWarning.classList.add("error");
-    els.updateConfirm.disabled = false;
-    els.updateConfirm.textContent = "Try again";
   }
 }
 

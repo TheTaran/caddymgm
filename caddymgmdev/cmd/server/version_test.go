@@ -1,14 +1,6 @@
 package main
 
-import (
-	"net"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"testing"
-	"time"
-)
+import "testing"
 
 func TestNumericVersion(t *testing.T) {
 	tests := []struct {
@@ -47,69 +39,5 @@ func TestIsVersionNewer(t *testing.T) {
 		if got := isVersionNewer(test.candidate, test.current); got != test.want {
 			t.Errorf("isVersionNewer(%q, %q) = %v; want %v", test.candidate, test.current, got, test.want)
 		}
-	}
-}
-
-func TestHandleTriggerUpdateUsesUpdaterSocket(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "updater.sock")
-	listener, err := net.Listen("unix", socketPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-
-	requestReceived := make(chan struct{}, 1)
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/update/caddy" {
-			t.Errorf("unexpected updater request: %s %s", r.Method, r.URL.Path)
-		}
-		requestReceived <- struct{}{}
-		w.WriteHeader(http.StatusAccepted)
-	})}
-	defer server.Close()
-	go server.Serve(listener)
-
-	versionFile := filepath.Join(t.TempDir(), "caddy-version")
-	if err := os.WriteFile(versionFile, []byte("v2.0.0\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	app := &App{
-		caddyVersionFile: versionFile,
-		updaterSocket:    socketPath,
-		latestVersions: map[string]ComponentVersion{
-			"caddy": {Latest: "v2.1.0"},
-		},
-		versionsChecked: time.Now(),
-	}
-
-	request := httptest.NewRequest(http.MethodPost, "/api/updates/caddy", nil)
-	response := httptest.NewRecorder()
-	app.handleTriggerUpdate(response, request)
-	if response.Code != http.StatusAccepted {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	select {
-	case <-requestReceived:
-	case <-time.After(time.Second):
-		t.Fatal("updater did not receive request")
-	}
-}
-
-func TestHandleTriggerUpdateRejectsCurrentVersion(t *testing.T) {
-	app := &App{
-		latestVersions: map[string]ComponentVersion{
-			"caddymgm": {Latest: "v1.0.0"},
-		},
-		versionsChecked: time.Now(),
-	}
-	previousVersion := version
-	version = "v1.0.0"
-	defer func() { version = previousVersion }()
-
-	request := httptest.NewRequest(http.MethodPost, "/api/updates/caddymgm", nil)
-	response := httptest.NewRecorder()
-	app.handleTriggerUpdate(response, request)
-	if response.Code != http.StatusConflict {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }

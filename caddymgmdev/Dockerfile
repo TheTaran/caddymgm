@@ -5,13 +5,7 @@ ARG VERSION=dev
 COPY go.mod ./
 COPY go.sum ./
 COPY cmd ./cmd
-RUN go build -ldflags "-X main.version=${VERSION}" -o /out/caddymgm ./cmd/server \
-  && go build -o /out/caddymgm-updater ./cmd/updater
-
-FROM docker:cli AS updater
-
-COPY --from=build /out/caddymgm-updater /usr/local/bin/caddymgm-updater
-ENTRYPOINT ["/usr/local/bin/caddymgm-updater"]
+RUN go build -ldflags "-X main.version=${VERSION}" -o /out/caddymgm ./cmd/server
 
 FROM alpine:3.20
 

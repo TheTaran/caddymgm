@@ -4,10 +4,15 @@ const oidcButton = document.querySelector("#oidc-login");
 const divider = document.querySelector("#login-divider");
 const disabledBox = document.querySelector("#login-disabled");
 const methodNote = document.querySelector("#login-method-note");
+const caddymgmVersion = document.querySelector("#login-caddymgm-version");
+const caddymgmUpdate = document.querySelector("#login-caddymgm-update");
+const caddyVersion = document.querySelector("#login-caddy-version");
+const caddyUpdate = document.querySelector("#login-caddy-update");
 
 init();
 
 async function init() {
+  void loadVersions();
   applyLoginModes(false, false, false);
   const params = new URLSearchParams(window.location.search);
   const error = params.get("error");
@@ -62,6 +67,34 @@ async function init() {
   } catch (err) {
     errorBox.textContent = err.message;
     errorBox.hidden = false;
+  }
+}
+
+async function loadVersions() {
+  try {
+    const response = await fetch("/api/versions");
+    const data = await response.json();
+    if (!response.ok) throw new Error("Could not load versions");
+    renderLoginVersion("CaddyMGM", data.caddymgm, caddymgmVersion, caddymgmUpdate);
+    renderLoginVersion("Caddy", data.caddy, caddyVersion, caddyUpdate);
+  } catch (_err) {
+    renderLoginVersion("CaddyMGM", { current: "unknown" }, caddymgmVersion, caddymgmUpdate);
+    renderLoginVersion("Caddy", { current: "unknown" }, caddyVersion, caddyUpdate);
+  }
+}
+
+function renderLoginVersion(label, info = {}, versionElement, updateElement) {
+  versionElement.textContent = `${label} ${info.current || "unknown"}`;
+  updateElement.classList.toggle("update-available", !!info.updateAvailable);
+  updateElement.classList.toggle("up-to-date", !!info.latest && !info.updateAvailable);
+  updateElement.classList.toggle("check-unavailable", !info.latest);
+  if (info.releaseUrl) updateElement.href = info.releaseUrl;
+  if (info.updateAvailable) {
+    updateElement.textContent = `Update ${info.latest} available`;
+  } else if (info.latest) {
+    updateElement.textContent = "Up to date";
+  } else {
+    updateElement.textContent = "Update check unavailable";
   }
 }
 

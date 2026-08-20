@@ -69,6 +69,17 @@
           </button>
         </nav>
 
+        <section class="sidebar-versions" aria-label="Version information">
+          <div class="sidebar-version-row">
+            <div><strong>CaddyMGM</strong><span id="caddymgm-version">—</span></div>
+            <a id="caddymgm-update" class="version-status" href="https://github.com/TheTaran/caddymgm/releases/latest" target="_blank" rel="noopener noreferrer">Checking…</a>
+          </div>
+          <div class="sidebar-version-row">
+            <div><strong>Caddy</strong><span id="caddy-version">—</span></div>
+            <a id="caddy-update" class="version-status" href="https://github.com/caddyserver/caddy/releases/latest" target="_blank" rel="noopener noreferrer">Checking…</a>
+          </div>
+        </section>
+
         <div class="profile">
           <span id="profile-avatar" class="avatar">CM</span>
           <div>
@@ -411,7 +422,13 @@
 
         <section id="view-settings" class="view">
           <form id="settings-form" class="settings-form">
-            <section class="panel-card editor-card settings-card settings-group">
+            <div class="settings-tabs" role="tablist" aria-label="Settings sections" aria-orientation="horizontal">
+              <button type="button" class="settings-tab active" role="tab" id="settings-tab-authentication" aria-controls="settings-panel-authentication" aria-selected="true" data-settings-tab="authentication">Authentication</button>
+              <button type="button" class="settings-tab" role="tab" id="settings-tab-web" aria-controls="settings-panel-web" aria-selected="false" tabindex="-1" data-settings-tab="web">Web Interface</button>
+              <button type="button" class="settings-tab" role="tab" id="settings-tab-logs" aria-controls="settings-panel-logs" aria-selected="false" tabindex="-1" data-settings-tab="logs">Logs</button>
+            </div>
+            <div class="settings-tab-content">
+            <section id="settings-panel-authentication" class="panel-card editor-card settings-card settings-group settings-panel" role="tabpanel" aria-labelledby="settings-tab-authentication" data-settings-panel="authentication">
               <div class="panel-heading">
                 <h2>
                   <span class="panel-title-icon" aria-hidden="true">
@@ -425,45 +442,53 @@
                 </h2>
                 <span>Local login and OIDC</span>
               </div>
-              <label>
-                Admin User
-                <input id="settings-username" autocomplete="off" />
-              </label>
-              <label>
-                New Password
-                <input id="settings-password" type="password" placeholder="Leave empty to keep the current password" autocomplete="new-password" />
-              </label>
-              <label>
-                Confirm New Password
-                <input id="settings-password-confirm" type="password" placeholder="Repeat the new password" autocomplete="new-password" />
-              </label>
-              <label class="switch">
-                <input id="settings-oidc-enabled" type="checkbox" />
-                <span>OIDC enabled</span>
-              </label>
-              <label>
-                OIDC Issuer URL
-                <input id="settings-oidc-issuer" placeholder="https://idp.example.com" autocomplete="off" />
-              </label>
-              <label>
-                OIDC Client ID
-                <input id="settings-oidc-client-id" autocomplete="off" />
-              </label>
-              <label>
-                OIDC Client Secret
-                <input id="settings-oidc-client-secret" type="password" placeholder="Leave empty to keep the current secret" autocomplete="new-password" />
-              </label>
-              <label>
-                OIDC Redirect URL
-                <input id="settings-oidc-redirect" placeholder="https://mgm.example.com/auth/oidc/callback" autocomplete="off" />
-              </label>
-              <label>
-                OIDC Scopes
-                <input id="settings-oidc-scopes" placeholder="openid profile email" autocomplete="off" />
-              </label>
+              <div class="auth-tabs" role="tablist" aria-label="Authentication methods" aria-orientation="horizontal">
+                <button type="button" class="auth-tab active" role="tab" id="auth-tab-local" aria-controls="auth-panel-local" aria-selected="true" data-auth-tab="local">Local</button>
+                <button type="button" class="auth-tab" role="tab" id="auth-tab-oidc" aria-controls="auth-panel-oidc" aria-selected="false" tabindex="-1" data-auth-tab="oidc">OIDC</button>
+              </div>
+              <section id="auth-panel-local" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-local" data-auth-panel="local">
+                <label>
+                  Admin User
+                  <input id="settings-username" autocomplete="off" />
+                </label>
+                <label>
+                  New Password
+                  <input id="settings-password" type="password" placeholder="Leave empty to keep the current password" autocomplete="new-password" />
+                </label>
+                <label>
+                  Confirm New Password
+                  <input id="settings-password-confirm" type="password" placeholder="Repeat the new password" autocomplete="new-password" />
+                </label>
+              </section>
+              <section id="auth-panel-oidc" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-oidc" data-auth-panel="oidc" hidden>
+                <label class="switch">
+                  <input id="settings-oidc-enabled" type="checkbox" />
+                  <span>OIDC enabled</span>
+                </label>
+                <label>
+                  OIDC Issuer URL
+                  <input id="settings-oidc-issuer" placeholder="https://idp.example.com" autocomplete="off" />
+                </label>
+                <label>
+                  OIDC Client ID
+                  <input id="settings-oidc-client-id" autocomplete="off" />
+                </label>
+                <label>
+                  OIDC Client Secret
+                  <input id="settings-oidc-client-secret" type="password" placeholder="Leave empty to keep the current secret" autocomplete="new-password" />
+                </label>
+                <label>
+                  OIDC Redirect URL
+                  <input id="settings-oidc-redirect" placeholder="https://mgm.example.com/auth/oidc/callback" autocomplete="off" />
+                </label>
+                <label>
+                  OIDC Scopes
+                  <input id="settings-oidc-scopes" placeholder="openid profile email" autocomplete="off" />
+                </label>
+              </section>
             </section>
 
-            <section class="panel-card editor-card settings-card settings-group">
+            <section id="settings-panel-web" class="panel-card editor-card settings-card settings-group settings-panel" role="tabpanel" aria-labelledby="settings-tab-web" data-settings-panel="web" hidden>
               <div class="panel-heading">
                 <h2>
                   <span class="panel-title-icon" aria-hidden="true">
@@ -499,7 +524,7 @@
               </label>
             </section>
 
-            <section class="panel-card editor-card settings-card settings-group">
+            <section id="settings-panel-logs" class="panel-card editor-card settings-card settings-group settings-panel" role="tabpanel" aria-labelledby="settings-tab-logs" data-settings-panel="logs" hidden>
               <div class="panel-heading">
                 <h2>
                   <span class="panel-title-icon" aria-hidden="true">
@@ -520,6 +545,8 @@
               </label>
             </section>
 
+            </div>
+
             <div class="form-actions settings-actions">
               <button type="submit">Save Settings</button>
             </div>
@@ -527,6 +554,28 @@
         </section>
       </main>
     </div>
+
+    <dialog id="update-dialog">
+      <div class="dialog-head">
+        <h2>Software Update</h2>
+        <button id="update-dialog-close" class="secondary" type="button">Close</button>
+      </div>
+      <div class="update-dialog-body">
+        <div class="update-version-summary">
+          <strong id="update-component"></strong>
+          <span><span id="update-current-version"></span> → <span id="update-latest-version"></span></span>
+        </div>
+        <div>
+          <span class="eyebrow">Latest release changelog</span>
+          <pre id="update-changelog" class="update-changelog"></pre>
+        </div>
+        <p id="update-warning" class="update-warning">The selected container will be recreated and may be briefly unavailable.</p>
+        <div class="form-actions update-dialog-actions">
+          <a id="update-release-link" class="secondary-link" target="_blank" rel="noopener noreferrer">View release</a>
+          <button id="update-confirm" type="button">Update now</button>
+        </div>
+      </div>
+    </dialog>
 
     <dialog id="acme-dialog">
       <div class="dialog-head">

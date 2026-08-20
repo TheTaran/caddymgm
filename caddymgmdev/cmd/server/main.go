@@ -56,6 +56,8 @@ const (
 	rootCAUploadLimit   = 4 << 20
 )
 
+var version = "dev"
+
 //go:embed web/*
 var webFS embed.FS
 
@@ -163,29 +165,42 @@ type LogEntry struct {
 	Status  string `json:"status,omitempty"`
 }
 
+type ComponentVersion struct {
+	Current         string `json:"current"`
+	Latest          string `json:"latest,omitempty"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	ReleaseURL      string `json:"releaseUrl,omitempty"`
+	ReleaseNotes    string `json:"releaseNotes,omitempty"`
+}
+
 type App struct {
-	mu             sync.Mutex
-	configPath     string
-	settingsPath   string
-	caddyMode      string
-	caddyAPIURL    string
-	accessLogDir   string
-	caddyLogDir    string
-	serviceLog     string
-	caddyDataDir   string
-	caCertDir      string
-	staticRootBase string
-	webListen      string
-	webPort        string
-	httpClient     *http.Client
-	settings       Settings
-	logs           []LogEntry
-	sessions       map[string]Session
-	oidcStates     map[string]time.Time
-	oidcCache      map[string]*oidcRuntime
-	loginLimiter   *loginLimiter
-	trustedProxies *trustedProxySet
-	oidcProvider   func(context.Context, string) (*oidc.Provider, error)
+	mu               sync.Mutex
+	configPath       string
+	settingsPath     string
+	caddyMode        string
+	caddyAPIURL      string
+	accessLogDir     string
+	caddyLogDir      string
+	serviceLog       string
+	caddyDataDir     string
+	caddyVersionFile string
+	updaterSocket    string
+	caCertDir        string
+	staticRootBase   string
+	webListen        string
+	webPort          string
+	httpClient       *http.Client
+	settings         Settings
+	logs             []LogEntry
+	sessions         map[string]Session
+	oidcStates       map[string]time.Time
+	oidcCache        map[string]*oidcRuntime
+	loginLimiter     *loginLimiter
+	trustedProxies   *trustedProxySet
+	oidcProvider     func(context.Context, string) (*oidc.Provider, error)
+	versionMu        sync.Mutex
+	latestVersions   map[string]ComponentVersion
+	versionsChecked  time.Time
 }
 
 type Session struct {
@@ -252,6 +267,8 @@ func main() {
 	caddyLogDir := env("CADDY_ACCESS_LOG_DIR", accessLogDir)
 	serviceLog := env("CADDYMGM_CADDY_SERVICE_LOG", filepath.Join(accessLogDir, "caddy-service.log"))
 	caddyDataDir := env("CADDYMGM_CADDY_DATA_DIR", "/caddy-data")
+	caddyVersionFile := env("CADDYMGM_CADDY_VERSION_FILE", filepath.Join(accessLogDir, "caddy-version"))
+	updaterSocket := env("CADDYMGM_UPDATER_SOCKET", "/run/caddymgm-updater/updater.sock")
 	caCertDir := env("CADDYMGM_CA_CERT_DIR", "/ca-certificates")
 	staticRootBase := env("CADDYMGM_STATIC_ROOT_BASE", "/srv")
 	webListen := env("CADDYMGM_WEB_LISTEN", ":8080")
@@ -265,25 +282,27 @@ func main() {
 	}
 
 	app := &App{
-		configPath:     configPath,
-		settingsPath:   settingsPath,
-		caddyMode:      caddyMode,
-		caddyAPIURL:    strings.TrimRight(caddyAPIURL, "/"),
-		accessLogDir:   accessLogDir,
-		caddyLogDir:    caddyLogDir,
-		serviceLog:     serviceLog,
-		caddyDataDir:   caddyDataDir,
-		caCertDir:      caCertDir,
-		staticRootBase: staticRootBase,
-		webListen:      webListen,
-		webPort:        webPort,
-		httpClient:     &http.Client{Timeout: 15 * time.Second},
-		sessions:       make(map[string]Session),
-		oidcStates:     make(map[string]time.Time),
-		oidcCache:      make(map[string]*oidcRuntime),
-		loginLimiter:   newLoginLimiter(),
-		trustedProxies: trustedProxies,
-		oidcProvider:   oidc.NewProvider,
+		configPath:       configPath,
+		settingsPath:     settingsPath,
+		caddyMode:        caddyMode,
+		caddyAPIURL:      strings.TrimRight(caddyAPIURL, "/"),
+		accessLogDir:     accessLogDir,
+		caddyLogDir:      caddyLogDir,
+		serviceLog:       serviceLog,
+		caddyDataDir:     caddyDataDir,
+		caddyVersionFile: caddyVersionFile,
+		updaterSocket:    updaterSocket,
+		caCertDir:        caCertDir,
+		staticRootBase:   staticRootBase,
+		webListen:        webListen,
+		webPort:          webPort,
+		httpClient:       &http.Client{Timeout: 15 * time.Second},
+		sessions:         make(map[string]Session),
+		oidcStates:       make(map[string]time.Time),
+		oidcCache:        make(map[string]*oidcRuntime),
+		loginLimiter:     newLoginLimiter(),
+		trustedProxies:   trustedProxies,
+		oidcProvider:     oidc.NewProvider,
 	}
 	if err := app.ensureConfig(); err != nil {
 		log.Fatalf("prepare config: %v", err)
@@ -307,6 +326,8 @@ func main() {
 	mux.HandleFunc("PUT /api/sites/", app.handleUpdateSite)
 	mux.HandleFunc("DELETE /api/sites/", app.handleDeleteSite)
 	mux.HandleFunc("GET /api/config", app.handleConfig)
+	mux.HandleFunc("GET /api/versions", app.handleVersions)
+	mux.HandleFunc("POST /api/updates/", app.handleTriggerUpdate)
 	mux.HandleFunc("GET /api/settings", app.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", app.handleUpdateSettings)
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
@@ -493,6 +514,196 @@ func (a *App) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write(content)
+}
+
+func (a *App) handleVersions(w http.ResponseWriter, r *http.Request) {
+	current := map[string]string{
+		"caddymgm": version,
+		"caddy":    a.currentCaddyVersion(),
+	}
+	latest := a.getLatestVersions(r.Context())
+	result := make(map[string]ComponentVersion, len(current))
+	for name, currentVersion := range current {
+		info := latest[name]
+		info.Current = currentVersion
+		info.UpdateAvailable = isVersionNewer(info.Latest, currentVersion)
+		result[name] = info
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (a *App) currentCaddyVersion() string {
+	if file, err := os.Open(a.caddyVersionFile); err == nil {
+		defer file.Close()
+		if content, readErr := io.ReadAll(io.LimitReader(file, 129)); readErr == nil && len(content) <= 128 {
+			if fields := strings.Fields(string(content)); len(fields) > 0 {
+				return fields[0]
+			}
+		}
+	}
+	return "unknown"
+}
+
+func (a *App) getLatestVersions(ctx context.Context) map[string]ComponentVersion {
+	a.versionMu.Lock()
+	defer a.versionMu.Unlock()
+	if len(a.latestVersions) > 0 && time.Since(a.versionsChecked) < 6*time.Hour {
+		return cloneVersions(a.latestVersions)
+	}
+
+	type result struct {
+		name string
+		info ComponentVersion
+	}
+	results := make(chan result, 2)
+	go func() {
+		tag, _, notes := a.fetchLatestGitHubRelease(ctx, "caddyserver", "caddy")
+		results <- result{
+			name: "caddy",
+			info: ComponentVersion{
+				Latest:       tag,
+				ReleaseURL:   "https://github.com/caddyserver/caddy/releases/latest",
+				ReleaseNotes: notes,
+			},
+		}
+	}()
+	go func() {
+		tag, _, notes := a.fetchLatestGitHubRelease(ctx, "TheTaran", "caddymgm")
+		results <- result{
+			name: "caddymgm",
+			info: ComponentVersion{
+				Latest:       tag,
+				ReleaseURL:   "https://github.com/TheTaran/caddymgm/releases/latest",
+				ReleaseNotes: notes,
+			},
+		}
+	}()
+
+	latest := make(map[string]ComponentVersion, 2)
+	for range 2 {
+		item := <-results
+		latest[item.name] = item.info
+	}
+	a.latestVersions = latest
+	a.versionsChecked = time.Now()
+	return cloneVersions(latest)
+}
+
+func cloneVersions(input map[string]ComponentVersion) map[string]ComponentVersion {
+	result := make(map[string]ComponentVersion, len(input))
+	for name, info := range input {
+		result[name] = info
+	}
+	return result
+}
+
+func (a *App) fetchLatestGitHubRelease(parent context.Context, owner, repository string) (string, string, string) {
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repository)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return "", "", ""
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "CaddyMGM/"+version)
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return "", "", ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", ""
+	}
+	var release struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+		Body    string `json:"body"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&release); err != nil {
+		return "", "", ""
+	}
+	return strings.TrimSpace(release.TagName), strings.TrimSpace(release.HTMLURL), strings.TrimSpace(release.Body)
+}
+
+func isVersionNewer(candidate, current string) bool {
+	candidateParts, candidateOK := numericVersion(candidate)
+	currentParts, currentOK := numericVersion(current)
+	if !candidateOK || !currentOK {
+		return false
+	}
+	for i := range candidateParts {
+		if candidateParts[i] != currentParts[i] {
+			return candidateParts[i] > currentParts[i]
+		}
+	}
+	return false
+}
+
+func numericVersion(value string) ([3]int, bool) {
+	var result [3]int
+	value = strings.TrimPrefix(strings.TrimSpace(value), "v")
+	value, _, _ = strings.Cut(value, "-")
+	value, _, _ = strings.Cut(value, "+")
+	parts := strings.Split(value, ".")
+	if len(parts) < 2 || len(parts) > 3 {
+		return result, false
+	}
+	for index, part := range parts {
+		number, err := strconv.Atoi(part)
+		if err != nil || number < 0 {
+			return result, false
+		}
+		result[index] = number
+	}
+	return result, true
+}
+
+func (a *App) handleTriggerUpdate(w http.ResponseWriter, r *http.Request) {
+	component := strings.TrimPrefix(r.URL.Path, "/api/updates/")
+	if component != "caddy" && component != "caddymgm" {
+		writeError(w, http.StatusBadRequest, errors.New("unsupported update component"))
+		return
+	}
+
+	current := version
+	if component == "caddy" {
+		current = a.currentCaddyVersion()
+	}
+	latest := a.getLatestVersions(r.Context())[component]
+	if !isVersionNewer(latest.Latest, current) {
+		writeError(w, http.StatusConflict, errors.New("no newer version is available"))
+		return
+	}
+
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "unix", a.updaterSocket)
+		},
+	}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+	updaterURL := "http://updater/update/" + component
+	if component == "caddymgm" {
+		updaterURL += "?version=" + url.QueryEscape(latest.Latest)
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, updaterURL, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, errors.New("prepare updater request"))
+		return
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("updater is unavailable: %w", err))
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		writeError(w, http.StatusBadGateway, fmt.Errorf("updater rejected request: %s", strings.TrimSpace(string(message))))
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "started", "component": component})
 }
 
 func (a *App) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -2520,7 +2731,7 @@ func (a *App) hasValidSessionLocked(r *http.Request) bool {
 
 func isPublicPath(path string) bool {
 	switch path {
-	case "/login.html", "/login.css", "/login.js", "/styles.css", "/CaddyMGM.png", "/favicon.ico":
+	case "/login.html", "/login.css", "/login.js", "/styles.css", "/CaddyMGM.png", "/favicon.ico", "/api/versions":
 		return true
 	case "/api/auth/login":
 		return true

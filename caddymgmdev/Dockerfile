@@ -1,10 +1,17 @@
 FROM golang:1.26-alpine AS build
 
 WORKDIR /src
+ARG VERSION=dev
 COPY go.mod ./
 COPY go.sum ./
 COPY cmd ./cmd
-RUN go build -o /out/caddymgm ./cmd/server
+RUN go build -ldflags "-X main.version=${VERSION}" -o /out/caddymgm ./cmd/server \
+  && go build -o /out/caddymgm-updater ./cmd/updater
+
+FROM docker:cli AS updater
+
+COPY --from=build /out/caddymgm-updater /usr/local/bin/caddymgm-updater
+ENTRYPOINT ["/usr/local/bin/caddymgm-updater"]
 
 FROM alpine:3.20
 

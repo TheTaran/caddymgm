@@ -89,6 +89,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./caddymgmdev
+          build-args: |
+            VERSION=${{ steps.release-tag.outputs.version }}
           push: true
           tags: ${{ steps.docker-tags.outputs.tags }}
           cache-from: type=gha

@@ -1,0 +1,115 @@
+package main
+
+import (
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestNumericVersion(t *testing.T) {
+	tests := []struct {
+		value string
+		want  [3]int
+		ok    bool
+	}{
+		{"v2.11.4", [3]int{2, 11, 4}, true},
+		{"0.10.2-dirty", [3]int{0, 10, 2}, true},
+		{"v0.10", [3]int{0, 10, 0}, true},
+		{"development", [3]int{}, false},
+		{"v1.2.3.4", [3]int{}, false},
+	}
+	for _, test := range tests {
+		got, ok := numericVersion(test.value)
+		if got != test.want || ok != test.ok {
+			t.Errorf("numericVersion(%q) = %v, %v; want %v, %v", test.value, got, ok, test.want, test.ok)
+		}
+	}
+}
+
+func TestIsVersionNewer(t *testing.T) {
+	tests := []struct {
+		candidate string
+		current   string
+		want      bool
+	}{
+		{"v0.10.3", "v0.10.2", true},
+		{"v0.11.0", "v0.10.9", true},
+		{"v2.11.4", "v2.11.4", false},
+		{"v0.10.2", "v0.10.2-dirty", false},
+		{"v2.10.0", "v2.11.0", false},
+		{"invalid", "v1.0.0", false},
+	}
+	for _, test := range tests {
+		if got := isVersionNewer(test.candidate, test.current); got != test.want {
+			t.Errorf("isVersionNewer(%q, %q) = %v; want %v", test.candidate, test.current, got, test.want)
+		}
+	}
+}
+
+func TestHandleTriggerUpdateUsesUpdaterSocket(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "updater.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	requestReceived := make(chan struct{}, 1)
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/update/caddy" {
+			t.Errorf("unexpected updater request: %s %s", r.Method, r.URL.Path)
+		}
+		requestReceived <- struct{}{}
+		w.WriteHeader(http.StatusAccepted)
+	})}
+	defer server.Close()
+	go server.Serve(listener)
+
+	versionFile := filepath.Join(t.TempDir(), "caddy-version")
+	if err := os.WriteFile(versionFile, []byte("v2.0.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{
+		caddyVersionFile: versionFile,
+		updaterSocket:    socketPath,
+		latestVersions: map[string]ComponentVersion{
+			"caddy": {Latest: "v2.1.0"},
+		},
+		versionsChecked: time.Now(),
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/updates/caddy", nil)
+	response := httptest.NewRecorder()
+	app.handleTriggerUpdate(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	select {
+	case <-requestReceived:
+	case <-time.After(time.Second):
+		t.Fatal("updater did not receive request")
+	}
+}
+
+func TestHandleTriggerUpdateRejectsCurrentVersion(t *testing.T) {
+	app := &App{
+		latestVersions: map[string]ComponentVersion{
+			"caddymgm": {Latest: "v1.0.0"},
+		},
+		versionsChecked: time.Now(),
+	}
+	previousVersion := version
+	version = "v1.0.0"
+	defer func() { version = previousVersion }()
+
+	request := httptest.NewRequest(http.MethodPost, "/api/updates/caddymgm", nil)
+	response := httptest.NewRecorder()
+	app.handleTriggerUpdate(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}

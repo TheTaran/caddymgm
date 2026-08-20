@@ -11,6 +11,7 @@ func TestNumericVersion(t *testing.T) {
 		{"v2.11.4", [3]int{2, 11, 4}, true},
 		{"0.10.2-dirty", [3]int{0, 10, 2}, true},
 		{"v0.10", [3]int{0, 10, 0}, true},
+		{"go1.27.0", [3]int{1, 27, 0}, true},
 		{"development", [3]int{}, false},
 		{"v1.2.3.4", [3]int{}, false},
 	}
@@ -33,6 +34,7 @@ func TestIsVersionNewer(t *testing.T) {
 		{"v2.11.4", "v2.11.4", false},
 		{"v0.10.2", "v0.10.2-dirty", false},
 		{"v2.10.0", "v2.11.0", false},
+		{"go1.27.0", "go1.26.7", true},
 		{"invalid", "v1.0.0", false},
 	}
 	for _, test := range tests {

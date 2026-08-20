@@ -38,8 +38,10 @@ const els = {
   staticSites: document.querySelector("#static-sites"),
   caddymgmVersion: document.querySelector("#caddymgm-version"),
   caddyVersion: document.querySelector("#caddy-version"),
+  goVersion: document.querySelector("#go-version"),
   caddymgmUpdate: document.querySelector("#caddymgm-update"),
   caddyUpdate: document.querySelector("#caddy-update"),
+  goUpdate: document.querySelector("#go-update"),
   logSiteFilter: document.querySelector("#log-site-filter"),
   logStreamLabel: document.querySelector("#log-stream-label"),
   logList: document.querySelector("#log-list"),
@@ -223,15 +225,21 @@ async function loadVersions() {
     const versions = await request("/api/versions");
     renderVersionStatus("caddymgm", versions.caddymgm);
     renderVersionStatus("caddy", versions.caddy);
+    renderVersionStatus("go", versions.go);
   } catch (_err) {
     renderVersionStatus("caddymgm", { current: "unknown" });
     renderVersionStatus("caddy", { current: "unknown" });
+    renderVersionStatus("go", { current: "unknown" });
   }
 }
 
 function renderVersionStatus(name, info = {}) {
-  const versionElement = name === "caddymgm" ? els.caddymgmVersion : els.caddyVersion;
-  const updateElement = name === "caddymgm" ? els.caddymgmUpdate : els.caddyUpdate;
+  const elements = {
+    caddymgm: [els.caddymgmVersion, els.caddymgmUpdate],
+    caddy: [els.caddyVersion, els.caddyUpdate],
+    go: [els.goVersion, els.goUpdate],
+  };
+  const [versionElement, updateElement] = elements[name];
   versionElement.textContent = info.current || "unknown";
   updateElement.classList.toggle("update-available", !!info.updateAvailable);
   updateElement.classList.toggle("up-to-date", !!info.latest && !info.updateAvailable);

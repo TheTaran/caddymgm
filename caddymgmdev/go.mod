@@ -1,8 +1,6 @@
 module github.com/TheTaran/caddymgm
 
-go 1.26.0
-
-toolchain go1.26.5
+go 1.27.0
 
 require (
 	github.com/coreos/go-oidc/v3 v3.12.0

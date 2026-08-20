@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -515,6 +516,7 @@ func (a *App) handleVersions(w http.ResponseWriter, r *http.Request) {
 	current := map[string]string{
 		"caddymgm": version,
 		"caddy":    a.currentCaddyVersion(),
+		"go":       runtime.Version(),
 	}
 	latest := a.getLatestVersions(r.Context())
 	result := make(map[string]ComponentVersion, len(current))
@@ -550,7 +552,7 @@ func (a *App) getLatestVersions(ctx context.Context) map[string]ComponentVersion
 		name string
 		info ComponentVersion
 	}
-	results := make(chan result, 2)
+	results := make(chan result, 3)
 	go func() {
 		tag, _ := a.fetchLatestGitHubRelease(ctx, "caddyserver", "caddy")
 		results <- result{
@@ -571,15 +573,57 @@ func (a *App) getLatestVersions(ctx context.Context) map[string]ComponentVersion
 			},
 		}
 	}()
+	go func() {
+		tag := a.fetchLatestGoRelease(ctx)
+		results <- result{
+			name: "go",
+			info: ComponentVersion{
+				Latest:     tag,
+				ReleaseURL: "https://go.dev/dl/",
+			},
+		}
+	}()
 
-	latest := make(map[string]ComponentVersion, 2)
-	for range 2 {
+	latest := make(map[string]ComponentVersion, 3)
+	for range 3 {
 		item := <-results
 		latest[item.name] = item.info
 	}
 	a.latestVersions = latest
 	a.versionsChecked = time.Now()
 	return cloneVersions(latest)
+}
+
+func (a *App) fetchLatestGoRelease(parent context.Context) string {
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://go.dev/dl/?mode=json", nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "CaddyMGM/"+version)
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var releases []struct {
+		Version string `json:"version"`
+		Stable  bool   `json:"stable"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&releases); err != nil {
+		return ""
+	}
+	for _, release := range releases {
+		if release.Stable {
+			return strings.TrimSpace(release.Version)
+		}
+	}
+	return ""
 }
 
 func cloneVersions(input map[string]ComponentVersion) map[string]ComponentVersion {
@@ -634,7 +678,9 @@ func isVersionNewer(candidate, current string) bool {
 
 func numericVersion(value string) ([3]int, bool) {
 	var result [3]int
-	value = strings.TrimPrefix(strings.TrimSpace(value), "v")
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "go")
+	value = strings.TrimPrefix(value, "v")
 	value, _, _ = strings.Cut(value, "-")
 	value, _, _ = strings.Cut(value, "+")
 	parts := strings.Split(value, ".")

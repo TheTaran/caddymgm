@@ -8,6 +8,8 @@ const caddymgmVersion = document.querySelector("#login-caddymgm-version");
 const caddymgmUpdate = document.querySelector("#login-caddymgm-update");
 const caddyVersion = document.querySelector("#login-caddy-version");
 const caddyUpdate = document.querySelector("#login-caddy-update");
+const goVersion = document.querySelector("#login-go-version");
+const goUpdate = document.querySelector("#login-go-update");
 
 init();
 
@@ -77,9 +79,11 @@ async function loadVersions() {
     if (!response.ok) throw new Error("Could not load versions");
     renderLoginVersion("CaddyMGM", data.caddymgm, caddymgmVersion, caddymgmUpdate);
     renderLoginVersion("Caddy", data.caddy, caddyVersion, caddyUpdate);
+    renderLoginVersion("Go", data.go, goVersion, goUpdate);
   } catch (_err) {
     renderLoginVersion("CaddyMGM", { current: "unknown" }, caddymgmVersion, caddymgmUpdate);
     renderLoginVersion("Caddy", { current: "unknown" }, caddyVersion, caddyUpdate);
+    renderLoginVersion("Go", { current: "unknown" }, goVersion, goUpdate);
   }
 }
 

@@ -94,7 +94,7 @@ function renderLoginVersion(label, info = {}, versionElement, updateElement) {
   updateElement.classList.toggle("check-unavailable", !info.latest);
   if (info.releaseUrl) updateElement.href = info.releaseUrl;
   if (info.updateAvailable) {
-    updateElement.textContent = `Update ${info.latest} available`;
+    updateElement.textContent = info.latest;
   } else if (info.latest) {
     updateElement.textContent = "Up to date";
   } else {

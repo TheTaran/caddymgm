@@ -208,24 +208,34 @@ button.danger {
 
 .sidebar-version-row {
   display: grid;
-  gap: 3px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
 }
 
 .sidebar-version-row > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  display: contents;
+}
+
+.sidebar-version-row > div strong,
+.sidebar-version-row > div span {
   font-size: 12px;
 }
 
 .sidebar-version-row > div span {
   color: var(--muted);
+  text-align: right;
 }
 
 .version-status {
+  justify-self: end;
   color: var(--muted);
   font-size: 11px;
+  line-height: 1.25;
+  text-align: right;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .version-status:hover {

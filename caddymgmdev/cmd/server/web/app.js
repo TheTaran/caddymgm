@@ -1,5 +1,6 @@
 const els = {
   status: document.querySelector("#status"),
+  saveConfirmation: document.querySelector("#save-confirmation"),
   pageTitle: document.querySelector("#page-title"),
   pageTitleIcon: document.querySelector("#page-title-icon"),
   sectionTitle: document.querySelector("#section-title"),
@@ -31,6 +32,7 @@ const els = {
   tlsEnabled: document.querySelector("#tls-enabled"),
   acmeIssuerRow: document.querySelector("#acme-issuer-row"),
   acmeIssuer: document.querySelector("#acme-issuer"),
+  siteAuthEnabled: document.querySelector("#site-auth-enabled"),
   delete: document.querySelector("#delete"),
   totalSites: document.querySelector("#total-sites"),
   activeSites: document.querySelector("#active-sites"),
@@ -48,6 +50,8 @@ const els = {
   serviceLogList: document.querySelector("#service-log-list"),
   serviceLogToggle: document.querySelector("#service-log-toggle"),
   siteLogToggle: document.querySelector("#site-log-toggle"),
+  oidcLogList: document.querySelector("#oidc-log-list"),
+  oidcLogToggle: document.querySelector("#oidc-log-toggle"),
   settingsForm: document.querySelector("#settings-form"),
   settingsUsername: document.querySelector("#settings-username"),
   settingsPassword: document.querySelector("#settings-password"),
@@ -58,6 +62,14 @@ const els = {
   settingsOIDCClientSecret: document.querySelector("#settings-oidc-client-secret"),
   settingsOIDCRedirect: document.querySelector("#settings-oidc-redirect"),
   settingsOIDCScopes: document.querySelector("#settings-oidc-scopes"),
+  settingsAccessEnabled: document.querySelector("#settings-access-enabled"),
+  settingsAccessName: document.querySelector("#settings-access-name"),
+  settingsAccessIssuer: document.querySelector("#settings-access-issuer"),
+  settingsAccessClientID: document.querySelector("#settings-access-client-id"),
+  settingsAccessClientSecret: document.querySelector("#settings-access-client-secret"),
+  settingsAccessScopes: document.querySelector("#settings-access-scopes"),
+  settingsAccessGateway: document.querySelector("#settings-access-gateway"),
+  settingsAccessACME: document.querySelector("#settings-access-acme"),
   settingsWebHost: document.querySelector("#settings-web-host"),
   settingsWebTLSEnabled: document.querySelector("#settings-web-tls-enabled"),
   settingsWebACMERow: document.querySelector("#settings-web-acme-row"),
@@ -140,6 +152,7 @@ const auxiliarySort = {
   certificates: { key: "domain", direction: "asc" },
   "service-logs": { key: "time", direction: "desc" },
   "site-logs": { key: "time", direction: "desc" },
+  "oidc-logs": { key: "time", direction: "desc" },
 };
 const hostCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 let settings = null;
@@ -148,9 +161,11 @@ let acmeDialogTimer = null;
 let acmeDialogContext = null;
 let serviceLogsExpanded = false;
 let siteLogsExpanded = false;
+let oidcLogsExpanded = false;
 let editingSite = null;
 let latestSiteLogs = [];
 let latestServiceLogs = [];
+let latestOIDCLogs = [];
 let latestServiceLogsAvailable = true;
 const LOG_PREVIEW_LIMIT = 10;
 
@@ -161,6 +176,10 @@ document.querySelector("#new-site").addEventListener("click", () => {
 });
 document.querySelector("#cancel").addEventListener("click", closeEditor);
 els.form.addEventListener("submit", saveSite);
+els.form.addEventListener("invalid", (event) => {
+  const panel = event.target.closest("[data-site-editor-panel]");
+  if (panel) showSiteEditorTab(panel.dataset.siteEditorPanel);
+}, true);
 els.delete.addEventListener("click", deleteSite);
 els.logSiteFilter.addEventListener("change", () => {
   siteLogsExpanded = false;
@@ -169,6 +188,7 @@ els.logSiteFilter.addEventListener("change", () => {
 });
 els.serviceLogToggle.addEventListener("click", toggleServiceLogsExpanded);
 els.siteLogToggle.addEventListener("click", toggleSiteLogsExpanded);
+els.oidcLogToggle.addEventListener("click", toggleOIDCLogsExpanded);
 els.settingsForm.addEventListener("submit", saveSettings);
 els.settingsPassword.addEventListener("input", syncSettingsPasswordConfirmation);
 els.settingsPasswordConfirm.addEventListener("input", syncSettingsPasswordConfirmation);
@@ -179,11 +199,16 @@ els.issuerReset.addEventListener("click", closeIssuerForm);
 els.issuerDelete.addEventListener("click", deleteIssuer);
 els.issuerRootCAUploadButton.addEventListener("click", uploadRootCA);
 els.tlsEnabled.addEventListener("change", syncTLSMode);
+els.siteAuthEnabled.addEventListener("change", syncSiteAuth);
 els.upstream.addEventListener("input", syncUpstreamTLS);
 els.acmeDialogClose.addEventListener("click", closeACMEStatus);
 els.acmeDialog.addEventListener("close", stopACMEStatusPolling);
 els.acmeDialog.addEventListener("cancel", stopACMEStatusPolling);
 els.navItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
+document.querySelectorAll("[data-logs-tab]").forEach((tab) => {
+  tab.addEventListener("click", () => showLogsTab(tab.dataset.logsTab));
+  tab.addEventListener("keydown", handleLogsTabKeydown);
+});
 document.querySelectorAll("[data-settings-tab]").forEach((tab) => {
   tab.addEventListener("click", () => showSettingsTab(tab.dataset.settingsTab));
   tab.addEventListener("keydown", handleSettingsTabKeydown);
@@ -191,6 +216,10 @@ document.querySelectorAll("[data-settings-tab]").forEach((tab) => {
 document.querySelectorAll("[data-auth-tab]").forEach((tab) => {
   tab.addEventListener("click", () => showAuthTab(tab.dataset.authTab));
   tab.addEventListener("keydown", handleAuthTabKeydown);
+});
+document.querySelectorAll("[data-site-editor-tab]").forEach((tab) => {
+  tab.addEventListener("click", () => showSiteEditorTab(tab.dataset.siteEditorTab));
+  tab.addEventListener("keydown", handleSiteEditorTabKeydown);
 });
 document.querySelectorAll("[data-sort-table]").forEach((header) => {
   header.addEventListener("click", (event) => {
@@ -218,6 +247,7 @@ async function init() {
   await Promise.all([loadSites(), loadSettings(), loadProfile(), loadVersions()]);
   renderLogs([]);
   renderServiceLogs([]);
+  renderOIDCLogs([]);
 }
 
 async function loadVersions() {
@@ -254,6 +284,26 @@ function renderVersionStatus(name, info = {}) {
   }
 }
 
+function showLogsTab(name, focus = false) {
+  document.querySelectorAll("[data-logs-tab]").forEach((tab) => {
+    const active = tab.dataset.logsTab === name;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+    if (active && focus) tab.focus();
+  });
+  document.querySelectorAll("[data-logs-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.logsPanel !== name;
+  });
+  if (name === "service") loadServiceLogs();
+  if (name === "websites") loadLogs();
+  if (name === "oidc") loadOIDCLogs();
+}
+
+function handleLogsTabKeydown(event) {
+  handleHorizontalTabKeydown(event, "[data-logs-tab]", (tab) => showLogsTab(tab.dataset.logsTab, true));
+}
+
 function showSettingsTab(name, focus = false) {
   document.querySelectorAll("[data-settings-tab]").forEach((tab) => {
     const active = tab.dataset.settingsTab === name;
@@ -286,6 +336,23 @@ function showAuthTab(name, focus = false) {
 
 function handleAuthTabKeydown(event) {
   handleHorizontalTabKeydown(event, "[data-auth-tab]", (tab) => showAuthTab(tab.dataset.authTab, true));
+}
+
+function showSiteEditorTab(name, focus = false) {
+  document.querySelectorAll("[data-site-editor-tab]").forEach((tab) => {
+    const active = tab.dataset.siteEditorTab === name;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+    if (active && focus) tab.focus();
+  });
+  document.querySelectorAll("[data-site-editor-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.siteEditorPanel !== name;
+  });
+}
+
+function handleSiteEditorTabKeydown(event) {
+  handleHorizontalTabKeydown(event, "[data-site-editor-tab]", (tab) => showSiteEditorTab(tab.dataset.siteEditorTab, true));
 }
 
 function handleHorizontalTabKeydown(event, selector, activate) {
@@ -328,6 +395,7 @@ function showView(view) {
   if (view === "logs") {
     loadServiceLogs();
     loadLogs();
+    loadOIDCLogs();
     syncLogPolling();
   } else {
     stopLogPolling();
@@ -353,7 +421,8 @@ async function loadSites() {
 
 async function loadSettings() {
   try {
-    settings = await request("/api/settings");
+    const [loadedSettings, providers] = await Promise.all([request("/api/settings"), request("/api/auth-providers")]);
+    settings = loadedSettings;
     els.settingsUsername.value = settings.username || "admin";
     els.settingsPassword.value = "";
     els.settingsPasswordConfirm.value = "";
@@ -363,6 +432,13 @@ async function loadSettings() {
     els.settingsOIDCClientSecret.value = "";
     els.settingsOIDCRedirect.value = settings.oidc?.redirectUrl || "";
     els.settingsOIDCScopes.value = settings.oidc?.scopes || "openid profile email";
+    els.settingsAccessEnabled.checked = !!providers.oidc?.enabled;
+    els.settingsAccessName.value = providers.oidc?.name || "OIDC";
+    els.settingsAccessIssuer.value = providers.oidc?.issuerUrl || "";
+    els.settingsAccessClientID.value = providers.oidc?.clientId || "";
+    els.settingsAccessClientSecret.value = "";
+    els.settingsAccessScopes.value = providers.oidc?.scopes || "openid profile email";
+    els.settingsAccessGateway.value = providers.oidc?.gatewayUrl || "";
     els.settingsWebHost.value = settings.webInterface?.host || "";
     els.settingsWebTLSEnabled.checked = !!settings.webInterface?.tlsEnabled;
     els.settingsLogRetention.value = settings.logRetention || 100;
@@ -371,6 +447,7 @@ async function loadSettings() {
     renderCertificatesView();
     renderIssuerOptions();
     els.settingsWebACME.value = settings.webInterface?.acmeIssuerId || "";
+    els.settingsAccessACME.value = providers.oidc?.acmeIssuerId || "";
     syncSettingsPasswordConfirmation();
     syncSettingsWebTLS();
   } catch (err) {
@@ -411,10 +488,28 @@ async function saveSettings(event) {
       method: "PUT",
       body: JSON.stringify(payload),
     });
+    await request("/api/auth-providers", {
+      method: "PUT",
+      body: JSON.stringify({
+        oidc: {
+          id: "oidc",
+          name: els.settingsAccessName.value,
+          enabled: els.settingsAccessEnabled.checked,
+          issuerUrl: els.settingsAccessIssuer.value,
+          clientId: els.settingsAccessClientID.value,
+          clientSecret: els.settingsAccessClientSecret.value,
+          scopes: els.settingsAccessScopes.value,
+          gatewayUrl: els.settingsAccessGateway.value,
+          acmeIssuerId: els.settingsAccessACME.value,
+        },
+      }),
+    });
+    els.settingsAccessClientSecret.value = "";
     els.settingsPassword.value = "";
     els.settingsPasswordConfirm.value = "";
     syncSettingsPasswordConfirmation();
     setStatus("Settings saved");
+    showConfirmation("Settings saved");
     renderCertificatesView();
     renderIssuerOptions();
   } catch (err) {
@@ -468,6 +563,7 @@ async function uploadRootCA() {
     els.issuerRootCA.value = data.rootCaFile || "";
     els.issuerRootCAUpload.value = "";
     setStatus("Root CA uploaded");
+    showConfirmation("Root CA uploaded");
   } catch (err) {
     setStatus(err.message);
   }
@@ -493,6 +589,8 @@ async function saveIssuers(issuers, message) {
     renderIssuerOptions();
     setStatus(message);
   } catch (err) {
+    showConfirmation(message);
+
     setStatus(err.message);
   }
 }
@@ -602,17 +700,21 @@ function certificateIssuerName(site) {
 function renderIssuerOptions() {
   const current = els.acmeIssuer.value;
   const settingsCurrent = els.settingsWebACME.value;
+  const accessCurrent = els.settingsAccessACME.value;
   els.acmeIssuer.innerHTML = "";
   els.settingsWebACME.innerHTML = "";
+  els.settingsAccessACME.innerHTML = "";
   for (const issuer of settings?.acmeIssuers || []) {
     const option = document.createElement("option");
     option.value = issuer.id;
     option.textContent = issuer.name;
     els.acmeIssuer.append(option);
     els.settingsWebACME.append(option.cloneNode(true));
+    els.settingsAccessACME.append(option.cloneNode(true));
   }
   els.acmeIssuer.value = current;
   els.settingsWebACME.value = settingsCurrent;
+  els.settingsAccessACME.value = accessCurrent;
   syncSettingsWebTLS();
 }
 
@@ -703,6 +805,8 @@ function renderSortedTable(table) {
     renderServiceLogs(latestServiceLogs, latestServiceLogsAvailable);
   } else if (table === "site-logs") {
     renderLogs(latestSiteLogs);
+  } else if (table === "oidc-logs") {
+    renderOIDCLogs(latestOIDCLogs);
   }
 }
 
@@ -721,6 +825,9 @@ function sortedLogs(logs, table) {
         if (sort.key === "method") return entry.method || "";
         if (sort.key === "message") return entry.message || "";
         if (sort.key === "path") return entry.path || entry.message || "";
+        if (sort.key === "user") return entry.username || entry.email || "";
+        if (sort.key === "ip") return entry.ip || "";
+        if (sort.key === "site") return entry.site || "";
         return String(entry.status || "");
       };
       result = hostCollator.compare(value(left.entry), value(right.entry));
@@ -736,6 +843,7 @@ function hostSortValue(site, key) {
     case "target": return site.mode === "static" ? site.root : site.upstream;
     case "upstreamTls": return site.mode === "proxy" ? (site.skipTlsVerify ? "Skipped" : "Verified") : "-";
     case "status": return site.enabled ? "Active" : "Inactive";
+    case "auth": return site.authEnabled ? "Enabled" : "Disabled";
     case "comment": return site.comment || "";
     default: return site.address || "";
   }
@@ -772,6 +880,7 @@ function renderSiteList(container, editable, table) {
           <span class="target"></span>
           <span class="badge"></span>
           <span class="badge"></span>
+          <span class="badge"></span>
           <span class="target"></span>
           <div class="site-actions"></div>
         `
@@ -780,6 +889,7 @@ function renderSiteList(container, editable, table) {
           <span class="badge"></span>
           <span></span>
           <span class="target"></span>
+          <span class="badge"></span>
           <span class="badge"></span>
           <span class="badge"></span>
           <span class="target"></span>
@@ -797,10 +907,13 @@ function renderSiteList(container, editable, table) {
     row.children[4].classList.toggle("off", site.mode !== "proxy");
     row.children[5].textContent = site.enabled ? "Active" : "Inactive";
     row.children[5].classList.toggle("off", !site.enabled);
-    row.children[6].textContent = site.comment || "-";
-    row.children[6].title = site.comment || "";
+    row.children[6].textContent = site.authEnabled ? "Enabled" : "Disabled";
+    row.children[6].classList.toggle("secure", !!site.authEnabled);
+    row.children[6].classList.toggle("off", !site.authEnabled);
+    row.children[7].textContent = site.comment || "-";
+    row.children[7].title = site.comment || "";
     if (editable) {
-      const actions = row.children[7];
+      const actions = row.children[8];
       actions.append(createSiteActionButton("Edit", "secondary", () => {
         showView("proxy-hosts");
         editSite(site);
@@ -843,6 +956,7 @@ async function toggleSiteEnabled(site) {
       }),
     });
     setStatus(`Website ${nextEnabled ? "activated" : "deactivated"}`);
+    showConfirmation(nextEnabled ? "Website activated" : "Website deactivated");
     await loadSites();
     await loadLogs();
   } catch (err) {
@@ -978,6 +1092,47 @@ function renderServiceLogs(logs, available = true) {
   syncLogToggle(els.serviceLogToggle, logs.length, serviceLogsExpanded);
 }
 
+async function loadOIDCLogs() {
+  try {
+    const data = await request("/api/logs?source=oidc");
+    renderOIDCLogs(data.logs || []);
+  } catch (err) { setStatus(err.message); }
+}
+
+function renderOIDCLogs(logs) {
+  latestOIDCLogs = logs;
+  els.oidcLogList.innerHTML = "";
+  els.oidcLogToggle.hidden = true;
+  updateSortHeaders();
+  if (!logs.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No OIDC authentication events yet.";
+    els.oidcLogList.append(empty);
+    return;
+  }
+  const sorted = sortedLogs(logs, "oidc-logs");
+  const visibleLogs = oidcLogsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
+  for (const entry of visibleLogs) {
+    const row = document.createElement("div");
+    row.className = "log-row oidc-log-row";
+    for (let index = 0; index < 6; index += 1) row.append(document.createElement(index === 0 ? "time" : "span"));
+    row.children[0].textContent = new Date(entry.time).toLocaleTimeString();
+    row.children[0].title = new Date(entry.time).toLocaleString();
+    row.children[1].textContent = String(entry.action || "event").replaceAll("_", " ");
+    row.children[2].textContent = entry.username || entry.email || "-";
+    row.children[2].title = entry.email || "";
+    row.children[3].textContent = entry.ip || "unknown";
+    row.children[4].textContent = entry.site || "-";
+    row.children[4].title = entry.message || entry.site || "";
+    row.children[5].textContent = entry.status || "-";
+    row.children[5].className = "log-status badge";
+    row.children[5].classList.toggle("off", !["success", "pending"].includes(String(entry.status || "").toLowerCase()));
+    els.oidcLogList.append(row);
+  }
+  syncLogToggle(els.oidcLogToggle, logs.length, oidcLogsExpanded);
+}
+
 function syncLogToggle(button, total, expanded) {
   if (total <= LOG_PREVIEW_LIMIT) {
     button.hidden = true;
@@ -997,12 +1152,18 @@ function toggleSiteLogsExpanded() {
   loadLogs();
 }
 
+function toggleOIDCLogsExpanded() {
+  oidcLogsExpanded = !oidcLogsExpanded;
+  loadOIDCLogs();
+}
+
 function syncLogPolling() {
   stopLogPolling();
   const logsViewActive = document.querySelector("#view-logs").classList.contains("active");
   if (!logsViewActive) return;
   logPollTimer = window.setInterval(() => {
     loadServiceLogs();
+    loadOIDCLogs();
     if (els.logSiteFilter.value) {
       loadLogs();
     }
@@ -1022,6 +1183,7 @@ function editSite(site = null) {
   els.form.reset();
   els.id.value = site?.id || "";
   els.formTitle.textContent = site ? "Edit Website" : "Create Website";
+  showSiteEditorTab("general");
   els.address.value = site?.address || "";
   els.comment.value = site?.comment || "";
   els.upstream.value = site?.upstream || "";
@@ -1031,6 +1193,7 @@ function editSite(site = null) {
   els.enabled.checked = site?.enabled ?? true;
   els.logsEnabled.checked = site?.logsEnabled ?? true;
   els.tlsEnabled.checked = !!site && site?.tlsMode !== "off";
+  els.siteAuthEnabled.checked = !!site?.authEnabled;
   renderIssuerOptions();
   els.acmeIssuer.value = site?.acmeIssuerId || "";
   document.querySelectorAll("input[name='mode']").forEach((input) => {
@@ -1043,6 +1206,7 @@ function editSite(site = null) {
   els.delete.hidden = !site;
   syncMode();
   syncTLSMode();
+  syncSiteAuth();
   els.editor.scrollIntoView({ behavior: "smooth", block: "start" });
   els.address.focus({ preventScroll: true });
 }
@@ -1100,6 +1264,14 @@ function syncTLSMode() {
   }
 }
 
+function syncSiteAuth() {
+  const enabled = els.siteAuthEnabled.checked;
+  if (enabled && !els.tlsEnabled.checked) {
+    els.tlsEnabled.checked = true;
+    syncTLSMode();
+  }
+}
+
 async function saveSite(event) {
   event.preventDefault();
   const mode = getMode();
@@ -1119,6 +1291,8 @@ async function saveSite(event) {
     tlsMode: els.tlsEnabled.checked ? "acme" : "off",
     acmeIssuerId: els.tlsEnabled.checked ? els.acmeIssuer.value : "",
     enabled: els.enabled.checked,
+    authEnabled: els.siteAuthEnabled.checked,
+    authProviderId: els.siteAuthEnabled.checked ? "oidc" : "",
   };
   const id = els.id.value;
   try {
@@ -1126,13 +1300,15 @@ async function saveSite(event) {
       method: id ? "PUT" : "POST",
       body: JSON.stringify(payload),
     });
-    const shouldStartACMEFlow = shouldOpenACMEStatus(editingSite, payload, saved);
-    closeEditor();
     await loadSites();
     await loadLogs();
-    if (shouldStartACMEFlow) {
-      showACMEStatus(saved || payload);
-    }
+    const savedID = saved?.id || id;
+    const refreshedSite = sites.find((site) => site.id === savedID) || saved || { ...payload, id: savedID };
+    editingSite = { ...refreshedSite };
+    els.id.value = refreshedSite.id || savedID || "";
+    els.formTitle.textContent = "Edit Website";
+    els.delete.hidden = !els.id.value;
+    showConfirmation("Website saved");
   } catch (err) {
     setStatus(err.message);
   }
@@ -1261,8 +1437,8 @@ async function deleteSite() {
   try {
     await request(`/api/sites/${id}`, { method: "DELETE" });
     closeEditor();
-    await loadSites();
-    await loadLogs();
+    await loadSites();    await loadLogs();
+    showConfirmation("Website deleted");
   } catch (err) {
     setStatus(err.message);
   }
@@ -1359,4 +1535,17 @@ function setStatus(message) {
   const text = String(message || "");
   els.status.textContent = text.length > 96 ? `${text.slice(0, 93)}...` : text;
   els.status.title = text;
+}
+
+let confirmationTimer = null;
+
+function showConfirmation(message) {
+  window.clearTimeout(confirmationTimer);
+  els.saveConfirmation.textContent = String(message || "Saved");
+  els.saveConfirmation.hidden = false;
+  requestAnimationFrame(() => els.saveConfirmation.classList.add("visible"));
+  confirmationTimer = window.setTimeout(() => {
+    els.saveConfirmation.classList.remove("visible");
+    window.setTimeout(() => { els.saveConfirmation.hidden = true; }, 180);
+  }, 2800);
 }

@@ -15,13 +15,15 @@ CaddyMGM gives you a web UI to:
 - manage ACME authorities
 - inspect website logs
 - manage CaddyMGM authentication and web interface settings
+- protect individual web hosts through one central OIDC provider
 
 The Caddy configuration stays outside the container.
 Caddy can run separately and can be updated independently from CaddyMGM.
 
 ## Planned Upcoming Features
 
-- OIDC Authentication for Website access
+_Last updated: 2026-08-26_
+
 - Integration of LDAP for authentication of websites or OIDC
 - GEO IP Map on Dashboard for Accessed Websites
 - Security features to protect managed websites, including:
@@ -102,6 +104,8 @@ The repository root is the runtime structure:
 | --- | --- |
 | `./caddy-config/Caddyfile` | Main Caddyfile managed by CaddyMGM |
 | `./caddymgm/caddymgm-settings.json` | Persistent CaddyMGM settings |
+| `./caddymgm/auth-providers.json` | Automatically managed central OIDC provider configuration; exists only while Central Website SSO is enabled |
+| `./caddymgm/oidc-audit.log` | Automatically managed OIDC authentication audit log; no Compose variable is required |
 | `./caddy-logs/caddy-service.log` | Caddy runtime/service log |
 | `./caddy-logs/<domain>.access.log` | Per-host JSON access log |
 | `./caddy-data/site` | Document roots for local static sites served by Caddy under `/srv` |
@@ -116,6 +120,16 @@ The repository root is the runtime structure:
 | `docker` | Writes the Caddyfile and reloads the Compose Caddy service via Admin API |
 | `api` | Same behavior as API-driven mode for a reachable Caddy Admin API |
 
+## Central Website SSO
+
+CaddyMGM can protect multiple web hosts through one central OIDC client. Configure an HTTPS SSO Base URL such as `https://sso.example.com` under `Settings -> Authentication -> SSO / OIDC`, then register exactly this callback at the identity provider:
+
+```text
+https://sso.example.com/.caddymgm/auth/callback
+```
+
+Enable `SSO / OIDC` on each web host that should require authentication. The first login creates a central SSO session. Access to another protected host uses a short-lived, single-use, host-bound ticket to establish a separate secure cookie for that host. The identity provider controls which users may use the OIDC client.
+
 ## Web UI Notes
 
 - New web hosts have logs enabled by default.
@@ -123,7 +137,7 @@ The repository root is the runtime structure:
 - TLS is only requested when you enable it for a host and select an ACME authority.
 - Static websites must use a document root under `/srv` inside the Caddy container.
 - `Certificates` shows configured ACME authorities and issued certificates.
-- `Logs` shows realtime Caddy service logs and website access logs.
+- `Logs` uses horizontal tabs for realtime Caddy service logs, website access logs, and OIDC authentication events.
 
 ## Authentication
 

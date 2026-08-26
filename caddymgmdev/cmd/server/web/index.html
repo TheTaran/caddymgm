@@ -162,6 +162,7 @@
               <span role="columnheader"><button class="sort-button" type="button" data-sort="target">Target</button></span>
               <span role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button></span>
               <span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="auth">SSO / OIDC</button></span>
               <span role="columnheader"><button class="sort-button" type="button" data-sort="comment">Comment</button></span>
             </div>
             <div id="dashboard-site-list" class="site-list"></div>
@@ -192,6 +193,7 @@
                 <span role="columnheader"><button class="sort-button" type="button" data-sort="target">Target</button></span>
                 <span role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button></span>
                 <span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
+              <span role="columnheader"><button class="sort-button" type="button" data-sort="auth">SSO / OIDC</button></span>
                 <span role="columnheader"><button class="sort-button" type="button" data-sort="comment">Comment</button></span>
                 <span>Actions</span>
               </div>
@@ -206,68 +208,84 @@
                     <span class="eyebrow">Rule Editor</span>
                     <h2 id="form-title">Website</h2>
                   </div>
-                  <label class="switch">
-                    <input id="enabled" type="checkbox" checked />
-                    <span>Active</span>
-                  </label>
                 </div>
 
-                <label class="switch">
-                  <input id="logs-enabled" type="checkbox" checked />
-                  <span>Logs enabled</span>
-                </label>
+                <div class="site-editor-tabs" role="tablist" aria-label="Website configuration sections">
+                  <button type="button" class="site-editor-tab active" id="site-editor-tab-general" role="tab" aria-selected="true" aria-controls="site-editor-panel-general" tabindex="0" data-site-editor-tab="general">General</button>
+                  <button type="button" class="site-editor-tab" id="site-editor-tab-security" role="tab" aria-selected="false" aria-controls="site-editor-panel-security" tabindex="-1" data-site-editor-tab="security">Security</button>
+                  <button type="button" class="site-editor-tab" id="site-editor-tab-authentication" role="tab" aria-selected="false" aria-controls="site-editor-panel-authentication" tabindex="-1" data-site-editor-tab="authentication">Authentication</button>
+                </div>
 
-                <label class="switch">
-                  <input id="tls-enabled" type="checkbox" />
-                  <span>TLS enabled</span>
-                </label>
-
-                <label id="acme-issuer-row" hidden>
-                  ACME Authority
-                  <select id="acme-issuer"></select>
-                </label>
-
-                <label>
-                  Address
-                  <input id="address" required placeholder="example.com" autocomplete="off" />
-                </label>
-
-                <label>
-                  Comment
-                  <input id="comment" placeholder="Internal Jellyfin proxy" autocomplete="off" />
-                </label>
-
-                <fieldset>
-                  <legend>Type</legend>
-                  <label class="radio">
-                    <input type="radio" name="mode" value="proxy" />
-                    Reverse Proxy
+                <section id="site-editor-panel-general" class="site-editor-panel" role="tabpanel" aria-labelledby="site-editor-tab-general" data-site-editor-panel="general">
+                  <div class="status-check-row">
+                    <label class="status-check">
+                      <input id="enabled" type="checkbox" checked />
+                      <span class="status-check-title">Active</span>
+                      <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                    </label>
+                    <label class="status-check">
+                    <input id="logs-enabled" type="checkbox" checked />
+                    <span class="status-check-title">Logs enabled</span>
+                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                    </label>
+                  </div>
+                  <label>
+                    Address
+                    <input id="address" required placeholder="example.com" autocomplete="off" />
                   </label>
-                  <label class="radio">
-                    <input type="radio" name="mode" value="static" />
-                    Static Files
+                  <label>
+                    Comment
+                    <input id="comment" placeholder="Internal Jellyfin proxy" autocomplete="off" />
                   </label>
-                </fieldset>
+                  <fieldset>
+                    <legend>Type</legend>
+                    <label class="radio">
+                      <input type="radio" name="mode" value="proxy" />
+                      Reverse Proxy
+                    </label>
+                    <label class="radio">
+                      <input type="radio" name="mode" value="static" />
+                      Static Files
+                    </label>
+                  </fieldset>
+                  <label id="upstream-row" hidden>
+                    Upstream
+                    <input id="upstream" placeholder="http://app:3000" autocomplete="off" />
+                  </label>
+                  <label id="root-row" hidden>
+                    Root
+                    <input id="root" placeholder="/srv/www/example" autocomplete="off" />
+                  </label>
+                  <label>
+                    Additional settings
+                    <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
+                  </label>
+                </section>
 
-                <label id="upstream-row" hidden>
-                  Upstream
-                  <input id="upstream" placeholder="http://app:3000" autocomplete="off" />
-                </label>
+                <section id="site-editor-panel-security" class="site-editor-panel" role="tabpanel" aria-labelledby="site-editor-tab-security" data-site-editor-panel="security" hidden>
+                  <label class="status-check">
+                    <input id="tls-enabled" type="checkbox" />
+                    <span class="status-check-title">TLS enabled</span>
+                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                    </label>
+                  <label id="acme-issuer-row" hidden>
+                    ACME Authority
+                    <select id="acme-issuer"></select>
+                  </label>
+                  <label id="skip-tls-verify-row" class="status-check" hidden>
+                    <input id="skip-tls-verify" type="checkbox" />
+                    <span class="status-check-title">Skip upstream TLS verification</span>
+                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                    </label>
+                </section>
 
-                <label id="skip-tls-verify-row" class="switch" hidden>
-                  <input id="skip-tls-verify" type="checkbox" />
-                  <span>Skip upstream TLS verification</span>
-                </label>
-
-                <label id="root-row" hidden>
-                  Root
-                  <input id="root" placeholder="/srv/www/example" autocomplete="off" />
-                </label>
-
-                <label>
-                  Additional settings
-                  <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
-                </label>
+                <section id="site-editor-panel-authentication" class="site-editor-panel" role="tabpanel" aria-labelledby="site-editor-tab-authentication" data-site-editor-panel="authentication" hidden>
+                  <label class="status-check">
+                    <input id="site-auth-enabled" type="checkbox" />
+                    <span class="status-check-title">Require OIDC authentication</span>
+                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                    </label>
+                </section>
 
                 <div class="form-actions">
                   <button type="submit">Save</button>
@@ -353,73 +371,35 @@
         </section>
 
         <section id="view-logs" class="view">
-          <div class="logs-grid">
-            <section class="panel-card">
-              <div class="panel-heading">
-                <h2>
-                  <span class="panel-title-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none">
-                      <path d="M5 6.5h14" />
-                      <path d="M5 12h14" />
-                      <path d="M5 17.5h9" />
-                      <path d="M15 15.5 17.5 18 20 15.5" />
-                    </svg>
-                  </span>
-                  <span>Caddy Service Log</span>
-                </h2>
-                <span>Realtime service log</span>
-              </div>
-              <div id="service-log-stream-label" class="log-stream-label">
-                <span>Service</span>
-                <strong>Caddy</strong>
-              </div>
+          <div class="logs-tabs settings-tabs" role="tablist" aria-label="Log sections" aria-orientation="horizontal">
+            <button type="button" class="logs-tab settings-tab active" role="tab" id="logs-tab-service" aria-controls="logs-panel-service" aria-selected="true" data-logs-tab="service">Service Logs</button>
+            <button type="button" class="logs-tab settings-tab" role="tab" id="logs-tab-websites" aria-controls="logs-panel-websites" aria-selected="false" tabindex="-1" data-logs-tab="websites">Website Logs</button>
+            <button type="button" class="logs-tab settings-tab" role="tab" id="logs-tab-oidc" aria-controls="logs-panel-oidc" aria-selected="false" tabindex="-1" data-logs-tab="oidc">OIDC Logs</button>
+          </div>
+          <div class="logs-tab-content settings-tab-content">
+            <section id="logs-panel-service" class="panel-card logs-panel" role="tabpanel" aria-labelledby="logs-tab-service" data-logs-panel="service">
+              <div class="panel-heading"><h2><span>Caddy Service Log</span></h2><span>Realtime service log</span></div>
+              <div class="log-stream-label"><span>Service</span><strong>Caddy</strong></div>
               <div class="log-head service-log-head" data-sort-table="service-logs">
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span>
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="type">Type</button></span>
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="message">Message</button></span>
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="type">Type</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="message">Message</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
               </div>
-              <div id="service-log-list" class="log-list"></div>
-              <div class="log-actions">
-                <button id="service-log-toggle" type="button" class="secondary" hidden>Show more</button>
-              </div>
+              <div id="service-log-list" class="log-list"></div><div class="log-actions"><button id="service-log-toggle" type="button" class="secondary" hidden>Show more</button></div>
             </section>
-
-            <section class="panel-card">
-              <div class="panel-heading">
-                <h2>
-                  <span class="panel-title-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none">
-                      <path d="M5 6.5h14" />
-                      <path d="M5 12h14" />
-                      <path d="M5 17.5h9" />
-                      <path d="M15 15.5 17.5 18 20 15.5" />
-                    </svg>
-                  </span>
-                  <span>Website Access Logs</span>
-                </h2>
-                <span>Realtime per web host</span>
-              </div>
-              <label class="filter-row">
-                Web Host
-                <select id="log-site-filter">
-                  <option value="">Select Web Host</option>
-                </select>
-              </label>
-              <div id="log-stream-label" class="log-stream-label" hidden>
-                <span>Realtime Logs</span>
-                <strong></strong>
-              </div>
+            <section id="logs-panel-websites" class="panel-card logs-panel" role="tabpanel" aria-labelledby="logs-tab-websites" data-logs-panel="websites" hidden>
+              <div class="panel-heading"><h2><span>Website Access Logs</span></h2><span>Realtime per web host</span></div>
+              <label class="filter-row">Web Host<select id="log-site-filter"><option value="">Select Web Host</option></select></label>
+              <div id="log-stream-label" class="log-stream-label" hidden><span>Realtime Logs</span><strong></strong></div>
               <div class="log-head" data-sort-table="site-logs">
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span>
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="method">Method</button></span>
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="path">Path</button></span>
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="method">Method</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="path">Path</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
               </div>
-              <div id="log-list" class="log-list"></div>
-              <div class="log-actions">
-                <button id="site-log-toggle" type="button" class="secondary" hidden>Show more</button>
+              <div id="log-list" class="log-list"></div><div class="log-actions"><button id="site-log-toggle" type="button" class="secondary" hidden>Show more</button></div>
+            </section>
+            <section id="logs-panel-oidc" class="panel-card logs-panel" role="tabpanel" aria-labelledby="logs-tab-oidc" data-logs-panel="oidc" hidden>
+              <div class="panel-heading"><h2><span>OIDC Authentication Logs</span></h2><span>Authentication events for CaddyMGM and protected web hosts</span></div>
+              <div class="log-head oidc-log-head" data-sort-table="oidc-logs">
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="type">Event</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="user">User</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="ip">IP Address</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="site">Web Host</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
               </div>
+              <div id="oidc-log-list" class="log-list"></div><div class="log-actions"><button id="oidc-log-toggle" type="button" class="secondary" hidden>Show more</button></div>
             </section>
           </div>
         </section>
@@ -427,12 +407,12 @@
         <section id="view-settings" class="view">
           <form id="settings-form" class="settings-form">
             <div class="settings-tabs" role="tablist" aria-label="Settings sections" aria-orientation="horizontal">
-              <button type="button" class="settings-tab active" role="tab" id="settings-tab-authentication" aria-controls="settings-panel-authentication" aria-selected="true" data-settings-tab="authentication">Authentication</button>
-              <button type="button" class="settings-tab" role="tab" id="settings-tab-web" aria-controls="settings-panel-web" aria-selected="false" tabindex="-1" data-settings-tab="web">Web Interface</button>
+              <button type="button" class="settings-tab active" role="tab" id="settings-tab-web" aria-controls="settings-panel-web" aria-selected="true" data-settings-tab="web">General</button>
+              <button type="button" class="settings-tab" role="tab" id="settings-tab-authentication" aria-controls="settings-panel-authentication" aria-selected="false" tabindex="-1" data-settings-tab="authentication">Authentication</button>
               <button type="button" class="settings-tab" role="tab" id="settings-tab-logs" aria-controls="settings-panel-logs" aria-selected="false" tabindex="-1" data-settings-tab="logs">Logs</button>
             </div>
             <div class="settings-tab-content">
-            <section id="settings-panel-authentication" class="panel-card editor-card settings-card settings-group settings-panel" role="tabpanel" aria-labelledby="settings-tab-authentication" data-settings-panel="authentication">
+            <section id="settings-panel-authentication" class="panel-card editor-card settings-card settings-group settings-panel" role="tabpanel" aria-labelledby="settings-tab-authentication" data-settings-panel="authentication" hidden>
               <div class="panel-heading">
                 <h2>
                   <span class="panel-title-icon" aria-hidden="true">
@@ -446,11 +426,17 @@
                 </h2>
                 <span>Local login and OIDC</span>
               </div>
-              <div class="auth-tabs" role="tablist" aria-label="Authentication methods" aria-orientation="horizontal">
-                <button type="button" class="auth-tab active" role="tab" id="auth-tab-local" aria-controls="auth-panel-local" aria-selected="true" data-auth-tab="local">Local</button>
-                <button type="button" class="auth-tab" role="tab" id="auth-tab-oidc" aria-controls="auth-panel-oidc" aria-selected="false" tabindex="-1" data-auth-tab="oidc">OIDC</button>
+              <div class="auth-tabs" role="tablist" aria-label="Authentication configuration" aria-orientation="horizontal">
+                <button type="button" class="auth-tab active" role="tab" id="auth-tab-general" aria-controls="auth-panel-general" aria-selected="true" data-auth-tab="general">General</button>
+                <button type="button" class="auth-tab" role="tab" id="auth-tab-users" aria-controls="auth-panel-users" aria-selected="false" tabindex="-1" data-auth-tab="users">Users</button>
+                <button type="button" class="auth-tab" role="tab" id="auth-tab-sso" aria-controls="auth-panel-sso" aria-selected="false" tabindex="-1" data-auth-tab="sso">SSO / OIDC</button>
+                <button type="button" class="auth-tab" role="tab" id="auth-tab-ldap" aria-controls="auth-panel-ldap" aria-selected="false" tabindex="-1" data-auth-tab="ldap">LDAP / AD</button>
               </div>
-              <section id="auth-panel-local" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-local" data-auth-panel="local">
+              <section id="auth-panel-general" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-general" data-auth-panel="general">
+                <h3>Authentication</h3>
+                <p class="field-note">CaddyMGM supports local and OIDC login. Website access can be protected separately through the central OIDC provider.</p>
+              </section>
+              <section id="auth-panel-users" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-users" data-auth-panel="users" hidden>
                 <label>
                   Admin User
                   <input id="settings-username" autocomplete="off" />
@@ -464,11 +450,15 @@
                   <input id="settings-password-confirm" type="password" placeholder="Repeat the new password" autocomplete="new-password" />
                 </label>
               </section>
-              <section id="auth-panel-oidc" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-oidc" data-auth-panel="oidc" hidden>
-                <label class="switch">
-                  <input id="settings-oidc-enabled" type="checkbox" />
-                  <span>OIDC enabled</span>
-                </label>
+              <section id="auth-panel-sso" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-sso" data-auth-panel="sso" hidden>
+                <div class="status-check-group">
+                  <label class="status-check">
+                    <input id="settings-oidc-enabled" type="checkbox" />
+                    <span class="status-check-title">CaddyMGM SSO / OIDC</span>
+                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                  </label>
+                  <small class="status-check-description">Controls OIDC login for the CaddyMGM administration interface.</small>
+                </div>
                 <label>
                   OIDC Issuer URL
                   <input id="settings-oidc-issuer" placeholder="https://idp.example.com" autocomplete="off" />
@@ -489,10 +479,53 @@
                   OIDC Scopes
                   <input id="settings-oidc-scopes" placeholder="openid profile email" autocomplete="off" />
                 </label>
+              <div class="auth-provider-section">
+                <div class="status-check-group">
+                  <label class="status-check">
+                    <input id="settings-access-enabled" type="checkbox" />
+                    <span class="status-check-title">Central Website SSO</span>
+                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                  </label>
+                  <small class="status-check-description">Protects selected web hosts through the central OIDC gateway.</small>
+                </div>
+                <label>
+                  Provider name
+                  <input id="settings-access-name" placeholder="OIDC" autocomplete="off" />
+                </label>
+                <label>
+                  SSO Base URL
+                  <input id="settings-access-gateway" placeholder="https://sso.example.com" autocomplete="off" />
+                </label>
+                <label>
+                  SSO ACME Authority
+                  <select id="settings-access-acme"></select>
+                </label>
+                <label>
+                  Issuer URL
+                  <input id="settings-access-issuer" placeholder="https://idp.example.com" autocomplete="off" />
+                </label>
+                <label>
+                  Client ID
+                  <input id="settings-access-client-id" autocomplete="off" />
+                </label>
+                <label>
+                  Client Secret
+                  <input id="settings-access-client-secret" type="password" placeholder="Leave empty to keep the current secret" autocomplete="new-password" />
+                </label>
+                <label>
+                  Scopes
+                  <input id="settings-access-scopes" placeholder="openid profile email" autocomplete="off" />
+                </label>
+                <p class="field-note">Register the SSO Base URL followed by /.caddymgm/auth/callback at the identity provider.</p>
+              </div>
+              </section>
+              <section id="auth-panel-ldap" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-ldap" data-auth-panel="ldap" hidden>
+                <h3>LDAP / Active Directory</h3>
+                <p class="field-note">Planned for a future version. No LDAP or Active Directory connection is active.</p>
               </section>
             </section>
 
-            <section id="settings-panel-web" class="panel-card editor-card settings-card settings-group settings-panel" role="tabpanel" aria-labelledby="settings-tab-web" data-settings-panel="web" hidden>
+            <section id="settings-panel-web" class="panel-card editor-card settings-card settings-group settings-panel" role="tabpanel" aria-labelledby="settings-tab-web" data-settings-panel="web">
               <div class="panel-heading">
                 <h2>
                   <span class="panel-title-icon" aria-hidden="true">
@@ -502,7 +535,7 @@
                       <path d="M12 16v3" />
                     </svg>
                   </span>
-                  <span>Web Interface</span>
+                  <span>General</span>
                 </h2>
                 <span>Published through Caddy on port 8080</span>
               </div>
@@ -510,10 +543,11 @@
                 Interface Host
                 <input id="settings-web-host" placeholder="mgm.example.com" autocomplete="off" />
               </label>
-              <label class="switch">
+              <label class="status-check">
                 <input id="settings-web-tls-enabled" type="checkbox" />
-                <span>TLS enabled</span>
-              </label>
+                <span class="status-check-title">TLS enabled</span>
+                <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                </label>
               <label id="settings-web-acme-row" hidden>
                 ACME Authority
                 <select id="settings-web-acme"></select>
@@ -586,6 +620,7 @@
         <div id="acme-log-list" class="log-list"></div>
       </div>
     </dialog>
+    <div id="save-confirmation" class="save-confirmation" role="status" aria-live="polite" hidden></div>
 
     <script src="/app.js"></script>
   </body>

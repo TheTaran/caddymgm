@@ -39,22 +39,26 @@ import (
 )
 
 const (
-	managedStart        = "# caddymgm:start"
-	managedEnd          = "# caddymgm:end"
-	sessionCookieName   = "caddymgm_session"
-	oidcStateCookieName = "caddymgm_oidc_state"
-	csrfCookieName      = "caddymgm_csrf"
-	loginMaxFailures    = 5
-	loginFailureWindow  = 15 * time.Minute
-	loginLockout        = 15 * time.Minute
-	loginAttemptLimit   = 10_000
-	sessionLimit        = 10_000
-	sessionLifetime     = 12 * time.Hour
-	oidcStateLimit      = 1_000
-	oidcStateLifetime   = 10 * time.Minute
-	loginJSONBodyLimit  = 64 << 10
-	adminJSONBodyLimit  = 1 << 20
-	rootCAUploadLimit   = 4 << 20
+	managedStart         = "# caddymgm:start"
+	managedEnd           = "# caddymgm:end"
+	sessionCookieName    = "caddymgm_session"
+	oidcStateCookieName  = "caddymgm_oidc_state"
+	csrfCookieName       = "caddymgm_csrf"
+	loginMaxFailures     = 5
+	loginFailureWindow   = 15 * time.Minute
+	loginLockout         = 15 * time.Minute
+	loginAttemptLimit    = 10_000
+	sessionLimit         = 10_000
+	sessionLifetime      = 12 * time.Hour
+	oidcStateLimit       = 1_000
+	oidcStateLifetime    = 10 * time.Minute
+	loginJSONBodyLimit   = 64 << 10
+	adminJSONBodyLimit   = 1 << 20
+	rootCAUploadLimit    = 4 << 20
+	accessSessionLimit   = 10_000
+	accessStateLimit     = 1_000
+	accessTicketLimit    = 1_000
+	accessTicketLifetime = time.Minute
 )
 
 var version = "dev"
@@ -76,6 +80,8 @@ type Site struct {
 	ACMEIssuerID         string `json:"acmeIssuerId,omitempty"`
 	CertificateExpiresAt string `json:"certificateExpiresAt,omitempty"`
 	Enabled              bool   `json:"enabled"`
+	AuthEnabled          bool   `json:"authEnabled,omitempty"`
+	AuthProviderID       string `json:"authProviderId,omitempty"`
 }
 
 type sitePayload struct {
@@ -90,6 +96,8 @@ type sitePayload struct {
 	TLSMode         string `json:"tlsMode,omitempty"`
 	ACMEIssuerID    string `json:"acmeIssuerId,omitempty"`
 	Enabled         bool   `json:"enabled"`
+	AuthEnabled     bool   `json:"authEnabled,omitempty"`
+	AuthProviderID  string `json:"authProviderId,omitempty"`
 }
 
 func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
@@ -110,6 +118,8 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		TLSMode:         p.TLSMode,
 		ACMEIssuerID:    p.ACMEIssuerID,
 		Enabled:         p.Enabled,
+		AuthEnabled:     p.AuthEnabled,
+		AuthProviderID:  p.AuthProviderID,
 	}
 }
 
@@ -156,14 +166,17 @@ type WebInterface struct {
 }
 
 type LogEntry struct {
-	Time    string `json:"time"`
-	SiteID  string `json:"siteId,omitempty"`
-	Site    string `json:"site,omitempty"`
-	Action  string `json:"action"`
-	Message string `json:"message"`
-	Method  string `json:"method,omitempty"`
-	Path    string `json:"path,omitempty"`
-	Status  string `json:"status,omitempty"`
+	Time     string `json:"time"`
+	SiteID   string `json:"siteId,omitempty"`
+	Site     string `json:"site,omitempty"`
+	Action   string `json:"action"`
+	Message  string `json:"message"`
+	Method   string `json:"method,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Status   string `json:"status,omitempty"`
+	Username string `json:"username,omitempty"`
+	Email    string `json:"email,omitempty"`
+	IP       string `json:"ip,omitempty"`
 }
 
 type ComponentVersion struct {
@@ -174,32 +187,39 @@ type ComponentVersion struct {
 }
 
 type App struct {
-	mu               sync.Mutex
-	configPath       string
-	settingsPath     string
-	caddyMode        string
-	caddyAPIURL      string
-	accessLogDir     string
-	caddyLogDir      string
-	serviceLog       string
-	caddyDataDir     string
-	caddyVersionFile string
-	caCertDir        string
-	staticRootBase   string
-	webListen        string
-	webPort          string
-	httpClient       *http.Client
-	settings         Settings
-	logs             []LogEntry
-	sessions         map[string]Session
-	oidcStates       map[string]time.Time
-	oidcCache        map[string]*oidcRuntime
-	loginLimiter     *loginLimiter
-	trustedProxies   *trustedProxySet
-	oidcProvider     func(context.Context, string) (*oidc.Provider, error)
-	versionMu        sync.Mutex
-	latestVersions   map[string]ComponentVersion
-	versionsChecked  time.Time
+	mu                sync.Mutex
+	configPath        string
+	settingsPath      string
+	authProvidersPath string
+	caddyMode         string
+	caddyAPIURL       string
+	accessLogDir      string
+	caddyLogDir       string
+	serviceLog        string
+	oidcAuditLog      string
+	auditMu           sync.Mutex
+	caddyDataDir      string
+	caddyVersionFile  string
+	caCertDir         string
+	staticRootBase    string
+	webListen         string
+	webPort           string
+	httpClient        *http.Client
+	settings          Settings
+	logs              []LogEntry
+	sessions          map[string]Session
+	oidcStates        map[string]time.Time
+	oidcCache         map[string]*oidcRuntime
+	authProviders     AuthProvidersConfig
+	accessSessions    map[string]AccessSession
+	accessStates      map[string]AccessState
+	accessTickets     map[string]AccessTicket
+	loginLimiter      *loginLimiter
+	trustedProxies    *trustedProxySet
+	oidcProvider      func(context.Context, string) (*oidc.Provider, error)
+	versionMu         sync.Mutex
+	latestVersions    map[string]ComponentVersion
+	versionsChecked   time.Time
 }
 
 type Session struct {
@@ -260,11 +280,13 @@ func newLoginLimiter() *loginLimiter {
 func main() {
 	configPath := env("CADDY_CONFIG_PATH", "/config/Caddyfile")
 	settingsPath := env("CADDYMGM_SETTINGS_PATH", "/caddymgm/caddymgm-settings.json")
+	authProvidersPath := filepath.Join(filepath.Dir(settingsPath), "auth-providers.json")
 	caddyMode := normalizeCaddyMode(env("CADDYMGM_CADDY_MODE", "file"))
 	caddyAPIURL := env("CADDYMGM_CADDY_API_URL", defaultCaddyAPIURL(caddyMode))
 	accessLogDir := env("CADDYMGM_ACCESS_LOG_DIR", "/logs")
 	caddyLogDir := env("CADDY_ACCESS_LOG_DIR", accessLogDir)
 	serviceLog := env("CADDYMGM_CADDY_SERVICE_LOG", filepath.Join(accessLogDir, "caddy-service.log"))
+	oidcAuditLog := filepath.Join(filepath.Dir(settingsPath), "oidc-audit.log")
 	caddyDataDir := env("CADDYMGM_CADDY_DATA_DIR", "/caddy-data")
 	caddyVersionFile := env("CADDYMGM_CADDY_VERSION_FILE", filepath.Join(accessLogDir, "caddy-version"))
 	caCertDir := env("CADDYMGM_CA_CERT_DIR", "/ca-certificates")
@@ -280,32 +302,40 @@ func main() {
 	}
 
 	app := &App{
-		configPath:       configPath,
-		settingsPath:     settingsPath,
-		caddyMode:        caddyMode,
-		caddyAPIURL:      strings.TrimRight(caddyAPIURL, "/"),
-		accessLogDir:     accessLogDir,
-		caddyLogDir:      caddyLogDir,
-		serviceLog:       serviceLog,
-		caddyDataDir:     caddyDataDir,
-		caddyVersionFile: caddyVersionFile,
-		caCertDir:        caCertDir,
-		staticRootBase:   staticRootBase,
-		webListen:        webListen,
-		webPort:          webPort,
-		httpClient:       &http.Client{Timeout: 15 * time.Second},
-		sessions:         make(map[string]Session),
-		oidcStates:       make(map[string]time.Time),
-		oidcCache:        make(map[string]*oidcRuntime),
-		loginLimiter:     newLoginLimiter(),
-		trustedProxies:   trustedProxies,
-		oidcProvider:     oidc.NewProvider,
+		configPath:        configPath,
+		settingsPath:      settingsPath,
+		authProvidersPath: authProvidersPath,
+		caddyMode:         caddyMode,
+		caddyAPIURL:       strings.TrimRight(caddyAPIURL, "/"),
+		accessLogDir:      accessLogDir,
+		caddyLogDir:       caddyLogDir,
+		serviceLog:        serviceLog,
+		oidcAuditLog:      oidcAuditLog,
+		caddyDataDir:      caddyDataDir,
+		caddyVersionFile:  caddyVersionFile,
+		caCertDir:         caCertDir,
+		staticRootBase:    staticRootBase,
+		webListen:         webListen,
+		webPort:           webPort,
+		httpClient:        &http.Client{Timeout: 15 * time.Second},
+		sessions:          make(map[string]Session),
+		oidcStates:        make(map[string]time.Time),
+		oidcCache:         make(map[string]*oidcRuntime),
+		accessSessions:    make(map[string]AccessSession),
+		accessStates:      make(map[string]AccessState),
+		accessTickets:     make(map[string]AccessTicket),
+		loginLimiter:      newLoginLimiter(),
+		trustedProxies:    trustedProxies,
+		oidcProvider:      oidc.NewProvider,
 	}
 	if err := app.ensureConfig(); err != nil {
 		log.Fatalf("prepare config: %v", err)
 	}
 	if err := app.ensureSettings(); err != nil {
 		log.Fatalf("prepare settings: %v", err)
+	}
+	if err := app.ensureAuthProviders(); err != nil {
+		log.Fatalf("prepare auth providers: %v", err)
 	}
 	if err := app.syncManagedConfig(); err != nil {
 		log.Printf("sync managed caddy config: %v", err)
@@ -326,6 +356,8 @@ func main() {
 	mux.HandleFunc("GET /api/versions", app.handleVersions)
 	mux.HandleFunc("GET /api/settings", app.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", app.handleUpdateSettings)
+	mux.HandleFunc("GET /api/auth-providers", app.handleGetAuthProviders)
+	mux.HandleFunc("PUT /api/auth-providers", app.handleUpdateAuthProviders)
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
 	mux.HandleFunc("POST /api/certificates/root-ca", app.handleUploadRootCA)
 	mux.HandleFunc("POST /api/certificates/renew/", app.handleRenewCertificate)
@@ -336,6 +368,12 @@ func main() {
 	mux.HandleFunc("GET /api/auth/oidc/start", app.handleOIDCStart)
 	mux.HandleFunc("GET /api/auth/oidc/callback", app.handleOIDCCallback)
 	mux.HandleFunc("GET /auth/oidc/callback", app.handleOIDCCallback)
+	mux.HandleFunc("GET /.caddymgm/auth/check", app.handleAccessCheck)
+	mux.HandleFunc("GET /.caddymgm/auth/portal", app.handleAccessPortal)
+	mux.HandleFunc("POST /.caddymgm/auth/logout", app.handleAccessLogout)
+	mux.HandleFunc("GET /.caddymgm/auth/start", app.handleAccessStart)
+	mux.HandleFunc("GET /.caddymgm/auth/callback", app.handleAccessCallback)
+	mux.HandleFunc("GET /.caddymgm/auth/complete", app.handleAccessComplete)
 
 	listenAddr := app.webListen
 	handler := logRequest(app.securityHeaders(app.ensureCSRFCookie(app.requireCSRF(app.requireAuth(mux)))))
@@ -798,6 +836,13 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if source == "oidc" {
+		entries := a.readOIDCAuditLogsLocked()
+		sort.SliceStable(entries, func(i, j int) bool { return entries[i].Time > entries[j].Time })
+		writeJSON(w, http.StatusOK, map[string]any{"logs": entries})
+		return
+	}
+
 	if source == "caddy-service" {
 		entries := a.readServiceLogsLocked()
 		sort.SliceStable(entries, func(i, j int) bool {
@@ -1062,10 +1107,17 @@ func (a *App) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 
 	http.SetCookie(w, oidcStateCookie(state, oidcStateLifetime, a.isSecureRequest(r)))
+	a.recordOIDCAudit(r, "login_started", "pending", "", "", "CaddyMGM", "Administration login")
 	http.Redirect(w, r, runtime.Config.AuthCodeURL(state), http.StatusFound)
 }
 
 func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	auditSuccess := false
+	defer func() {
+		if !auditSuccess {
+			a.recordOIDCAudit(r, "login_failed", "failed", "", "", "CaddyMGM", "Administration login")
+		}
+	}()
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if state == "" || code == "" {
@@ -1135,6 +1187,8 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	a.createSessionLocked(w, r, username, "oidc")
 	a.mu.Unlock()
+	auditSuccess = true
+	a.recordOIDCAudit(r, "login_success", "success", username, claims.Email, "CaddyMGM", "Administration login")
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -1274,7 +1328,7 @@ func (a *App) save(head string, sites []Site, tail string) error {
 	if out.Len() > 0 {
 		out.WriteString("\n\n")
 	}
-	out.WriteString(renderManaged(sites, a.settings.ACMEIssuers, a.caddyLogDir, a.settings.WebInterface, a.caddyMode, a.webPort))
+	out.WriteString(renderManaged(sites, a.settings.ACMEIssuers, a.caddyLogDir, a.settings.WebInterface, a.authProviders.OIDC, a.caddyMode, a.webPort))
 	if strings.TrimSpace(tail) != "" {
 		out.WriteString("\n")
 		out.WriteString(strings.TrimLeft(tail, "\n"))
@@ -1445,12 +1499,24 @@ func parseSite(id string, lines []string) (Site, error) {
 	inLog := false
 	inReverseProxy := false
 	inTransport := false
+	inAuthDirective := false
 	logDepth := 0
 	reverseProxyDepth := 0
 	transportDepth := 0
 	for _, raw := range lines[1:] {
 		line := strings.TrimSpace(strings.TrimPrefix(raw, "#"))
 		line = strings.TrimSpace(line)
+		if line == "# caddymgm:auth-directive" {
+			inAuthDirective = true
+			continue
+		}
+		if line == "# caddymgm:end-auth-directive" {
+			inAuthDirective = false
+			continue
+		}
+		if inAuthDirective {
+			continue
+		}
 		if inLog {
 			logDepth += braceDelta(line)
 			if logDepth <= 0 {
@@ -1503,6 +1569,11 @@ func parseSite(id string, lines []string) (Site, error) {
 			continue
 		case strings.HasPrefix(line, "# caddymgm:comment "):
 			site.Comment = parseManagedComment(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:comment ")))
+		case strings.HasPrefix(line, "# caddymgm:auth-provider "):
+			site.AuthEnabled = true
+			site.AuthProviderID = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:auth-provider "))
+		case strings.HasPrefix(line, "# caddymgm:auth-groups "):
+			continue
 		case line == "# caddymgm:skip-tls-verify":
 			site.SkipTLSVerify = true
 		case strings.HasPrefix(line, "# caddymgm:tls-issuer "):
@@ -1547,15 +1618,18 @@ func parseSite(id string, lines []string) (Site, error) {
 	return site, nil
 }
 
-func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string, webInterface WebInterface, caddyMode string, webPort string) string {
+func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string, webInterface WebInterface, accessProvider AccessOIDCProvider, caddyMode string, webPort string) string {
 	var out strings.Builder
 	out.WriteString(managedStart + "\n")
 	if block := renderWebInterface(webInterface, issuers, caddyMode, webPort); block != "" {
 		out.WriteString(block)
 	}
+	if block := renderAccessGateway(accessProvider, issuers, effectiveWebInterfaceUpstream(webInterface, caddyMode)); block != "" {
+		out.WriteString(block)
+	}
 	for _, site := range sites {
 		out.WriteString("# caddymgm:site " + site.ID + "\n")
-		out.WriteString(renderSite(site, issuers, logDir))
+		out.WriteString(renderSite(site, issuers, logDir, effectiveWebInterfaceUpstream(webInterface, caddyMode)))
 		out.WriteString("# caddymgm:end-site\n")
 	}
 	out.WriteString(managedEnd + "\n")
@@ -1599,7 +1673,39 @@ func renderWebInterface(webInterface WebInterface, issuers []ACMEIssuer, caddyMo
 	return out.String()
 }
 
-func renderSite(site Site, issuers []ACMEIssuer, logDir string) string {
+func renderAccessGateway(provider AccessOIDCProvider, issuers []ACMEIssuer, upstream string) string {
+	if !provider.Enabled || upstream == "" {
+		return ""
+	}
+	u, err := url.Parse(provider.GatewayURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	var out strings.Builder
+	out.WriteString("# caddymgm:access-gateway\n")
+	out.WriteString("https://" + u.Host + " {\n")
+	out.WriteString("\trewrite / /.caddymgm/auth/portal\n")
+	out.WriteString("\treverse_proxy /.caddymgm/auth/* " + upstream + "\n")
+	if issuer, ok := findACMEIssuer(issuers, provider.ACMEIssuerID); ok {
+		out.WriteString("\t# caddymgm:tls-issuer " + issuer.ID + "\n")
+		out.WriteString("\ttls {\n")
+		out.WriteString("\t\tissuer acme {\n")
+		out.WriteString("\t\t\tdir " + issuer.DirectoryURL + "\n")
+		if issuer.Email != "" {
+			out.WriteString("\t\t\temail " + issuer.Email + "\n")
+		}
+		if issuer.RootCAFile != "" {
+			out.WriteString("\t\t\ttrusted_roots " + caddyfileQuote(issuer.RootCAFile) + "\n")
+		}
+		out.WriteString("\t\t}\n")
+		out.WriteString("\t}\n")
+	}
+	out.WriteString("}\n")
+	out.WriteString("# caddymgm:end-access-gateway\n")
+	return out.String()
+}
+
+func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream string) string {
 	var out strings.Builder
 	prefix := ""
 	if !site.Enabled {
@@ -1612,6 +1718,17 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir string) string {
 	out.WriteString(prefix + address + " {\n")
 	if site.Comment != "" {
 		out.WriteString(prefix + "\t# caddymgm:comment " + strconv.Quote(site.Comment) + "\n")
+	}
+	if site.AuthEnabled {
+		out.WriteString(prefix + "\t# caddymgm:auth-provider " + site.AuthProviderID + "\n")
+		out.WriteString(prefix + "\t# caddymgm:auth-directive\n")
+		out.WriteString(prefix + "\t@caddymgmProtected not path /.caddymgm/auth/*\n")
+		out.WriteString(prefix + "\tforward_auth @caddymgmProtected " + authGatewayUpstream + " {\n")
+		out.WriteString(prefix + "\t\turi /.caddymgm/auth/check\n")
+		out.WriteString(prefix + "\t\tcopy_headers X-Auth-User X-Auth-Email\n")
+		out.WriteString(prefix + "\t}\n")
+		out.WriteString(prefix + "\treverse_proxy /.caddymgm/auth/* " + authGatewayUpstream + "\n")
+		out.WriteString(prefix + "\t# caddymgm:end-auth-directive\n")
 	}
 	if site.Mode == "static" {
 		out.WriteString(prefix + "\troot * " + site.Root + "\n")
@@ -1677,6 +1794,7 @@ func normalizeSite(site *Site) error {
 	site.ExtraDirectives = cleanExtraDirectives(site.ExtraDirectives)
 	site.TLSMode = strings.TrimSpace(site.TLSMode)
 	site.ACMEIssuerID = strings.TrimSpace(site.ACMEIssuerID)
+	site.AuthProviderID = strings.TrimSpace(site.AuthProviderID)
 	if site.Address == "" {
 		return errors.New("address is required")
 	}
@@ -1722,6 +1840,16 @@ func normalizeSite(site *Site) error {
 	if site.TLSMode != "acme" {
 		site.ACMEIssuerID = ""
 	}
+	if site.AuthEnabled {
+		if site.TLSMode == "off" {
+			return errors.New("website authentication requires TLS")
+		}
+		if site.AuthProviderID == "" {
+			site.AuthProviderID = "oidc"
+		}
+	} else {
+		site.AuthProviderID = ""
+	}
 	return nil
 }
 
@@ -1760,6 +1888,14 @@ func parseManagedComment(raw string) string {
 }
 
 func (a *App) validateSiteLocked(site Site) error {
+	if site.AuthEnabled {
+		if validateAccessProvider(a.authProviders.OIDC) != nil || site.AuthProviderID != a.authProviders.OIDC.ID {
+			return errors.New("selected website access provider is not enabled")
+		}
+		if effectiveWebInterfaceUpstream(a.settings.WebInterface, a.caddyMode) == "" {
+			return errors.New("website authentication requires a reachable CaddyMGM web interface upstream")
+		}
+	}
 	if site.Mode == "static" {
 		if err := validateStaticRoot(site.Root, a.staticRootBase); err != nil {
 			return err
@@ -2721,6 +2857,9 @@ func (a *App) hasValidSessionLocked(r *http.Request) bool {
 }
 
 func isPublicPath(path string) bool {
+	if strings.HasPrefix(path, "/.caddymgm/auth/") {
+		return true
+	}
 	switch path {
 	case "/login.html", "/login.css", "/login.js", "/styles.css", "/CaddyMGM.png", "/favicon.ico", "/api/versions":
 		return true

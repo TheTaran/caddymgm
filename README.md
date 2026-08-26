@@ -22,8 +22,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 ## Planned Upcoming Features
 
-_Last updated: 2026-08-26_
-
+- OIDC Authentication for Website access — Updated: 2026-08-26
 - Integration of LDAP for authentication of websites or OIDC
 - GEO IP Map on Dashboard for Accessed Websites
 - Security features to protect managed websites, including:
@@ -221,45 +220,3 @@ COMPOSE_PROFILES=docker-caddy
 `CADDYMGM_ALLOW_INSECURE_HTTP=true` is intended only for initial setup on a trusted network.
 Set it to `false` and restart CaddyMGM as soon as HTTPS is available. Credentials and session
 cookies are otherwise transmitted without transport encryption.
-
-## Update
-
-Update only CaddyMGM:
-
-```bash
-docker compose pull caddymgm
-docker compose up -d --no-deps caddymgm
-```
-
-Update only Caddy:
-
-```bash
-docker compose pull caddy
-docker compose up -d --no-deps caddy
-```
-
-## Source Layout
-
-Development files live under:
-
-```text
-./caddymgmdev
-```
-
-Main source paths:
-
-| Path | Description |
-| --- | --- |
-| `./caddymgmdev/cmd/server` | Go backend |
-| `./caddymgmdev/cmd/server/web` | Frontend assets |
-| `./caddymgmdev/Dockerfile` | CaddyMGM image build |
-
-## Current Scope
-
-- web host management
-- reverse proxy and static file configuration
-- per-host access logs
-- ACME authority management
-- certificate visibility and forced renew action
-- local auth and OIDC auth
-- Caddy Admin API integration

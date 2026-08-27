@@ -141,6 +141,17 @@
         </section>
 
         <section id="view-dashboard" class="view active">
+          <section class="panel-card geo-map-card">
+            <div class="panel-heading">
+              <h2><span class="panel-title-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" /></svg></span><span>Website Access Map</span></h2>
+              <span class="geo-map-meta"><span id="geo-map-summary">Loading GeoLite2 data...</span><a href="https://www.maxmind.com" target="_blank" rel="noopener noreferrer">GeoLite2 by MaxMind</a></span>
+            </div>
+            <div class="geo-map-layout">
+              <div id="geo-map" class="geo-map" aria-label="Geographic map of website accesses"></div>
+              <aside class="geo-map-sidebar" aria-label="Access details"><section class="geo-top-ips"><div class="geo-sidebar-heading"><strong>Top IPs</strong><span id="geo-top-ip-summary">Retained access logs</span></div><div class="geo-top-controls"><label><span>Scope</span><select id="geo-ip-scope"><option value="all">All</option><option value="internal">Internal</option><option value="external">External</option></select></label><label><span>Web host</span><select id="geo-ip-host"><option value="all">All hosts</option></select></label><label><span>Entries</span><select id="geo-ip-limit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></label></div><div id="geo-top-ip-list" aria-live="polite"></div></section><section id="geo-map-details" class="geo-map-details" aria-live="polite" hidden></section></aside>
+            </div>
+          </section>
+
             <section class="panel-card">
               <div class="panel-heading">
                 <h2>

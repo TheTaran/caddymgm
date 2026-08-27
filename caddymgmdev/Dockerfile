@@ -1,3 +1,5 @@
+FROM ghcr.io/maxmind/geoipupdate:v8.0.0 AS geoipupdate
+
 FROM golang:1.27.0-alpine AS build
 
 WORKDIR /src
@@ -13,6 +15,7 @@ RUN apk add --no-cache ca-certificates \
   && adduser -D -H -u 10001 caddymgm
 WORKDIR /app
 COPY --from=build /out/caddymgm /app/caddymgm
+COPY --from=geoipupdate /usr/bin/geoipupdate /usr/local/bin/geoipupdate
 RUN mkdir -p /config /logs /caddymgm && chown -R caddymgm:caddymgm /config /logs /caddymgm
 
 USER caddymgm

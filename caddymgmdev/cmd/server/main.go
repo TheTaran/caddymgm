@@ -59,6 +59,7 @@ const (
 	accessStateLimit     = 1_000
 	accessTicketLimit    = 1_000
 	accessTicketLifetime = time.Minute
+	geoMapLogLimit       = 5_000
 )
 
 var version = "dev"
@@ -194,6 +195,7 @@ type App struct {
 	caddyMode         string
 	caddyAPIURL       string
 	accessLogDir      string
+	geoIPDBPath       string
 	caddyLogDir       string
 	serviceLog        string
 	oidcAuditLog      string
@@ -284,6 +286,7 @@ func main() {
 	caddyMode := normalizeCaddyMode(env("CADDYMGM_CADDY_MODE", "file"))
 	caddyAPIURL := env("CADDYMGM_CADDY_API_URL", defaultCaddyAPIURL(caddyMode))
 	accessLogDir := env("CADDYMGM_ACCESS_LOG_DIR", "/logs")
+	geoIPDBPath := env("CADDYMGM_GEOIP_DB_PATH", "/caddymgm/geoip/GeoLite2-City.mmdb")
 	caddyLogDir := env("CADDY_ACCESS_LOG_DIR", accessLogDir)
 	serviceLog := env("CADDYMGM_CADDY_SERVICE_LOG", filepath.Join(accessLogDir, "caddy-service.log"))
 	oidcAuditLog := filepath.Join(filepath.Dir(settingsPath), "oidc-audit.log")
@@ -308,6 +311,7 @@ func main() {
 		caddyMode:         caddyMode,
 		caddyAPIURL:       strings.TrimRight(caddyAPIURL, "/"),
 		accessLogDir:      accessLogDir,
+		geoIPDBPath:       geoIPDBPath,
 		caddyLogDir:       caddyLogDir,
 		serviceLog:        serviceLog,
 		oidcAuditLog:      oidcAuditLog,
@@ -337,6 +341,7 @@ func main() {
 	if err := app.ensureAuthProviders(); err != nil {
 		log.Fatalf("prepare auth providers: %v", err)
 	}
+	app.startGeoIPUpdater()
 	if err := app.syncManagedConfig(); err != nil {
 		log.Printf("sync managed caddy config: %v", err)
 	}
@@ -359,6 +364,7 @@ func main() {
 	mux.HandleFunc("GET /api/auth-providers", app.handleGetAuthProviders)
 	mux.HandleFunc("PUT /api/auth-providers", app.handleUpdateAuthProviders)
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
+	mux.HandleFunc("GET /api/geo-map", app.handleGeoMap)
 	mux.HandleFunc("POST /api/certificates/root-ca", app.handleUploadRootCA)
 	mux.HandleFunc("POST /api/certificates/renew/", app.handleRenewCertificate)
 	mux.HandleFunc("POST /api/auth/login", app.handleLogin)

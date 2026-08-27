@@ -14,6 +14,7 @@ CaddyMGM gives you a web UI to:
 - create and edit reverse proxies or static file hosts
 - manage ACME authorities
 - inspect website logs
+- map website accesses by GeoLite2 location and client IP
 - manage CaddyMGM authentication and web interface settings
 - protect individual web hosts through one central OIDC provider
 
@@ -24,7 +25,6 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 - OIDC Authentication for Website access — Updated: 2026-08-26
 - Integration of LDAP for authentication of websites or OIDC
-- GEO IP Map on Dashboard for Accessed Websites
 - Security features to protect managed websites, including:
   - security headers
   - HTTP Strict Transport Security (HSTS)
@@ -70,6 +70,16 @@ http://localhost:8080
 
 For remote access, publish CaddyMGM only behind HTTPS.
 Local `http://localhost:8080` access remains supported for development on the same machine.
+
+## Integrated GeoLite2 Database Updates
+
+Create a free MaxMind account and license key, set `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` in `.env`, then rebuild and start CaddyMGM:
+
+```bash
+docker compose up -d --build
+```
+
+CaddyMGM runs the official `geoipupdate` client inside the CaddyMGM container and refreshes `GeoLite2-City` every 72 hours. The database remains outside the image under `./caddymgm/geoip/GeoLite2-City.mmdb`. No separate updater service is required. Without the database, the dashboard displays a configuration notice and all other features remain available. Client IPs are read only from the retained local Caddy logs and returned only by the authenticated dashboard API.
 
 ## Optional Caddy Service
 
@@ -131,6 +141,9 @@ Enable `SSO / OIDC` on each web host that should require authentication. The fir
 
 ## Web UI Notes
 
+- `Dashboard` shows Top IPs with combined scope (`All`, `Internal`, `External`), web-host, and 10/25/50/100-entry filters. Host selection recalculates request counts and ranking for that host.
+- Private client IPs are included in Top IPs but are not plotted on the public GeoLite2 map.
+
 - New web hosts have logs enabled by default.
 - New web hosts have TLS disabled by default.
 - TLS is only requested when you enable it for a host and select an ACME authority.
@@ -186,6 +199,9 @@ The following variables are used by Docker Compose and CaddyMGM.
 | `CADDYMGM_CADDY_API_URL` | `http://caddy:2019` in example | Caddy Admin API URL for reloads |
 | `CADDYMGM_TRUSTED_PROXIES` | empty | Comma-separated proxy IPs, CIDRs, or hostnames allowed to supply forwarded HTTPS headers |
 | `CADDYMGM_ACCESS_LOG_DIR` | `/logs` | Directory from which CaddyMGM reads website logs |
+| `CADDYMGM_GEOIP_DB_PATH` | `/caddymgm/geoip/GeoLite2-City.mmdb` | Local MaxMind GeoLite2 City database used by the dashboard map |
+| `MAXMIND_ACCOUNT_ID` | empty | Free MaxMind account ID used by the integrated GeoLite2 updater |
+| `MAXMIND_LICENSE_KEY` | empty | MaxMind license key used by the integrated GeoLite2 updater |
 | `CADDYMGM_CADDY_DATA_DIR` | `/caddy-data` | Directory used to inspect certificate data |
 | `CADDYMGM_CA_CERT_DIR` | `/ca-certificates` | Directory for uploaded or mounted Root CAs |
 | `CADDYMGM_STATIC_ROOT_BASE` | `/srv` | Allowed base path for static website document roots |

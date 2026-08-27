@@ -12,6 +12,14 @@ const els = {
   navItems: document.querySelectorAll(".nav-item[data-view]"),
   views: document.querySelectorAll(".view"),
   dashboardSiteList: document.querySelector("#dashboard-site-list"),
+  geoMap: document.querySelector("#geo-map"),
+  geoMapSummary: document.querySelector("#geo-map-summary"),
+  geoTopIPList: document.querySelector("#geo-top-ip-list"),
+  geoTopIPSummary: document.querySelector("#geo-top-ip-summary"),
+  geoIPScope: document.querySelector("#geo-ip-scope"),
+  geoIPHost: document.querySelector("#geo-ip-host"),
+  geoIPLimit: document.querySelector("#geo-ip-limit"),
+  geoMapDetails: document.querySelector("#geo-map-details"),
   siteList: document.querySelector("#site-list"),
   proxyGrid: document.querySelector("#proxy-hosts-grid"),
   editor: document.querySelector("#editor"),
@@ -166,6 +174,7 @@ let editingSite = null;
 let latestSiteLogs = [];
 let latestServiceLogs = [];
 let latestOIDCLogs = [];
+let latestGeoTopIPs = [];
 let latestServiceLogsAvailable = true;
 const LOG_PREVIEW_LIMIT = 10;
 
@@ -189,6 +198,9 @@ els.logSiteFilter.addEventListener("change", () => {
 els.serviceLogToggle.addEventListener("click", toggleServiceLogsExpanded);
 els.siteLogToggle.addEventListener("click", toggleSiteLogsExpanded);
 els.oidcLogToggle.addEventListener("click", toggleOIDCLogsExpanded);
+els.geoIPScope.addEventListener("change", renderTopIPs);
+els.geoIPHost.addEventListener("change", renderTopIPs);
+els.geoIPLimit.addEventListener("change", renderTopIPs);
 els.settingsForm.addEventListener("submit", saveSettings);
 els.settingsPassword.addEventListener("input", syncSettingsPasswordConfirmation);
 els.settingsPasswordConfirm.addEventListener("input", syncSettingsPasswordConfirmation);
@@ -244,7 +256,7 @@ document.querySelectorAll("input[name='mode']").forEach((input) => {
 init();
 
 async function init() {
-  await Promise.all([loadSites(), loadSettings(), loadProfile(), loadVersions()]);
+  await Promise.all([loadSites(), loadSettings(), loadProfile(), loadVersions(), loadGeoMap()]);
   renderLogs([]);
   renderServiceLogs([]);
   renderOIDCLogs([]);
@@ -400,6 +412,7 @@ function showView(view) {
   } else {
     stopLogPolling();
   }
+  if (view === "dashboard") loadGeoMap();
   if (view === "settings") loadSettings();
   if (view === "certificates") renderCertificatesView();
 }
@@ -1548,4 +1561,166 @@ function showConfirmation(message) {
     els.saveConfirmation.classList.remove("visible");
     window.setTimeout(() => { els.saveConfirmation.hidden = true; }, 180);
   }, 2800);
+}
+
+
+async function loadGeoMap() {
+  try {
+    const data = await request("/api/geo-map");
+    renderGeoMap(data);
+  } catch (err) {
+    renderGeoMap({ available: false, message: err.message, locations: [], topIps: [] });
+  }
+}
+
+function renderGeoMap(data = {}) {
+  const locations = Array.isArray(data.locations) ? data.locations : [];
+  const topIPs = Array.isArray(data.topIps) ? data.topIps : [];
+  els.geoMap.innerHTML = "";
+  els.geoMapDetails.innerHTML = "";
+  els.geoMapDetails.hidden = true;
+  latestGeoTopIPs = topIPs;
+  syncGeoTopHostOptions();
+  renderTopIPs();
+
+  if (!data.available) {
+    els.geoMapSummary.textContent = "GeoLite2 database missing";
+    appendGeoMapEmpty(data.message || "GeoLite2 City database is not configured.");
+    return;
+  }
+  const requestCount = Number(data.requests || 0);
+  els.geoMapSummary.textContent = `${requestCount} public request${requestCount === 1 ? "" : "s"} · ${locations.length} location${locations.length === 1 ? "" : "s"}`;
+  if (!locations.length) {
+    appendGeoMapEmpty("No public website accesses found in the retained logs.");
+    return;
+  }
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 1000 500");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = `<g class="geo-graticule"><path d="M0 125h1000M0 250h1000M0 375h1000M250 0v500M500 0v500M750 0v500"/></g>
+    <g class="geo-land"><path d="M65 112 118 69l90 4 46 38 55 9 39 48-31 35-72 4-29 48-43 8-24-37-52-19-41-48Z"/><path d="m250 274 54 18 31 58-18 94-39 45-24-75-28-51Z"/><path d="m449 104 45-28 70 16 26 38 78-8 54 28 94-9 98 49-32 45-85-9-52 28-56-8-36 40-39-6-23-62-51-26-67-3-28-42Z"/><path d="m540 261 53 12 38 54-25 91-46 46-37-62-9-73Z"/><path d="m810 355 47-27 63 16 25 49-42 39-68-14Z"/><path d="m125 61 34-30 64 9-23 27Z"/></g>`;
+  for (const location of locations) {
+    const x = ((Number(location.longitude) + 180) / 360) * 1000;
+    const y = ((90 - Number(location.latitude)) / 180) * 500;
+    const marker = document.createElementNS(svg.namespaceURI, "circle");
+    marker.setAttribute("cx", String(x));
+    marker.setAttribute("cy", String(y));
+    marker.setAttribute("r", String(Math.min(18, 5 + Math.log2(Number(location.count || 1)) * 2)));
+    marker.setAttribute("class", "geo-marker");
+    marker.setAttribute("tabindex", "0");
+    marker.setAttribute("role", "button");
+    marker.setAttribute("aria-label", `${geoLocationLabel(location)}, ${location.count} requests`);
+    marker.addEventListener("click", () => showGeoLocation(location, marker));
+    marker.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        showGeoLocation(location, marker);
+      }
+    });
+    svg.append(marker);
+  }
+  els.geoMap.append(svg);
+}
+
+function syncGeoTopHostOptions() {
+  const current = els.geoIPHost.value;
+  const hosts = [...new Set(latestGeoTopIPs.flatMap((ip) => Array.isArray(ip.sites) ? ip.sites : []))]
+    .sort((left, right) => hostCollator.compare(left, right));
+  els.geoIPHost.innerHTML = "";
+  const all = document.createElement("option");
+  all.value = "all";
+  all.textContent = "All hosts";
+  els.geoIPHost.append(all);
+  for (const host of hosts) {
+    const option = document.createElement("option");
+    option.value = host;
+    option.textContent = host;
+    els.geoIPHost.append(option);
+  }
+  els.geoIPHost.value = hosts.includes(current) ? current : "all";
+}
+
+function renderTopIPs() {
+  els.geoTopIPList.innerHTML = "";
+  const scope = els.geoIPScope.value || "all";
+  const host = els.geoIPHost.value || "all";
+  const limit = Number(els.geoIPLimit.value || 10);
+  const filtered = latestGeoTopIPs.filter((ip) => {
+    const scopeMatches = scope === "all" || ip.scope === scope;
+    const hostMatches = host === "all" || (ip.sites || []).includes(host);
+    return scopeMatches && hostMatches;
+  });
+  filtered.sort((left, right) => {
+    const leftCount = host === "all" ? Number(left.count || 0) : Number(left.siteCounts?.[host] || 0);
+    const rightCount = host === "all" ? Number(right.count || 0) : Number(right.siteCounts?.[host] || 0);
+    return rightCount - leftCount || hostCollator.compare(left.address || "", right.address || "");
+  });
+  const visible = filtered.slice(0, limit);
+  els.geoTopIPSummary.textContent = `${visible.length} of ${filtered.length} IP${filtered.length === 1 ? "" : "s"}`;
+
+  if (!visible.length) {
+    const empty = document.createElement("div");
+    empty.className = "geo-sidebar-empty";
+    empty.textContent = "No client IPs match these filters.";
+    els.geoTopIPList.append(empty);
+    return;
+  }
+  visible.forEach((ip, index) => {
+    const displayCount = host === "all" ? Number(ip.count || 0) : Number(ip.siteCounts?.[host] || 0);
+    const row = document.createElement("div");
+    row.className = "geo-top-ip-row";
+    const rank = document.createElement("span");
+    rank.className = "geo-ip-rank";
+    rank.textContent = String(index + 1);
+    const content = document.createElement("div");
+    const primary = document.createElement("div");
+    primary.className = "geo-ip-primary";
+    const address = document.createElement("code");
+    address.textContent = ip.address || "Unknown IP";
+    const badge = document.createElement("span");
+    badge.className = `geo-scope-badge ${ip.scope === "internal" ? "internal" : "external"}`;
+    badge.textContent = ip.scope === "internal" ? "Internal" : "External";
+    primary.append(address, badge);
+    const meta = document.createElement("span");
+    meta.textContent = `${displayCount} requests · ${host === "all" ? ((ip.sites || []).join(", ") || "Unknown website") : host}`;
+    content.append(primary, meta);
+    row.append(rank, content);
+    els.geoTopIPList.append(row);
+  });
+}
+
+function showGeoLocation(location, marker) {
+  els.geoMap.querySelectorAll(".geo-marker").forEach((item) => item.classList.toggle("active", item === marker));
+  els.geoMapDetails.innerHTML = "";
+  els.geoMapDetails.hidden = false;
+  const heading = document.createElement("div");
+  heading.className = "geo-location-heading";
+  const title = document.createElement("strong");
+  title.textContent = geoLocationLabel(location);
+  const count = document.createElement("span");
+  count.textContent = `${location.count || 0} requests`;
+  heading.append(title, count);
+  els.geoMapDetails.append(heading);
+  for (const ip of location.ips || []) {
+    const row = document.createElement("div");
+    row.className = "geo-ip-row";
+    const address = document.createElement("code");
+    address.textContent = ip.address || "Unknown IP";
+    const meta = document.createElement("span");
+    meta.textContent = `${ip.count || 0} requests · ${(ip.sites || []).join(", ") || "Unknown website"}`;
+    row.append(address, meta);
+    els.geoMapDetails.append(row);
+  }
+}
+
+function geoLocationLabel(location) {
+  return [location.city, location.country || location.countryCode].filter(Boolean).join(", ") || "Unknown location";
+}
+
+function appendGeoMapEmpty(message) {
+  const empty = document.createElement("div");
+  empty.className = "geo-map-empty";
+  empty.textContent = message;
+  els.geoMap.append(empty);
 }

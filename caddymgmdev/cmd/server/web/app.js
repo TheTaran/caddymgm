@@ -1732,7 +1732,7 @@ function renderGeoMap(data = {}) {
     const marker = document.createElementNS(svg.namespaceURI, "circle");
     marker.setAttribute("cx", String(x));
     marker.setAttribute("cy", String(y));
-    marker.setAttribute("r", String(Math.min(18, 5 + Math.log2(Number(location.count || 1)) * 2)));
+    marker.setAttribute("r", "8");
     marker.setAttribute("class", "geo-marker");
     marker.setAttribute("tabindex", "0");
     marker.setAttribute("role", "button");
@@ -1804,12 +1804,15 @@ function renderTopIPs() {
     primary.className = "geo-ip-primary";
     const address = document.createElement("code");
     address.textContent = ip.address || "Unknown IP";
+    const requests = document.createElement("span");
+    requests.className = "geo-request-count";
+    requests.textContent = `${displayCount} request${displayCount === 1 ? "" : "s"}`;
     const badge = document.createElement("span");
     badge.className = `geo-scope-badge ${ip.scope === "internal" ? "internal" : "external"}`;
     badge.textContent = ip.scope === "internal" ? "Internal" : "External";
-    primary.append(address, badge);
+    primary.append(address, requests, badge);
     const meta = document.createElement("span");
-    meta.textContent = `${displayCount} requests · ${host === "all" ? ((ip.sites || []).join(", ") || "Unknown website") : host}`;
+    meta.textContent = host === "all" ? ((ip.sites || []).join(", ") || "Unknown website") : host;
     content.append(primary, meta);
     row.append(rank, content);
     els.geoTopIPList.append(row);
@@ -1833,9 +1836,15 @@ function showGeoLocation(location, marker) {
     row.className = "geo-ip-row";
     const address = document.createElement("code");
     address.textContent = ip.address || "Unknown IP";
+    const primary = document.createElement("div");
+    primary.className = "geo-location-ip-primary";
+    const requests = document.createElement("span");
+    requests.className = "geo-request-count";
+    requests.textContent = `${ip.count || 0} request${Number(ip.count || 0) === 1 ? "" : "s"}`;
     const meta = document.createElement("span");
-    meta.textContent = `${ip.count || 0} requests · ${(ip.sites || []).join(", ") || "Unknown website"}`;
-    row.append(address, meta);
+    meta.textContent = (ip.sites || []).join(", ") || "Unknown website";
+    primary.append(address, requests);
+    row.append(primary, meta);
     els.geoMapDetails.append(row);
   }
 }

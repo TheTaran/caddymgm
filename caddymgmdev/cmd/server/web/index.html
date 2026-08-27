@@ -167,8 +167,10 @@
                 <span>Dashboard Overview</span>
               </div>
             <div class="table-head" data-sort-table="dashboard">
-              <span role="columnheader"><button class="sort-button" type="button" data-sort="address">Address</button></span>
               <span role="columnheader"><button class="sort-button" type="button" data-sort="protocol">Protocol</button></span>
+              <span role="columnheader"><button class="sort-button" type="button" data-sort="address">Address</button></span>
+              <span role="columnheader"><button class="sort-button" type="button" data-sort="certificateProvider">Certificate Provider</button></span>
+              <span role="columnheader"><button class="sort-button" type="button" data-sort="visibility">Visibility</button></span>
               <span role="columnheader"><button class="sort-button" type="button" data-sort="mode">Type</button></span>
               <span role="columnheader"><button class="sort-button" type="button" data-sort="target">Target</button></span>
               <span role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button></span>
@@ -198,8 +200,10 @@
                 <span>Manage individual websites</span>
               </div>
               <div class="table-head" data-sort-table="web-hosts">
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="address">Address</button></span>
                 <span role="columnheader"><button class="sort-button" type="button" data-sort="protocol">Protocol</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="address">Address</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="certificateProvider">Certificate Provider</button></span>
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="visibility">Visibility</button></span>
                 <span role="columnheader"><button class="sort-button" type="button" data-sort="mode">Type</button></span>
                 <span role="columnheader"><button class="sort-button" type="button" data-sort="target">Target</button></span>
                 <span role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button></span>
@@ -623,6 +627,7 @@
         <div class="acme-target">
           <strong id="acme-domain"></strong>
           <span id="acme-authority"></span>
+          <span id="acme-result" class="certificate-check pending" role="status">Checking certificate issuance…</span>
         </div>
         <div class="log-stream-label">
           <span>Realtime</span>

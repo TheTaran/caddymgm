@@ -2867,7 +2867,7 @@ func isPublicPath(path string) bool {
 		return true
 	}
 	switch path {
-	case "/login.html", "/login.css", "/login.js", "/styles.css", "/CaddyMGM.png", "/favicon.ico", "/api/versions":
+	case "/login.html", "/login.css", "/login.js", "/styles.css", "/CaddyMGM.png", "/favicon.ico", "/world-map.svg", "/api/versions":
 		return true
 	case "/api/auth/login":
 		return true

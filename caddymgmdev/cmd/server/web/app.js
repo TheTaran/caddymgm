@@ -102,6 +102,7 @@ const els = {
   acmeDialogClose: document.querySelector("#acme-dialog-close"),
   acmeDomain: document.querySelector("#acme-domain"),
   acmeAuthority: document.querySelector("#acme-authority"),
+  acmeResult: document.querySelector("#acme-result"),
   acmeLogList: document.querySelector("#acme-log-list"),
 };
 
@@ -459,6 +460,7 @@ async function loadSettings() {
     els.settingsCaddyAPIURL.value = settings.caddyApiUrl || "";
     renderCertificatesView();
     renderIssuerOptions();
+    renderHostLists();
     els.settingsWebACME.value = settings.webInterface?.acmeIssuerId || "";
     els.settingsAccessACME.value = providers.oidc?.acmeIssuerId || "";
     syncSettingsPasswordConfirmation();
@@ -710,6 +712,12 @@ function certificateIssuerName(site) {
   return issuer?.name || "ACME Authority";
 }
 
+function certificateProviderName(site) {
+  if (!site?.tlsMode || site.tlsMode === "off") return "None";
+  if (site.tlsMode === "internal") return "Caddy Internal";
+  return certificateIssuerName(site);
+}
+
 function renderIssuerOptions() {
   const current = els.acmeIssuer.value;
   const settingsCurrent = els.settingsWebACME.value;
@@ -851,6 +859,8 @@ function sortedLogs(logs, table) {
 
 function hostSortValue(site, key) {
   switch (key) {
+    case "certificateProvider": return certificateProviderName(site);
+    case "visibility": return visibilityForSite(site).label;
     case "protocol": return protocolForSite(site);
     case "mode": return site.mode === "static" ? "Static" : "Proxy";
     case "target": return site.mode === "static" ? site.root : site.upstream;
@@ -887,7 +897,9 @@ function renderSiteList(container, editable, table) {
     row.className = `site-row ${editable ? "site-row-editable" : "site-row-dashboard"}`;
     row.innerHTML = editable
       ? `
+          <span class="badge"></span>
           <strong></strong>
+          <span class="certificate-provider"></span>
           <span class="badge"></span>
           <span></span>
           <span class="target"></span>
@@ -898,7 +910,9 @@ function renderSiteList(container, editable, table) {
           <div class="site-actions"></div>
         `
       : `
+          <span class="badge"></span>
           <strong></strong>
+          <span class="certificate-provider"></span>
           <span class="badge"></span>
           <span></span>
           <span class="target"></span>
@@ -907,26 +921,32 @@ function renderSiteList(container, editable, table) {
           <span class="badge"></span>
           <span class="target"></span>
         `;
-    row.children[0].textContent = site.address;
+    row.children[1].textContent = site.address;
+    row.children[2].textContent = certificateProviderName(site);
+    row.children[2].title = certificateProviderName(site);
+    const visibility = visibilityForSite(site);
+    row.children[3].textContent = visibility.label;
+    row.children[3].classList.add(visibility.className);
+    row.children[3].title = visibility.description;
     const protocol = protocolForSite(site);
-    row.children[1].textContent = protocol;
-    row.children[1].classList.toggle("secure", protocol === "https");
-    row.children[1].classList.toggle("warn", protocol === "http");
-    row.children[2].textContent = site.mode === "static" ? "Static" : "Proxy";
-    row.children[3].textContent = site.mode === "static" ? site.root : site.upstream;
-    row.children[4].textContent = site.mode === "proxy" ? (site.skipTlsVerify ? "Skipped" : "Verified") : "-";
-    row.children[4].classList.toggle("secure", site.mode === "proxy" && !site.skipTlsVerify);
-    row.children[4].classList.toggle("warn", site.mode === "proxy" && !!site.skipTlsVerify);
-    row.children[4].classList.toggle("off", site.mode !== "proxy");
-    row.children[5].textContent = site.enabled ? "Active" : "Inactive";
-    row.children[5].classList.toggle("off", !site.enabled);
-    row.children[6].textContent = site.authEnabled ? "Enabled" : "Disabled";
-    row.children[6].classList.toggle("secure", !!site.authEnabled);
-    row.children[6].classList.toggle("off", !site.authEnabled);
-    row.children[7].textContent = site.comment || "-";
-    row.children[7].title = site.comment || "";
+    row.children[0].textContent = protocol;
+    row.children[0].classList.toggle("secure", protocol === "https");
+    row.children[0].classList.toggle("warn", protocol === "http");
+    row.children[4].textContent = site.mode === "static" ? "Static" : "Proxy";
+    row.children[5].textContent = site.mode === "static" ? site.root : site.upstream;
+    row.children[6].textContent = site.mode === "proxy" ? (site.skipTlsVerify ? "Skipped" : "Verified") : "-";
+    row.children[6].classList.toggle("secure", site.mode === "proxy" && !site.skipTlsVerify);
+    row.children[6].classList.toggle("warn", site.mode === "proxy" && !!site.skipTlsVerify);
+    row.children[6].classList.toggle("off", site.mode !== "proxy");
+    row.children[7].textContent = site.enabled ? "Active" : "Inactive";
+    row.children[7].classList.toggle("off", !site.enabled);
+    row.children[8].textContent = site.authEnabled ? "Enabled" : "Disabled";
+    row.children[8].classList.toggle("secure", !!site.authEnabled);
+    row.children[8].classList.toggle("off", !site.authEnabled);
+    row.children[9].textContent = site.comment || "-";
+    row.children[9].title = site.comment || "";
     if (editable) {
-      const actions = row.children[8];
+      const actions = row.children[10];
       actions.append(createSiteActionButton("Edit", "secondary", () => {
         showView("proxy-hosts");
         editSite(site);
@@ -1287,6 +1307,7 @@ function syncSiteAuth() {
 
 async function saveSite(event) {
   event.preventDefault();
+  const previousSite = editingSite ? { ...editingSite } : null;
   const mode = getMode();
   if (!mode) {
     setStatus("Select a website type first");
@@ -1321,10 +1342,57 @@ async function saveSite(event) {
     els.id.value = refreshedSite.id || savedID || "";
     els.formTitle.textContent = "Edit Website";
     els.delete.hidden = !els.id.value;
-    showConfirmation("Website saved");
+    if (payload.tlsMode !== "acme") {
+      setStatus("Website saved · TLS disabled");
+      showConfirmation("Website saved · TLS disabled", "success");
+      return;
+    }
+    if (!payload.enabled) {
+      setStatus("Website saved · TLS configured, website inactive");
+      showConfirmation("TLS configured · Website inactive", "pending");
+      return;
+    }
+    if (refreshedSite.certificateExpiresAt) {
+      const message = `TLS certificate active until ${formatCertificateExpiry(refreshedSite.certificateExpiresAt)}`;
+      setStatus(message);
+      showConfirmation(message, "success");
+      return;
+    }
+
+    if (shouldOpenACMEStatus(previousSite, payload, refreshedSite)) showACMEStatus(refreshedSite);
+    setStatus(`Checking TLS certificate for ${refreshedSite.address}...`);
+    showConfirmation("Website saved · Checking TLS certificate…", "pending");
+    const verifiedSite = await waitForCertificate(refreshedSite.id, refreshedSite.address);
+    if (verifiedSite) {
+      editingSite = { ...verifiedSite };
+      setACMEResult("success", `Certificate issued · Valid until ${formatCertificateExpiry(verifiedSite.certificateExpiresAt)}`);
+      await loadSites();
+      const message = `TLS certificate issued successfully for ${verifiedSite.address}`;
+      setStatus(message);
+      showConfirmation(message, "success");
+    } else {
+      setACMEResult("error", "Certificate not issued within 30 seconds. Review the Caddy activity below.");
+      const message = `TLS certificate was not issued for ${refreshedSite.address}`;
+      setStatus(message);
+      showConfirmation(message, "error");
+    }
   } catch (err) {
     setStatus(err.message);
+    setACMEResult("error", err.message);
+    showConfirmation(`Save failed · ${err.message}`, "error");
   }
+}
+
+async function waitForCertificate(siteID, address, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const data = await request("/api/sites");
+    const candidate = (data.sites || []).find((site) => site.id === siteID)
+      || (data.sites || []).find((site) => normalizeAddress(site.address) === normalizeAddress(address));
+    if (candidate?.certificateExpiresAt) return candidate;
+    await new Promise((resolve) => window.setTimeout(resolve, 2000));
+  }
+  return null;
 }
 
 function shouldOpenACMEStatus(previousSite, payload, saved) {
@@ -1360,11 +1428,18 @@ function showACMEStatus(site) {
     domain: String(site.address || "").toLowerCase(),
     startedAt: Date.now() - 5000,
   };
+  setACMEResult("pending", "Checking whether Caddy issued and stored the certificate…");
   els.acmeDialog.showModal();
   renderACMEActivityLogs([], true);
   stopACMEStatusPolling();
   loadServiceLogs();
   acmeDialogTimer = window.setInterval(loadServiceLogs, 2000);
+}
+
+function setACMEResult(kind, message) {
+  if (!els.acmeResult) return;
+  els.acmeResult.className = `certificate-check ${kind}`;
+  els.acmeResult.textContent = message;
 }
 
 function closeACMEStatus() {
@@ -1544,6 +1619,55 @@ function protocolForSite(site) {
   return site?.tlsMode && site.tlsMode !== "off" ? "https" : "http";
 }
 
+function visibilityForSite(site) {
+  const host = hostnameFromSiteAddress(site?.address);
+  const internal = isInternalHostname(host);
+  return internal
+    ? { label: "Internal", className: "internal", description: "Inferred from a local hostname or private IP address" }
+    : { label: "Public", className: "public", description: "Inferred from a public hostname or IP address" };
+}
+
+function hostnameFromSiteAddress(address) {
+  const value = String(address || "").trim().toLowerCase();
+  if (!value || value.startsWith(":")) return "";
+  try {
+    return new URL(value.includes("://") ? value : `http://${value}`).hostname
+      .replace(/^\[|\]$/g, "")
+      .replace(/^\*\./, "")
+      .replace(/\.$/, "");
+  } catch (_) {
+    return value.replace(/^\*\./, "").replace(/:\d+$/, "").replace(/\.$/, "");
+  }
+}
+
+function isInternalHostname(host) {
+  if (!host || host === "localhost") return true;
+  if (host.includes(":")) return isInternalIPAddress(host);
+  if (isInternalIPAddress(host)) return true;
+  if (!host.includes(".")) return true;
+  const internalSuffixes = [
+    ".local", ".localdomain", ".localhost", ".internal", ".lan", ".lds", ".home.arpa", ".test",
+  ];
+  return internalSuffixes.some((suffix) => host.endsWith(suffix));
+}
+
+function isInternalIPAddress(host) {
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const octets = ipv4.slice(1).map(Number);
+    if (octets.some((octet) => octet > 255)) return false;
+    const [first, second] = octets;
+    return first === 0 || first === 10 || first === 127
+      || (first === 100 && second >= 64 && second <= 127)
+      || (first === 169 && second === 254)
+      || (first === 172 && second >= 16 && second <= 31)
+      || (first === 192 && second === 168);
+  }
+  const ipv6 = host.toLowerCase();
+  return ipv6 === "::" || ipv6 === "::1" || ipv6.startsWith("fc") || ipv6.startsWith("fd")
+    || /^fe[89ab]/.test(ipv6);
+}
+
 function setStatus(message) {
   const text = String(message || "");
   els.status.textContent = text.length > 96 ? `${text.slice(0, 93)}...` : text;
@@ -1552,15 +1676,17 @@ function setStatus(message) {
 
 let confirmationTimer = null;
 
-function showConfirmation(message) {
+function showConfirmation(message, kind = "success") {
   window.clearTimeout(confirmationTimer);
   els.saveConfirmation.textContent = String(message || "Saved");
+  els.saveConfirmation.classList.remove("success", "pending", "error");
+  els.saveConfirmation.classList.add(kind);
   els.saveConfirmation.hidden = false;
   requestAnimationFrame(() => els.saveConfirmation.classList.add("visible"));
   confirmationTimer = window.setTimeout(() => {
     els.saveConfirmation.classList.remove("visible");
     window.setTimeout(() => { els.saveConfirmation.hidden = true; }, 180);
-  }, 2800);
+  }, kind === "error" ? 7000 : 4200);
 }
 
 
@@ -1599,7 +1725,7 @@ function renderGeoMap(data = {}) {
   svg.setAttribute("viewBox", "0 0 1000 500");
   svg.setAttribute("aria-hidden", "true");
   svg.innerHTML = `<g class="geo-graticule"><path d="M0 125h1000M0 250h1000M0 375h1000M250 0v500M500 0v500M750 0v500"/></g>
-    <g class="geo-land"><path d="M65 112 118 69l90 4 46 38 55 9 39 48-31 35-72 4-29 48-43 8-24-37-52-19-41-48Z"/><path d="m250 274 54 18 31 58-18 94-39 45-24-75-28-51Z"/><path d="m449 104 45-28 70 16 26 38 78-8 54 28 94-9 98 49-32 45-85-9-52 28-56-8-36 40-39-6-23-62-51-26-67-3-28-42Z"/><path d="m540 261 53 12 38 54-25 91-46 46-37-62-9-73Z"/><path d="m810 355 47-27 63 16 25 49-42 39-68-14Z"/><path d="m125 61 34-30 64 9-23 27Z"/></g>`;
+    <image class="geo-land-map" href="/world-map.svg" x="0" y="0" width="1000" height="500" preserveAspectRatio="none"/>`;
   for (const location of locations) {
     const x = ((Number(location.longitude) + 180) / 360) * 1000;
     const y = ((90 - Number(location.latitude)) / 180) * 500;

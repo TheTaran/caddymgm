@@ -490,6 +490,18 @@ h2 {
   transform: translateY(0);
 }
 
+.save-confirmation.pending {
+  border-color: rgba(91, 184, 255, 0.45);
+  background: #122330;
+  color: var(--accent);
+}
+
+.save-confirmation.error {
+  border-color: rgba(255, 45, 99, 0.5);
+  background: #30141d;
+  color: #ff9ab5;
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -580,12 +592,12 @@ h2 {
 
 #view-dashboard .table-head,
 .site-row-dashboard {
-  grid-template-columns: minmax(190px, 1fr) 82px 68px minmax(190px, 1.15fr) 108px 82px 96px minmax(140px, 0.75fr);
+  grid-template-columns: 76px minmax(170px, 1fr) minmax(115px, 0.7fr) 88px 64px minmax(160px, 1.1fr) 100px 76px 90px minmax(110px, 0.7fr);
 }
 
 #view-proxy-hosts .table-head,
 .site-row-editable {
-  grid-template-columns: minmax(190px, 1fr) 82px 68px minmax(190px, 1.15fr) 108px 82px 96px minmax(140px, 0.75fr) 200px;
+  grid-template-columns: 76px minmax(170px, 1fr) minmax(115px, 0.7fr) 88px 64px minmax(160px, 1.1fr) 100px 76px 90px minmax(110px, 0.7fr) 200px;
 }
 
 .table-head {
@@ -729,6 +741,13 @@ h2 {
   white-space: nowrap;
 }
 
+.certificate-provider {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .empty-state {
   padding: 20px 16px;
 }
@@ -760,6 +779,16 @@ h2 {
 .badge.secure {
   background: rgba(83, 201, 139, 0.14);
   color: #72d6a0;
+}
+
+.badge.internal {
+  background: rgba(255, 174, 54, 0.14);
+  color: var(--warning);
+}
+
+.badge.public {
+  background: rgba(84, 214, 144, 0.13);
+  color: var(--ok);
 }
 
 .editor-card[hidden] {
@@ -1284,6 +1313,30 @@ dialog {
   color: var(--muted);
 }
 
+.acme-target .certificate-check {
+  width: fit-content;
+  margin-top: 8px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.acme-target .certificate-check.pending {
+  background: rgba(91, 184, 255, 0.13);
+  color: var(--accent);
+}
+
+.acme-target .certificate-check.success {
+  background: rgba(83, 201, 139, 0.14);
+  color: #72d6a0;
+}
+
+.acme-target .certificate-check.error {
+  background: rgba(255, 45, 99, 0.13);
+  color: #ff9ab5;
+}
+
 .acme-status ol {
   display: grid;
   gap: 8px;
@@ -1573,11 +1626,8 @@ pre {
   stroke-width: 1;
 }
 
-.geo-land path {
-  fill: rgba(103, 135, 153, 0.3);
-  stroke: rgba(164, 197, 215, 0.3);
-  stroke-width: 1.5;
-  stroke-linejoin: round;
+.geo-land-map {
+  opacity: 0.92;
 }
 
 .geo-marker {

@@ -39,6 +39,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 | View | Preview |
 | --- | --- |
+| **Login**<br>Authenticate through the local administrator account before opening the management interface. | <img src="./caddymgmdev/cmd/server/web/login.png" alt="CaddyMGM login interface" width="760" /> |
 | **Dashboard**<br>See all managed web hosts and their current state at a glance. | <img src="./caddymgmdev/cmd/server/web/dashboard.png" alt="CaddyMGM Dashboard interface" width="760" /> |
 | **Web Hosts**<br>Create and edit reverse proxies and static websites from the rule editor. | <img src="./caddymgmdev/cmd/server/web/web-hosts.png" alt="CaddyMGM Web Hosts interface" width="760" /> |
 | **Certificates**<br>Manage built-in and custom ACME authorities and inspect issued certificates. | <img src="./caddymgmdev/cmd/server/web/certificates.png" alt="CaddyMGM Certificates interface" width="760" /> |

@@ -600,11 +600,25 @@ h2 {
   grid-template-columns: 76px minmax(170px, 1fr) minmax(115px, 0.7fr) 88px 64px minmax(160px, 1.1fr) 100px 76px 90px minmax(110px, 0.7fr) 200px;
 }
 
-#view-proxy-hosts .sites {
+#view-proxy-hosts .site-table-scroll {
   max-height: 70vh;
   overflow: auto;
   scrollbar-color: rgba(137, 151, 168, 0.65) transparent;
   scrollbar-width: thin;
+}
+
+#view-proxy-hosts .site-table-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+#view-proxy-hosts .site-table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#view-proxy-hosts .site-table-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(137, 151, 168, 0.65);
 }
 
 #view-proxy-hosts .table-head,
@@ -618,24 +632,9 @@ h2 {
   z-index: 3;
 }
 
-#view-proxy-hosts .site-row-editable {
-  overflow: visible;
-}
-
-#view-proxy-hosts .table-head > :last-child,
-#view-proxy-hosts .site-row-editable .site-actions {
-  position: sticky;
-  right: 10px;
-  z-index: 2;
-  padding-left: 10px;
-  background: #1d2028;
-  box-shadow: -12px 0 16px rgba(12, 14, 18, 0.78);
-}
-
 #view-proxy-hosts .table-head > :last-child {
-  align-self: stretch;
+  justify-self: end;
   justify-content: flex-end;
-  z-index: 4;
 }
 
 .table-head {
@@ -1983,17 +1982,13 @@ pre {
     min-width: 0;
   }
 
-  #view-proxy-hosts .sites {
+  #view-proxy-hosts .site-table-scroll {
     max-height: none;
     overflow: auto;
   }
 
   #view-proxy-hosts .site-row-editable .site-actions {
-    position: static;
     justify-self: start;
     justify-content: flex-start;
-    padding-left: 0;
-    background: transparent;
-    box-shadow: none;
   }
 }

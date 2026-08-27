@@ -601,7 +601,8 @@ h2 {
 }
 
 #view-proxy-hosts .sites {
-  overflow-x: auto;
+  max-height: 70vh;
+  overflow: auto;
   scrollbar-color: rgba(137, 151, 168, 0.65) transparent;
   scrollbar-width: thin;
 }
@@ -609,6 +610,12 @@ h2 {
 #view-proxy-hosts .table-head,
 #view-proxy-hosts .site-list {
   min-width: 1420px;
+}
+
+#view-proxy-hosts .table-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 
 #view-proxy-hosts .site-row-editable {
@@ -628,6 +635,7 @@ h2 {
 #view-proxy-hosts .table-head > :last-child {
   align-self: stretch;
   justify-content: flex-end;
+  z-index: 4;
 }
 
 .table-head {
@@ -1790,7 +1798,7 @@ pre {
 #geo-top-ip-list {
   min-height: 0;
   flex: 1 1 auto;
-  overflow-y: auto;
+  overflow: auto;
   scrollbar-color: rgba(137, 151, 168, 0.65) transparent;
   scrollbar-width: thin;
 }
@@ -1976,7 +1984,8 @@ pre {
   }
 
   #view-proxy-hosts .sites {
-    overflow-x: hidden;
+    max-height: none;
+    overflow: auto;
   }
 
   #view-proxy-hosts .site-row-editable .site-actions {

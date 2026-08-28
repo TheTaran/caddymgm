@@ -561,6 +561,10 @@ h2 {
   margin-top: 16px;
 }
 
+#proxy-hosts-grid.editor-open > .sites {
+  display: none;
+}
+
 .panel-card {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -601,7 +605,6 @@ h2 {
 }
 
 #view-proxy-hosts .site-table-scroll {
-  max-height: 70vh;
   overflow: auto;
   scrollbar-color: rgba(137, 151, 168, 0.65) transparent;
   scrollbar-width: thin;
@@ -2294,9 +2297,9 @@ pre {
 .geo-ip-country {
   max-width: 120px;
   overflow: hidden;
-  color: var(--muted);
+  color: #fff;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

@@ -987,6 +987,81 @@ label {
   opacity: 0.5;
 }
 
+.proxy-behavior-overview {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #15171d;
+}
+
+.proxy-overview-heading,
+.proxy-overview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 13px;
+}
+
+.proxy-overview-heading,
+.proxy-overview-row:not(:last-child) {
+  border-bottom: 1px solid var(--line);
+}
+
+.proxy-overview-heading h3,
+.proxy-overview-heading p,
+.proxy-overview-row strong,
+.proxy-overview-row span {
+  margin: 0;
+}
+
+.proxy-overview-heading h3 {
+  font-size: 13px;
+}
+
+.proxy-overview-heading p,
+.proxy-overview-row span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.proxy-overview-row code {
+  color: var(--primary);
+  font-size: 12px;
+  text-align: right;
+}
+
+.proxy-overview-redirects {
+  align-items: flex-start;
+  border-bottom: 0;
+}
+
+.proxy-overview-rule-list {
+  display: grid;
+  gap: 5px;
+  min-width: min(560px, 55%);
+  text-align: right;
+}
+
+.proxy-overview-rule-list code {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .proxy-overview-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .proxy-overview-row code,
+  .proxy-overview-rule-list {
+    min-width: 0;
+    text-align: left;
+  }
+}
+
 input,
 select,
 textarea {

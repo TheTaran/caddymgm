@@ -294,6 +294,27 @@
                     <span class="status-check-title">Skip upstream TLS verification</span>
                     <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
                     </label>
+                  <section id="proxy-behavior-overview" class="proxy-behavior-overview" hidden>
+                    <div class="proxy-overview-heading">
+                      <div>
+                        <h3>Reverse proxy behavior</h3>
+                        <p>Effective request forwarding and redirect rules for this website.</p>
+                      </div>
+                      <span class="badge secure">Managed</span>
+                    </div>
+                    <div class="proxy-overview-row">
+                      <div><strong>Public Host header</strong><span>Host sent to the upstream application</span></div>
+                      <code id="proxy-overview-host">—</code>
+                    </div>
+                    <div class="proxy-overview-row">
+                      <div><strong>Forwarded headers</strong><span>X-Forwarded-Host and X-Forwarded-Proto, automatically managed by Caddy</span></div>
+                      <code id="proxy-overview-forwarded">—</code>
+                    </div>
+                    <div class="proxy-overview-row proxy-overview-redirects">
+                      <div><strong>Redirect mappings</strong><span>Internal origins rewritten to the public website</span></div>
+                      <div id="proxy-overview-redirect-list" class="proxy-overview-rule-list"><span class="muted">No mapping available</span></div>
+                    </div>
+                  </section>
                   <label id="rewrite-redirects-row" class="status-check" hidden>
                     <input id="rewrite-redirects" type="checkbox" checked />
                     <span class="status-check-title">Rewrite internal redirects</span>

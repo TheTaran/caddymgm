@@ -52,6 +52,10 @@ const els = {
   hstsEnabledRow: document.querySelector("#hsts-enabled-row"),
   rewriteRedirectsHint: document.querySelector("#rewrite-redirects-hint"),
   redirectOriginsHint: document.querySelector("#redirect-origins-hint"),
+  proxyBehaviorOverview: document.querySelector("#proxy-behavior-overview"),
+  proxyOverviewHost: document.querySelector("#proxy-overview-host"),
+  proxyOverviewForwarded: document.querySelector("#proxy-overview-forwarded"),
+  proxyOverviewRedirectList: document.querySelector("#proxy-overview-redirect-list"),
   hstsEnabledHint: document.querySelector("#hsts-enabled-hint"),
   securityHeaderProfileHint: document.querySelector("#security-header-profile-hint"),
   rootRow: document.querySelector("#root-row"),
@@ -272,6 +276,9 @@ els.rewriteRedirects.addEventListener("change", syncMode);
 els.siteAuthEnabled.addEventListener("change", syncSiteAuth);
 els.basicAuthEnabled.addEventListener("change", syncBasicAuth);
 els.upstream.addEventListener("input", syncUpstreamTLS);
+els.upstream.addEventListener("input", syncProxyBehaviorOverview);
+els.address.addEventListener("input", syncProxyBehaviorOverview);
+els.redirectOrigins.addEventListener("input", syncProxyBehaviorOverview);
 els.acmeDialogClose.addEventListener("click", closeACMEStatus);
 els.acmeDialog.addEventListener("close", stopACMEStatusPolling);
 els.acmeDialog.addEventListener("cancel", stopACMEStatusPolling);
@@ -1483,6 +1490,7 @@ function syncMode() {
   setFieldVisible(els.skipTlsVerifyRow, mode === "proxy");
   setFieldVisible(els.rewriteRedirectsRow, mode === "proxy");
   setFieldVisible(els.rewriteRedirectsHint, mode === "proxy");
+  setFieldVisible(els.proxyBehaviorOverview, mode === "proxy");
   const showRedirectOrigins = mode === "proxy" && els.rewriteRedirects.checked;
   setFieldVisible(els.redirectOriginsRow, showRedirectOrigins);
   setFieldVisible(els.redirectOriginsHint, showRedirectOrigins);
@@ -1505,6 +1513,39 @@ function syncMode() {
     els.root.value = "";
   }
   syncUpstreamTLS();
+  syncProxyBehaviorOverview();
+}
+
+function syncProxyBehaviorOverview() {
+  if (getMode() !== "proxy") return;
+  const publicHost = els.address.value.trim() || "Public website host";
+  const publicScheme = els.tlsEnabled.checked ? "https" : "http";
+  const publicOrigin = `${publicScheme}://${publicHost}`;
+  els.proxyOverviewHost.textContent = publicHost;
+  els.proxyOverviewForwarded.textContent = `${publicHost} · ${publicScheme}`;
+
+  const origins = [];
+  try {
+    const upstream = new URL(els.upstream.value.trim());
+    origins.push(upstream.origin);
+  } catch (_) {
+    // The regular form validation reports an incomplete upstream.
+  }
+  els.redirectOrigins.value.split(/\r?\n/).map((origin) => origin.trim()).filter(Boolean).forEach((origin) => origins.push(origin.replace(/\/$/, "")));
+  const uniqueOrigins = [...new Set(origins.map((origin) => origin.toLowerCase()))];
+  els.proxyOverviewRedirectList.replaceChildren();
+  if (!els.rewriteRedirects.checked || uniqueOrigins.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "muted";
+    empty.textContent = els.rewriteRedirects.checked ? "No mapping available" : "Redirect rewriting disabled";
+    els.proxyOverviewRedirectList.append(empty);
+    return;
+  }
+  uniqueOrigins.forEach((origin) => {
+    const rule = document.createElement("code");
+    rule.textContent = `${origin} → ${publicOrigin}`;
+    els.proxyOverviewRedirectList.append(rule);
+  });
 }
 
 function syncUpstreamTLS() {
@@ -1536,6 +1577,7 @@ function syncTLSMode() {
   } else if (!els.acmeIssuer.value && els.acmeIssuer.options.length > 0) {
     els.acmeIssuer.value = els.acmeIssuer.options[0].value;
   }
+  syncProxyBehaviorOverview();
 }
 
 function syncSecurityHeaderProfile() {

@@ -27,6 +27,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 - Security controls for managed websites — Added: 2026-08-28
   - rewrite redirects that expose the configured internal reverse-proxy origin
   - configurable additional internal redirect origins for upstream applications that advertise a different hostname — Added: 2026-08-28
+  - managed public Host header, automatic Caddy forwarded headers, and an effective reverse-proxy behavior overview — Added: 2026-08-28
   - HTTP Strict Transport Security (HSTS) for TLS-enabled web hosts
   - configurable Standard and Strict security header profiles per web host
   - per-web-host Basic Authentication with bcrypt-hashed passwords
@@ -35,7 +36,43 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 ## Planned Upcoming Features
 
-- Integration of LDAP for authentication of websites or OIDC
+### Configuration and policy management
+
+- Global defaults with per-web-host `Use Global` / `Customize` overrides
+
+### Client IP and network listeners
+
+- Configurable visitor IP source (`Get Attack IP From`)
+- Explicit IPv6 listener configuration
+- Per-web-host IPv4/IPv6 and port 80/443 listener selection
+- Controlled clearing and rewriting of `X-Forwarded-For`
+
+### HTTP routing and transport
+
+- Configurable automatic HTTP-to-HTTPS redirects
+- Server-Sent Events (SSE) streaming support
+- Configurable upstream read timeout
+- Configurable upstream connection timeout
+- Advanced low-level reverse-proxy configuration
+
+### Compression and performance
+
+- Configurable Gzip compression
+- Configurable Brotli compression
+
+### Authentication
+
+- LDAP integration for website authentication or OIDC
+- NTLM authentication
+
+### TLS controls
+
+- Configurable allowed TLS protocol versions, including TLS 1.2 and TLS 1.3
+- Configurable TLS cipher suites
+
+### HTTP headers and access security
+
+- Configurable HTTP header operations
 - Additional security features to protect managed websites, including:
   - access policies for everyone, allowed IPs, or blocked IPs
   - IP address and CIDR lists

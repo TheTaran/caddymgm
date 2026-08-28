@@ -1625,6 +1625,9 @@ func parseSite(id string, lines []string) (Site, error) {
 			if strings.HasPrefix(line, "header_down Location ") {
 				continue
 			}
+			if line == "header_up Host {host}" {
+				continue
+			}
 			if line == "transport http {" {
 				inTransport = true
 				transportDepth = braceDelta(line)
@@ -1966,23 +1969,20 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 		redirectRules := redirectRewriteRules(site)
 		canRewrite := len(redirectRules) > 0
 		skipTLSVerify := site.SkipTLSVerify && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(site.Upstream)), "http://")
-		if (site.RewriteRedirects && canRewrite) || skipTLSVerify {
-			out.WriteString(prefix + "\treverse_proxy " + site.Upstream + " {\n")
-			if site.RewriteRedirects && canRewrite {
-				for _, rule := range redirectRules {
-					out.WriteString(prefix + "\t\theader_down Location " + caddyfileQuote(rule[0]) + " " + caddyfileQuote(rule[1]) + "\n")
-				}
+		out.WriteString(prefix + "\treverse_proxy " + site.Upstream + " {\n")
+		out.WriteString(prefix + "\t\theader_up Host {host}\n")
+		if site.RewriteRedirects && canRewrite {
+			for _, rule := range redirectRules {
+				out.WriteString(prefix + "\t\theader_down Location " + caddyfileQuote(rule[0]) + " " + caddyfileQuote(rule[1]) + "\n")
 			}
-			if skipTLSVerify {
-				out.WriteString(prefix + "\t\t# caddymgm:skip-tls-verify\n")
-				out.WriteString(prefix + "\t\ttransport http {\n")
-				out.WriteString(prefix + "\t\t\ttls_insecure_skip_verify\n")
-				out.WriteString(prefix + "\t\t}\n")
-			}
-			out.WriteString(prefix + "\t}\n")
-		} else {
-			out.WriteString(prefix + "\treverse_proxy " + site.Upstream + "\n")
 		}
+		if skipTLSVerify {
+			out.WriteString(prefix + "\t\t# caddymgm:skip-tls-verify\n")
+			out.WriteString(prefix + "\t\ttransport http {\n")
+			out.WriteString(prefix + "\t\t\ttls_insecure_skip_verify\n")
+			out.WriteString(prefix + "\t\t}\n")
+		}
+		out.WriteString(prefix + "\t}\n")
 	}
 	if site.HSTSEnabled && site.TLSMode != "" && site.TLSMode != "off" {
 		out.WriteString(prefix + "\t# caddymgm:hsts\n")

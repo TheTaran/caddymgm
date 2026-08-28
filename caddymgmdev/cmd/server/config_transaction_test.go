@@ -104,6 +104,23 @@ func TestRedirectRewriteRuleMatchesOnlyConfiguredUpstreamOrigin(t *testing.T) {
 	}
 }
 
+func TestReverseProxyForwardsPublicRequestIdentity(t *testing.T) {
+	site := Site{ID: "mail", Address: "mail.homedc.net", Mode: "proxy", Upstream: "https://10.0.100.102", TLSMode: "acme", Enabled: true, RewriteRedirects: true}
+	rendered := renderSite(site, nil, "/logs", "caddymgm:8080")
+	for _, want := range []string{"header_up Host {host}", "header_down Location"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered proxy is missing %q:\n%s", want, rendered)
+		}
+	}
+	parsed, err := parseSite(site.ID, strings.Split(rendered, "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.ExtraDirectives != "" {
+		t.Fatalf("managed forwarding headers leaked into additional settings: %q", parsed.ExtraDirectives)
+	}
+}
+
 func TestAdditionalRedirectOriginsRenderParseAndValidate(t *testing.T) {
 	site := Site{
 		ID: "mail", Address: "mail.homedc.net", Mode: "proxy",

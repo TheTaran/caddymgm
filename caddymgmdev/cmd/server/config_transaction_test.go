@@ -104,6 +104,44 @@ func TestRedirectRewriteRuleMatchesOnlyConfiguredUpstreamOrigin(t *testing.T) {
 	}
 }
 
+func TestAdditionalRedirectOriginsRenderParseAndValidate(t *testing.T) {
+	site := Site{
+		ID: "mail", Address: "mail.homedc.net", Mode: "proxy",
+		Upstream: "https://10.0.100.102", TLSMode: "acme", Enabled: true,
+		RewriteRedirects: true,
+		RedirectOrigins:  []string{" https://mail.alonso.lds:443/ ", "https://MAIL.alonso.lds:443"},
+	}
+	if err := normalizeSite(&site); err != nil {
+		t.Fatal(err)
+	}
+	if len(site.RedirectOrigins) != 1 || site.RedirectOrigins[0] != "https://mail.alonso.lds:443" {
+		t.Fatalf("normalized redirect origins = %#v", site.RedirectOrigins)
+	}
+	rendered := renderSite(site, nil, "/logs", "caddymgm:8080")
+	for _, want := range []string{
+		`# caddymgm:redirect-origin "https://mail.alonso.lds:443"`,
+		`(?i)^https://mail\\.alonso\\.lds:443([/?#].*)?$`,
+		`https://mail.homedc.net${1}`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered site is missing %q:\n%s", want, rendered)
+		}
+	}
+	parsed, err := parseSite(site.ID, strings.Split(rendered, "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.RedirectOrigins) != 1 || parsed.RedirectOrigins[0] != site.RedirectOrigins[0] {
+		t.Fatalf("parsed redirect origins = %#v", parsed.RedirectOrigins)
+	}
+
+	invalid := site
+	invalid.RedirectOrigins = []string{"https://mail.alonso.lds/webmail"}
+	if err := normalizeSite(&invalid); err == nil || !strings.Contains(err.Error(), "redirect origins") {
+		t.Fatalf("normalizeSite() error = %v, want redirect origin validation error", err)
+	}
+}
+
 func TestRenderAndParseSitePreservesManagedSecurityOptions(t *testing.T) {
 	site := Site{
 		ID: "public", Address: "public.example.test", Mode: "proxy",

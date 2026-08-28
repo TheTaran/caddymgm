@@ -26,6 +26,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 - OIDC Authentication for Website access — Updated: 2026-08-26
 - Security controls for managed websites — Added: 2026-08-28
   - rewrite redirects that expose the configured internal reverse-proxy origin
+  - configurable additional internal redirect origins for upstream applications that advertise a different hostname — Added: 2026-08-28
   - HTTP Strict Transport Security (HSTS) for TLS-enabled web hosts
   - configurable Standard and Strict security header profiles per web host
   - per-web-host Basic Authentication with bcrypt-hashed passwords

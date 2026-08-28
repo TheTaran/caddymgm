@@ -41,14 +41,17 @@ const els = {
   upstream: document.querySelector("#upstream"),
   skipTlsVerify: document.querySelector("#skip-tls-verify"),
   rewriteRedirects: document.querySelector("#rewrite-redirects"),
+  redirectOrigins: document.querySelector("#redirect-origins"),
   hstsEnabled: document.querySelector("#hsts-enabled"),
   securityHeaderProfile: document.querySelector("#security-header-profile"),
   root: document.querySelector("#root"),
   upstreamRow: document.querySelector("#upstream-row"),
   skipTlsVerifyRow: document.querySelector("#skip-tls-verify-row"),
   rewriteRedirectsRow: document.querySelector("#rewrite-redirects-row"),
+  redirectOriginsRow: document.querySelector("#redirect-origins-row"),
   hstsEnabledRow: document.querySelector("#hsts-enabled-row"),
   rewriteRedirectsHint: document.querySelector("#rewrite-redirects-hint"),
+  redirectOriginsHint: document.querySelector("#redirect-origins-hint"),
   hstsEnabledHint: document.querySelector("#hsts-enabled-hint"),
   securityHeaderProfileHint: document.querySelector("#security-header-profile-hint"),
   rootRow: document.querySelector("#root-row"),
@@ -265,6 +268,7 @@ els.issuerRootCAUploadButton.addEventListener("click", uploadRootCA);
 els.tlsEnabled.addEventListener("change", syncTLSMode);
 els.hstsEnabled.addEventListener("change", syncTLSMode);
 els.securityHeaderProfile.addEventListener("change", syncSecurityHeaderProfile);
+els.rewriteRedirects.addEventListener("change", syncMode);
 els.siteAuthEnabled.addEventListener("change", syncSiteAuth);
 els.basicAuthEnabled.addEventListener("change", syncBasicAuth);
 els.upstream.addEventListener("input", syncUpstreamTLS);
@@ -1165,6 +1169,7 @@ async function toggleSiteEnabled(site) {
         upstream: site.upstream || "",
         skipTlsVerify: !!site.skipTlsVerify,
         rewriteRedirects: site.rewriteRedirects !== false,
+        redirectOrigins: site.redirectOrigins || [],
         hstsEnabled: !!site.hstsEnabled,
         securityHeaderProfile: site.securityHeaderProfile || "",
         root: site.root || "",
@@ -1435,6 +1440,7 @@ function editSite(site = null) {
   els.upstream.value = site?.upstream || "";
   els.skipTlsVerify.checked = !!site?.skipTlsVerify;
   els.rewriteRedirects.checked = site ? site.rewriteRedirects !== false : true;
+  els.redirectOrigins.value = (site?.redirectOrigins || []).join("\n");
   els.hstsEnabled.checked = !!site?.hstsEnabled;
   els.securityHeaderProfile.value = site?.securityHeaderProfile || "";
   els.root.value = site?.root || "";
@@ -1477,12 +1483,16 @@ function syncMode() {
   setFieldVisible(els.skipTlsVerifyRow, mode === "proxy");
   setFieldVisible(els.rewriteRedirectsRow, mode === "proxy");
   setFieldVisible(els.rewriteRedirectsHint, mode === "proxy");
+  const showRedirectOrigins = mode === "proxy" && els.rewriteRedirects.checked;
+  setFieldVisible(els.redirectOriginsRow, showRedirectOrigins);
+  setFieldVisible(els.redirectOriginsHint, showRedirectOrigins);
   setFieldVisible(els.rootRow, mode === "static");
   els.upstream.required = mode === "proxy";
   els.root.required = mode === "static";
   els.upstream.disabled = mode !== "proxy";
   els.skipTlsVerify.disabled = mode !== "proxy";
   els.rewriteRedirects.disabled = mode !== "proxy";
+  els.redirectOrigins.disabled = !showRedirectOrigins;
   els.root.disabled = mode !== "static";
   if (mode === "proxy") {
     els.root.value = "";
@@ -1586,6 +1596,9 @@ async function saveSite(event) {
     upstream: els.upstream.value,
     skipTlsVerify: els.skipTlsVerify.checked,
     rewriteRedirects: mode === "proxy" && els.rewriteRedirects.checked,
+    redirectOrigins: mode === "proxy" && els.rewriteRedirects.checked
+      ? els.redirectOrigins.value.split(/\r?\n/).map((origin) => origin.trim()).filter(Boolean)
+      : [],
     hstsEnabled: els.tlsEnabled.checked && els.hstsEnabled.checked,
     securityHeaderProfile: els.securityHeaderProfile.value,
     root: els.root.value,

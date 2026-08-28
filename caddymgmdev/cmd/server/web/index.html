@@ -299,7 +299,12 @@
                     <span class="status-check-title">Rewrite internal redirects</span>
                     <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
                     </label>
-                  <p id="rewrite-redirects-hint" class="field-hint">Rewrites only redirects pointing to the configured upstream origin. External redirects remain unchanged.</p>
+                  <p id="rewrite-redirects-hint" class="field-hint">Rewrites redirects pointing to the configured upstream or the additional internal origins. Other redirects remain unchanged.</p>
+                  <label id="redirect-origins-row" hidden>
+                    Additional redirect origins
+                    <textarea id="redirect-origins" rows="3" placeholder="https://internal.example.local:443"></textarea>
+                  </label>
+                  <p id="redirect-origins-hint" class="field-hint" hidden>One internal HTTP or HTTPS origin per line. Paths and external destinations are not accepted.</p>
                   <label id="hsts-enabled-row" class="status-check">
                     <input id="hsts-enabled" type="checkbox" />
                     <span class="status-check-title">HTTP Strict Transport Security (HSTS)</span>

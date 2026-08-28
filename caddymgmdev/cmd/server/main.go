@@ -68,50 +68,52 @@ var version = "dev"
 var webFS embed.FS
 
 type Site struct {
-	ID                    string `json:"id"`
-	Address               string `json:"address"`
-	Comment               string `json:"comment,omitempty"`
-	Mode                  string `json:"mode"`
-	Upstream              string `json:"upstream,omitempty"`
-	SkipTLSVerify         bool   `json:"skipTlsVerify,omitempty"`
-	RewriteRedirects      bool   `json:"rewriteRedirects"`
-	HSTSEnabled           bool   `json:"hstsEnabled,omitempty"`
-	SecurityHeaderProfile string `json:"securityHeaderProfile,omitempty"`
-	Root                  string `json:"root,omitempty"`
-	ExtraDirectives       string `json:"extraDirectives,omitempty"`
-	LogsEnabled           bool   `json:"logsEnabled"`
-	TLSMode               string `json:"tlsMode"`
-	ACMEIssuerID          string `json:"acmeIssuerId,omitempty"`
-	CertificateExpiresAt  string `json:"certificateExpiresAt,omitempty"`
-	Enabled               bool   `json:"enabled"`
-	AuthEnabled           bool   `json:"authEnabled,omitempty"`
-	AuthProviderID        string `json:"authProviderId,omitempty"`
-	BasicAuthEnabled      bool   `json:"basicAuthEnabled,omitempty"`
-	BasicAuthUsername     string `json:"basicAuthUsername,omitempty"`
-	BasicAuthPasswordHash string `json:"-"`
-	BasicAuthPassword     string `json:"-"`
+	ID                    string   `json:"id"`
+	Address               string   `json:"address"`
+	Comment               string   `json:"comment,omitempty"`
+	Mode                  string   `json:"mode"`
+	Upstream              string   `json:"upstream,omitempty"`
+	SkipTLSVerify         bool     `json:"skipTlsVerify,omitempty"`
+	RewriteRedirects      bool     `json:"rewriteRedirects"`
+	RedirectOrigins       []string `json:"redirectOrigins,omitempty"`
+	HSTSEnabled           bool     `json:"hstsEnabled,omitempty"`
+	SecurityHeaderProfile string   `json:"securityHeaderProfile,omitempty"`
+	Root                  string   `json:"root,omitempty"`
+	ExtraDirectives       string   `json:"extraDirectives,omitempty"`
+	LogsEnabled           bool     `json:"logsEnabled"`
+	TLSMode               string   `json:"tlsMode"`
+	ACMEIssuerID          string   `json:"acmeIssuerId,omitempty"`
+	CertificateExpiresAt  string   `json:"certificateExpiresAt,omitempty"`
+	Enabled               bool     `json:"enabled"`
+	AuthEnabled           bool     `json:"authEnabled,omitempty"`
+	AuthProviderID        string   `json:"authProviderId,omitempty"`
+	BasicAuthEnabled      bool     `json:"basicAuthEnabled,omitempty"`
+	BasicAuthUsername     string   `json:"basicAuthUsername,omitempty"`
+	BasicAuthPasswordHash string   `json:"-"`
+	BasicAuthPassword     string   `json:"-"`
 }
 
 type sitePayload struct {
-	Address               string `json:"address"`
-	Comment               string `json:"comment,omitempty"`
-	Mode                  string `json:"mode"`
-	Upstream              string `json:"upstream,omitempty"`
-	SkipTLSVerify         bool   `json:"skipTlsVerify,omitempty"`
-	RewriteRedirects      *bool  `json:"rewriteRedirects,omitempty"`
-	HSTSEnabled           bool   `json:"hstsEnabled,omitempty"`
-	SecurityHeaderProfile string `json:"securityHeaderProfile,omitempty"`
-	Root                  string `json:"root,omitempty"`
-	ExtraDirectives       string `json:"extraDirectives,omitempty"`
-	LogsEnabled           *bool  `json:"logsEnabled,omitempty"`
-	TLSMode               string `json:"tlsMode,omitempty"`
-	ACMEIssuerID          string `json:"acmeIssuerId,omitempty"`
-	Enabled               bool   `json:"enabled"`
-	AuthEnabled           bool   `json:"authEnabled,omitempty"`
-	AuthProviderID        string `json:"authProviderId,omitempty"`
-	BasicAuthEnabled      bool   `json:"basicAuthEnabled,omitempty"`
-	BasicAuthUsername     string `json:"basicAuthUsername,omitempty"`
-	BasicAuthPassword     string `json:"basicAuthPassword,omitempty"`
+	Address               string   `json:"address"`
+	Comment               string   `json:"comment,omitempty"`
+	Mode                  string   `json:"mode"`
+	Upstream              string   `json:"upstream,omitempty"`
+	SkipTLSVerify         bool     `json:"skipTlsVerify,omitempty"`
+	RewriteRedirects      *bool    `json:"rewriteRedirects,omitempty"`
+	RedirectOrigins       []string `json:"redirectOrigins,omitempty"`
+	HSTSEnabled           bool     `json:"hstsEnabled,omitempty"`
+	SecurityHeaderProfile string   `json:"securityHeaderProfile,omitempty"`
+	Root                  string   `json:"root,omitempty"`
+	ExtraDirectives       string   `json:"extraDirectives,omitempty"`
+	LogsEnabled           *bool    `json:"logsEnabled,omitempty"`
+	TLSMode               string   `json:"tlsMode,omitempty"`
+	ACMEIssuerID          string   `json:"acmeIssuerId,omitempty"`
+	Enabled               bool     `json:"enabled"`
+	AuthEnabled           bool     `json:"authEnabled,omitempty"`
+	AuthProviderID        string   `json:"authProviderId,omitempty"`
+	BasicAuthEnabled      bool     `json:"basicAuthEnabled,omitempty"`
+	BasicAuthUsername     string   `json:"basicAuthUsername,omitempty"`
+	BasicAuthPassword     string   `json:"basicAuthPassword,omitempty"`
 }
 
 func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
@@ -131,6 +133,7 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		Upstream:              p.Upstream,
 		SkipTLSVerify:         p.SkipTLSVerify,
 		RewriteRedirects:      rewriteRedirects,
+		RedirectOrigins:       p.RedirectOrigins,
 		HSTSEnabled:           p.HSTSEnabled,
 		SecurityHeaderProfile: p.SecurityHeaderProfile,
 		Root:                  p.Root,
@@ -1667,6 +1670,12 @@ func parseSite(id string, lines []string) (Site, error) {
 			site.RewriteRedirects = true
 		case line == "# caddymgm:no-rewrite-redirects":
 			site.RewriteRedirects = false
+		case strings.HasPrefix(line, "# caddymgm:redirect-origin "):
+			origin, err := strconv.Unquote(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:redirect-origin ")))
+			if err != nil {
+				return Site{}, fmt.Errorf("invalid redirect origin marker: %w", err)
+			}
+			site.RedirectOrigins = append(site.RedirectOrigins, origin)
 		case line == "# caddymgm:hsts":
 			site.HSTSEnabled = true
 		case strings.HasPrefix(line, "header Strict-Transport-Security "):
@@ -1884,6 +1893,31 @@ func redirectRewriteRule(site Site) (string, string, bool) {
 	return pattern, replacement, true
 }
 
+func redirectRewriteRules(site Site) [][2]string {
+	origins := make([]string, 0, len(site.RedirectOrigins)+1)
+	if upstream, err := url.Parse(strings.TrimSpace(site.Upstream)); err == nil && (upstream.Scheme == "http" || upstream.Scheme == "https") && upstream.Host != "" {
+		origins = append(origins, upstream.Scheme+"://"+upstream.Host)
+	}
+	origins = append(origins, site.RedirectOrigins...)
+	publicScheme := "http"
+	if site.TLSMode != "" && site.TLSMode != "off" {
+		publicScheme = "https"
+	}
+	publicOrigin := publicScheme + "://" + site.Address
+	rules := make([][2]string, 0, len(origins))
+	seen := map[string]bool{}
+	for _, origin := range origins {
+		key := strings.ToLower(origin)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		pattern := `(?i)^` + regexp.QuoteMeta(origin) + `([/?#].*)?` + "$"
+		rules = append(rules, [2]string{pattern, publicOrigin + "$" + "{1}"})
+	}
+	return rules
+}
+
 func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream string) string {
 	var out strings.Builder
 	prefix := ""
@@ -1923,15 +1957,21 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 	} else {
 		if site.RewriteRedirects {
 			out.WriteString(prefix + "\t# caddymgm:rewrite-redirects\n")
+			for _, origin := range site.RedirectOrigins {
+				out.WriteString(prefix + "\t# caddymgm:redirect-origin " + strconv.Quote(origin) + "\n")
+			}
 		} else {
 			out.WriteString(prefix + "\t# caddymgm:no-rewrite-redirects\n")
 		}
-		redirectPattern, redirectReplacement, canRewrite := redirectRewriteRule(site)
+		redirectRules := redirectRewriteRules(site)
+		canRewrite := len(redirectRules) > 0
 		skipTLSVerify := site.SkipTLSVerify && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(site.Upstream)), "http://")
 		if (site.RewriteRedirects && canRewrite) || skipTLSVerify {
 			out.WriteString(prefix + "\treverse_proxy " + site.Upstream + " {\n")
 			if site.RewriteRedirects && canRewrite {
-				out.WriteString(prefix + "\t\theader_down Location " + caddyfileQuote(redirectPattern) + " " + caddyfileQuote(redirectReplacement) + "\n")
+				for _, rule := range redirectRules {
+					out.WriteString(prefix + "\t\theader_down Location " + caddyfileQuote(rule[0]) + " " + caddyfileQuote(rule[1]) + "\n")
+				}
 			}
 			if skipTLSVerify {
 				out.WriteString(prefix + "\t\t# caddymgm:skip-tls-verify\n")
@@ -2010,6 +2050,25 @@ func normalizeSite(site *Site) error {
 	site.AuthProviderID = strings.TrimSpace(site.AuthProviderID)
 	site.BasicAuthUsername = strings.TrimSpace(site.BasicAuthUsername)
 	site.SecurityHeaderProfile = strings.ToLower(strings.TrimSpace(site.SecurityHeaderProfile))
+	redirectOrigins := make([]string, 0, len(site.RedirectOrigins))
+	seenRedirectOrigins := map[string]bool{}
+	for _, rawOrigin := range site.RedirectOrigins {
+		origin := strings.TrimSpace(rawOrigin)
+		if origin == "" {
+			continue
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return errors.New("redirect origins must be complete HTTP or HTTPS origins without paths")
+		}
+		normalized := strings.ToLower(parsed.Scheme) + "://" + parsed.Host
+		key := strings.ToLower(normalized)
+		if !seenRedirectOrigins[key] {
+			seenRedirectOrigins[key] = true
+			redirectOrigins = append(redirectOrigins, normalized)
+		}
+	}
+	site.RedirectOrigins = redirectOrigins
 	if site.Address == "" {
 		return errors.New("address is required")
 	}
@@ -2036,11 +2095,15 @@ func normalizeSite(site *Site) error {
 	case "static":
 		site.SkipTLSVerify = false
 		site.RewriteRedirects = false
+		site.RedirectOrigins = nil
 		if site.Root == "" {
 			return errors.New("root path is required")
 		}
 	default:
 		return errors.New("mode must be proxy or static")
+	}
+	if !site.RewriteRedirects {
+		site.RedirectOrigins = nil
 	}
 	if site.ID == "" {
 		site.ID = newID()

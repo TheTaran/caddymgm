@@ -68,41 +68,43 @@ var version = "dev"
 var webFS embed.FS
 
 type Site struct {
-	ID                   string `json:"id"`
-	Address              string `json:"address"`
-	Comment              string `json:"comment,omitempty"`
-	Mode                 string `json:"mode"`
-	Upstream             string `json:"upstream,omitempty"`
-	SkipTLSVerify        bool   `json:"skipTlsVerify,omitempty"`
-	RewriteRedirects     bool   `json:"rewriteRedirects"`
-	HSTSEnabled          bool   `json:"hstsEnabled,omitempty"`
-	Root                 string `json:"root,omitempty"`
-	ExtraDirectives      string `json:"extraDirectives,omitempty"`
-	LogsEnabled          bool   `json:"logsEnabled"`
-	TLSMode              string `json:"tlsMode"`
-	ACMEIssuerID         string `json:"acmeIssuerId,omitempty"`
-	CertificateExpiresAt string `json:"certificateExpiresAt,omitempty"`
-	Enabled              bool   `json:"enabled"`
-	AuthEnabled          bool   `json:"authEnabled,omitempty"`
-	AuthProviderID       string `json:"authProviderId,omitempty"`
+	ID                    string `json:"id"`
+	Address               string `json:"address"`
+	Comment               string `json:"comment,omitempty"`
+	Mode                  string `json:"mode"`
+	Upstream              string `json:"upstream,omitempty"`
+	SkipTLSVerify         bool   `json:"skipTlsVerify,omitempty"`
+	RewriteRedirects      bool   `json:"rewriteRedirects"`
+	HSTSEnabled           bool   `json:"hstsEnabled,omitempty"`
+	SecurityHeaderProfile string `json:"securityHeaderProfile,omitempty"`
+	Root                  string `json:"root,omitempty"`
+	ExtraDirectives       string `json:"extraDirectives,omitempty"`
+	LogsEnabled           bool   `json:"logsEnabled"`
+	TLSMode               string `json:"tlsMode"`
+	ACMEIssuerID          string `json:"acmeIssuerId,omitempty"`
+	CertificateExpiresAt  string `json:"certificateExpiresAt,omitempty"`
+	Enabled               bool   `json:"enabled"`
+	AuthEnabled           bool   `json:"authEnabled,omitempty"`
+	AuthProviderID        string `json:"authProviderId,omitempty"`
 }
 
 type sitePayload struct {
-	Address          string `json:"address"`
-	Comment          string `json:"comment,omitempty"`
-	Mode             string `json:"mode"`
-	Upstream         string `json:"upstream,omitempty"`
-	SkipTLSVerify    bool   `json:"skipTlsVerify,omitempty"`
-	RewriteRedirects *bool  `json:"rewriteRedirects,omitempty"`
-	HSTSEnabled      bool   `json:"hstsEnabled,omitempty"`
-	Root             string `json:"root,omitempty"`
-	ExtraDirectives  string `json:"extraDirectives,omitempty"`
-	LogsEnabled      *bool  `json:"logsEnabled,omitempty"`
-	TLSMode          string `json:"tlsMode,omitempty"`
-	ACMEIssuerID     string `json:"acmeIssuerId,omitempty"`
-	Enabled          bool   `json:"enabled"`
-	AuthEnabled      bool   `json:"authEnabled,omitempty"`
-	AuthProviderID   string `json:"authProviderId,omitempty"`
+	Address               string `json:"address"`
+	Comment               string `json:"comment,omitempty"`
+	Mode                  string `json:"mode"`
+	Upstream              string `json:"upstream,omitempty"`
+	SkipTLSVerify         bool   `json:"skipTlsVerify,omitempty"`
+	RewriteRedirects      *bool  `json:"rewriteRedirects,omitempty"`
+	HSTSEnabled           bool   `json:"hstsEnabled,omitempty"`
+	SecurityHeaderProfile string `json:"securityHeaderProfile,omitempty"`
+	Root                  string `json:"root,omitempty"`
+	ExtraDirectives       string `json:"extraDirectives,omitempty"`
+	LogsEnabled           *bool  `json:"logsEnabled,omitempty"`
+	TLSMode               string `json:"tlsMode,omitempty"`
+	ACMEIssuerID          string `json:"acmeIssuerId,omitempty"`
+	Enabled               bool   `json:"enabled"`
+	AuthEnabled           bool   `json:"authEnabled,omitempty"`
+	AuthProviderID        string `json:"authProviderId,omitempty"`
 }
 
 func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
@@ -115,22 +117,23 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		logsEnabled = *p.LogsEnabled
 	}
 	return Site{
-		ID:               id,
-		Address:          p.Address,
-		Comment:          p.Comment,
-		Mode:             p.Mode,
-		Upstream:         p.Upstream,
-		SkipTLSVerify:    p.SkipTLSVerify,
-		RewriteRedirects: rewriteRedirects,
-		HSTSEnabled:      p.HSTSEnabled,
-		Root:             p.Root,
-		ExtraDirectives:  p.ExtraDirectives,
-		LogsEnabled:      logsEnabled,
-		TLSMode:          p.TLSMode,
-		ACMEIssuerID:     p.ACMEIssuerID,
-		Enabled:          p.Enabled,
-		AuthEnabled:      p.AuthEnabled,
-		AuthProviderID:   p.AuthProviderID,
+		ID:                    id,
+		Address:               p.Address,
+		Comment:               p.Comment,
+		Mode:                  p.Mode,
+		Upstream:              p.Upstream,
+		SkipTLSVerify:         p.SkipTLSVerify,
+		RewriteRedirects:      rewriteRedirects,
+		HSTSEnabled:           p.HSTSEnabled,
+		SecurityHeaderProfile: p.SecurityHeaderProfile,
+		Root:                  p.Root,
+		ExtraDirectives:       p.ExtraDirectives,
+		LogsEnabled:           logsEnabled,
+		TLSMode:               p.TLSMode,
+		ACMEIssuerID:          p.ACMEIssuerID,
+		Enabled:               p.Enabled,
+		AuthEnabled:           p.AuthEnabled,
+		AuthProviderID:        p.AuthProviderID,
 	}
 }
 
@@ -1516,6 +1519,7 @@ func parseSite(id string, lines []string) (Site, error) {
 	inReverseProxy := false
 	inTransport := false
 	inAuthDirective := false
+	inSecurityHeaderDirective := false
 	logDepth := 0
 	reverseProxyDepth := 0
 	transportDepth := 0
@@ -1530,7 +1534,18 @@ func parseSite(id string, lines []string) (Site, error) {
 			inAuthDirective = false
 			continue
 		}
+		if line == "# caddymgm:security-header-directive" {
+			inSecurityHeaderDirective = true
+			continue
+		}
+		if line == "# caddymgm:end-security-header-directive" {
+			inSecurityHeaderDirective = false
+			continue
+		}
 		if inAuthDirective {
+			continue
+		}
+		if inSecurityHeaderDirective {
 			continue
 		}
 		if inLog {
@@ -1607,6 +1622,8 @@ func parseSite(id string, lines []string) (Site, error) {
 			site.HSTSEnabled = true
 		case strings.HasPrefix(line, "header Strict-Transport-Security "):
 			continue
+		case strings.HasPrefix(line, "# caddymgm:security-header-profile "):
+			site.SecurityHeaderProfile = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:security-header-profile "))
 		case strings.HasPrefix(line, "# caddymgm:tls-issuer "):
 			site.ACMEIssuerID = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:tls-issuer "))
 		case line == "tls internal":
@@ -1808,6 +1825,16 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 		out.WriteString(prefix + "\t# caddymgm:hsts\n")
 		out.WriteString(prefix + "\theader Strict-Transport-Security \"max-age=31536000\"\n")
 	}
+	if headers := securityHeaderProfileDirectives(site.SecurityHeaderProfile); len(headers) > 0 {
+		out.WriteString(prefix + "\t# caddymgm:security-header-profile " + site.SecurityHeaderProfile + "\n")
+		out.WriteString(prefix + "\t# caddymgm:security-header-directive\n")
+		out.WriteString(prefix + "\theader {\n")
+		for _, header := range headers {
+			out.WriteString(prefix + "\t\t" + header + "\n")
+		}
+		out.WriteString(prefix + "\t}\n")
+		out.WriteString(prefix + "\t# caddymgm:end-security-header-directive\n")
+	}
 	switch site.TLSMode {
 	case "internal":
 		out.WriteString(prefix + "\ttls internal\n")
@@ -1858,6 +1885,7 @@ func normalizeSite(site *Site) error {
 	site.TLSMode = strings.TrimSpace(site.TLSMode)
 	site.ACMEIssuerID = strings.TrimSpace(site.ACMEIssuerID)
 	site.AuthProviderID = strings.TrimSpace(site.AuthProviderID)
+	site.SecurityHeaderProfile = strings.ToLower(strings.TrimSpace(site.SecurityHeaderProfile))
 	if site.Address == "" {
 		return errors.New("address is required")
 	}
@@ -1907,6 +1935,11 @@ func normalizeSite(site *Site) error {
 	if site.TLSMode == "off" {
 		site.HSTSEnabled = false
 	}
+	switch site.SecurityHeaderProfile {
+	case "", "standard", "strict":
+	default:
+		return errors.New("security header profile must be off, standard or strict")
+	}
 	if site.AuthEnabled {
 		if site.TLSMode == "off" {
 			return errors.New("website authentication requires TLS")
@@ -1916,6 +1949,28 @@ func normalizeSite(site *Site) error {
 		}
 	} else {
 		site.AuthProviderID = ""
+	}
+	return nil
+}
+
+func securityHeaderProfileDirectives(profile string) []string {
+	if profile == "standard" {
+		return []string{
+			`-Server`,
+			`X-Content-Type-Options "nosniff"`,
+			`Referrer-Policy "strict-origin-when-cross-origin"`,
+			`X-Frame-Options "SAMEORIGIN"`,
+		}
+	}
+	if profile == "strict" {
+		return []string{
+			`-Server`,
+			`X-Content-Type-Options "nosniff"`,
+			`Referrer-Policy "no-referrer"`,
+			`X-Frame-Options "DENY"`,
+			`Permissions-Policy "camera=(), geolocation=(), microphone=()"`,
+			`Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: https:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: wss:"`,
+		}
 	}
 	return nil
 }

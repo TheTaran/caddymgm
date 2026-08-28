@@ -42,6 +42,7 @@ const els = {
   skipTlsVerify: document.querySelector("#skip-tls-verify"),
   rewriteRedirects: document.querySelector("#rewrite-redirects"),
   hstsEnabled: document.querySelector("#hsts-enabled"),
+  securityHeaderProfile: document.querySelector("#security-header-profile"),
   root: document.querySelector("#root"),
   upstreamRow: document.querySelector("#upstream-row"),
   skipTlsVerifyRow: document.querySelector("#skip-tls-verify-row"),
@@ -49,6 +50,7 @@ const els = {
   hstsEnabledRow: document.querySelector("#hsts-enabled-row"),
   rewriteRedirectsHint: document.querySelector("#rewrite-redirects-hint"),
   hstsEnabledHint: document.querySelector("#hsts-enabled-hint"),
+  securityHeaderProfileHint: document.querySelector("#security-header-profile-hint"),
   rootRow: document.querySelector("#root-row"),
   extra: document.querySelector("#extra"),
   enabled: document.querySelector("#enabled"),
@@ -256,6 +258,7 @@ els.issuerDelete.addEventListener("click", deleteIssuer);
 els.issuerRootCAUploadButton.addEventListener("click", uploadRootCA);
 els.tlsEnabled.addEventListener("change", syncTLSMode);
 els.hstsEnabled.addEventListener("change", syncTLSMode);
+els.securityHeaderProfile.addEventListener("change", syncSecurityHeaderProfile);
 els.siteAuthEnabled.addEventListener("change", syncSiteAuth);
 els.upstream.addEventListener("input", syncUpstreamTLS);
 els.acmeDialogClose.addEventListener("click", closeACMEStatus);
@@ -1413,6 +1416,7 @@ function editSite(site = null) {
   els.skipTlsVerify.checked = !!site?.skipTlsVerify;
   els.rewriteRedirects.checked = site ? site.rewriteRedirects !== false : true;
   els.hstsEnabled.checked = !!site?.hstsEnabled;
+  els.securityHeaderProfile.value = site?.securityHeaderProfile || "";
   els.root.value = site?.root || "";
   els.extra.value = site?.extraDirectives || "";
   els.enabled.checked = site?.enabled ?? true;
@@ -1432,6 +1436,7 @@ function editSite(site = null) {
   syncMode();
   syncTLSMode();
   syncSiteAuth();
+  syncSecurityHeaderProfile();
   els.editor.scrollIntoView({ behavior: "smooth", block: "start" });
   els.address.focus({ preventScroll: true });
 }
@@ -1496,6 +1501,14 @@ function syncTLSMode() {
   }
 }
 
+function syncSecurityHeaderProfile() {
+  const descriptions = {
+    standard: "Adds nosniff, strict-origin referrer policy, SAMEORIGIN framing, and removes the Server header.",
+    strict: "Adds a restrictive Content Security Policy, DENY framing, disabled browser permissions, no-referrer, nosniff, and removes the Server header. This can break applications that load external or inline resources.",
+  };
+  els.securityHeaderProfileHint.textContent = descriptions[els.securityHeaderProfile.value] || "No managed security headers. Existing upstream headers remain unchanged.";
+}
+
 function syncSiteAuth() {
   const enabled = els.siteAuthEnabled.checked;
   if (enabled && !els.tlsEnabled.checked) {
@@ -1520,6 +1533,7 @@ async function saveSite(event) {
     skipTlsVerify: els.skipTlsVerify.checked,
     rewriteRedirects: mode === "proxy" && els.rewriteRedirects.checked,
     hstsEnabled: els.tlsEnabled.checked && els.hstsEnabled.checked,
+    securityHeaderProfile: els.securityHeaderProfile.value,
     root: els.root.value,
     extraDirectives: els.extra.value,
     logsEnabled: els.logsEnabled.checked,

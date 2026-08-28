@@ -27,12 +27,12 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 - Security controls for managed websites — Added: 2026-08-28
   - rewrite redirects that expose the configured internal reverse-proxy origin
   - HTTP Strict Transport Security (HSTS) for TLS-enabled web hosts
+  - configurable Standard and Strict security header profiles per web host
 
 ## Planned Upcoming Features
 
 - Integration of LDAP for authentication of websites or OIDC
 - Additional security features to protect managed websites, including:
-  - configurable security header profiles
   - access policies for everyone, allowed IPs, or blocked IPs
   - IP address and CIDR lists
   - basic authentication with username and password

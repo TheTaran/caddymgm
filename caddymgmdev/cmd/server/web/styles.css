@@ -738,6 +738,8 @@ h2 {
   top: 0;
   z-index: 3;
   min-height: 46px;
+  background: #1b2028;
+  box-shadow: 0 8px 14px rgba(7, 8, 11, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 #view-proxy-hosts .table-head > :last-child {
@@ -1900,12 +1902,15 @@ pre {
 
 .geo-details-close {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  aspect-ratio: 1;
   flex: 0 0 auto;
   place-items: center;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 50%;
   color: var(--muted);
   font-size: 18px;
   line-height: 1;

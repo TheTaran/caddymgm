@@ -306,6 +306,15 @@
                     <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
                     </label>
                   <p id="hsts-enabled-hint" class="field-hint">Available with TLS. Instructs browsers to use HTTPS for this host for one year.</p>
+                  <label>
+                    Security header profile
+                    <select id="security-header-profile">
+                      <option value="">Off</option>
+                      <option value="standard">Standard (Recommended)</option>
+                      <option value="strict">Strict</option>
+                    </select>
+                  </label>
+                  <p id="security-header-profile-hint" class="field-hint">No managed security headers. Existing upstream headers remain unchanged.</p>
                 </section>
 
                 <section id="site-editor-panel-authentication" class="site-editor-panel" role="tabpanel" aria-labelledby="site-editor-tab-authentication" data-site-editor-panel="authentication" hidden>

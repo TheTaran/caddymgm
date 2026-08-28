@@ -103,14 +103,15 @@ func TestRedirectRewriteRuleMatchesOnlyConfiguredUpstreamOrigin(t *testing.T) {
 	}
 }
 
-func TestRenderAndParseSitePreservesRedirectRewriteAndHSTS(t *testing.T) {
+func TestRenderAndParseSitePreservesManagedSecurityOptions(t *testing.T) {
 	site := Site{
 		ID: "public", Address: "public.example.test", Mode: "proxy",
 		Upstream: "http://10.0.100.102", TLSMode: "acme", Enabled: true,
 		RewriteRedirects: true, HSTSEnabled: true,
+		SecurityHeaderProfile: "standard",
 	}
 	rendered := renderSite(site, nil, "/logs", "caddymgm:8080")
-	for _, want := range []string{"header_down Location", "# caddymgm:hsts", "header Strict-Transport-Security", "max-age=31536000"} {
+	for _, want := range []string{"header_down Location", "# caddymgm:hsts", "header Strict-Transport-Security", "max-age=31536000", "# caddymgm:security-header-profile standard", "X-Content-Type-Options", "X-Frame-Options"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered site is missing %q:\n%s", want, rendered)
 		}
@@ -119,10 +120,23 @@ func TestRenderAndParseSitePreservesRedirectRewriteAndHSTS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !parsed.RewriteRedirects || !parsed.HSTSEnabled {
-		t.Fatalf("parsed security options = rewrite:%v hsts:%v", parsed.RewriteRedirects, parsed.HSTSEnabled)
+	if !parsed.RewriteRedirects || !parsed.HSTSEnabled || parsed.SecurityHeaderProfile != "standard" {
+		t.Fatalf("parsed security options = rewrite:%v hsts:%v headers:%q", parsed.RewriteRedirects, parsed.HSTSEnabled, parsed.SecurityHeaderProfile)
 	}
-	if strings.Contains(parsed.ExtraDirectives, "header_down Location") || strings.Contains(parsed.ExtraDirectives, "Strict-Transport-Security") {
+	if strings.Contains(parsed.ExtraDirectives, "header_down Location") || strings.Contains(parsed.ExtraDirectives, "Strict-Transport-Security") || strings.Contains(parsed.ExtraDirectives, "X-Content-Type-Options") {
 		t.Fatalf("managed security directives leaked into extra settings: %q", parsed.ExtraDirectives)
+	}
+}
+
+func TestStrictSecurityHeaderProfileAndValidation(t *testing.T) {
+	directives := strings.Join(securityHeaderProfileDirectives("strict"), "\n")
+	for _, want := range []string{"Content-Security-Policy", "Permissions-Policy", `X-Frame-Options "DENY"`, `Referrer-Policy "no-referrer"`} {
+		if !strings.Contains(directives, want) {
+			t.Fatalf("strict security headers are missing %q: %s", want, directives)
+		}
+	}
+	site := Site{Address: "security.example.test", Mode: "proxy", Upstream: "http://127.0.0.1:8080", TLSMode: "off", SecurityHeaderProfile: "unknown"}
+	if err := normalizeSite(&site); err == nil || !strings.Contains(err.Error(), "security header profile") {
+		t.Fatalf("validateSite() error = %v, want security header profile error", err)
 	}
 }

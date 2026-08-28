@@ -33,6 +33,8 @@ Caddy can run separately and can be updated independently from CaddyMGM.
   - per-web-host Basic Authentication with bcrypt-hashed passwords
 - Central unavailable page for disabled web hosts — Added: 2026-08-28
   - serves a consistent private 503 response while retaining the complete web-host configuration
+- Structured Web Host detail navigation — Added: 2026-08-28
+  - groups Basic, Forwarding Rules, Advanced, and Authentication settings under a live host summary
 
 ## Planned Upcoming Features
 

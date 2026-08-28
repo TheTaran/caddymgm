@@ -221,15 +221,25 @@
               <form id="site-form">
                 <input type="hidden" id="site-id" />
                 <div class="panel-title">
-                  <div>
-                    <span class="eyebrow">Rule Editor</span>
-                    <h2 id="form-title">Website</h2>
+                  <div class="webhost-detail-header">
+                    <span class="webhost-detail-icon" aria-hidden="true">↗</span>
+                    <div>
+                      <span class="eyebrow">Web Host Detail</span>
+                      <h2 id="form-title">Website</h2>
+                      <span id="editor-host-address" class="webhost-detail-address">New web host</span>
+                    </div>
+                  </div>
+                  <div class="webhost-detail-badges" aria-label="Effective website state">
+                    <span id="editor-host-protocol" class="badge off">HTTP</span>
+                    <span id="editor-host-mode" class="badge off">Not configured</span>
+                    <span id="editor-host-status" class="badge secure">Active</span>
                   </div>
                 </div>
 
                 <div class="site-editor-tabs" role="tablist" aria-label="Website configuration sections">
-                  <button type="button" class="site-editor-tab active" id="site-editor-tab-general" role="tab" aria-selected="true" aria-controls="site-editor-panel-general" tabindex="0" data-site-editor-tab="general">General</button>
-                  <button type="button" class="site-editor-tab" id="site-editor-tab-security" role="tab" aria-selected="false" aria-controls="site-editor-panel-security" tabindex="-1" data-site-editor-tab="security">Security</button>
+                  <button type="button" class="site-editor-tab active" id="site-editor-tab-general" role="tab" aria-selected="true" aria-controls="site-editor-panel-general" tabindex="0" data-site-editor-tab="general">Basic</button>
+                  <button type="button" class="site-editor-tab" id="site-editor-tab-forwarding" role="tab" aria-selected="false" aria-controls="site-editor-panel-forwarding" tabindex="-1" data-site-editor-tab="forwarding">Forwarding Rules</button>
+                  <button type="button" class="site-editor-tab" id="site-editor-tab-security" role="tab" aria-selected="false" aria-controls="site-editor-panel-security" tabindex="-1" data-site-editor-tab="security">Advanced</button>
                   <button type="button" class="site-editor-tab" id="site-editor-tab-authentication" role="tab" aria-selected="false" aria-controls="site-editor-panel-authentication" tabindex="-1" data-site-editor-tab="authentication">Authentication</button>
                 </div>
 
@@ -273,22 +283,9 @@
                     Root
                     <input id="root" placeholder="/srv/www/example" autocomplete="off" />
                   </label>
-                  <label>
-                    Additional settings
-                    <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
-                  </label>
                 </section>
 
-                <section id="site-editor-panel-security" class="site-editor-panel" role="tabpanel" aria-labelledby="site-editor-tab-security" data-site-editor-panel="security" hidden>
-                  <label class="status-check">
-                    <input id="tls-enabled" type="checkbox" />
-                    <span class="status-check-title">TLS enabled</span>
-                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
-                    </label>
-                  <label id="acme-issuer-row" hidden>
-                    ACME Authority
-                    <select id="acme-issuer"></select>
-                  </label>
+                <section id="site-editor-panel-forwarding" class="site-editor-panel" role="tabpanel" aria-labelledby="site-editor-tab-forwarding" data-site-editor-panel="forwarding" hidden>
                   <label id="skip-tls-verify-row" class="status-check" hidden>
                     <input id="skip-tls-verify" type="checkbox" />
                     <span class="status-check-title">Skip upstream TLS verification</span>
@@ -310,8 +307,12 @@
                       <div><strong>Forwarded headers</strong><span>X-Forwarded-Host and X-Forwarded-Proto, automatically managed by Caddy</span></div>
                       <code id="proxy-overview-forwarded">—</code>
                     </div>
+                    <div class="proxy-overview-row">
+                      <div><strong>Request forwarding</strong><span>Public website requests forwarded to the configured upstream</span></div>
+                      <code id="proxy-overview-request-route">—</code>
+                    </div>
                     <div class="proxy-overview-row proxy-overview-redirects">
-                      <div><strong>Redirect mappings</strong><span>Internal origins rewritten to the public website</span></div>
+                      <div><strong>Redirect response rewrites</strong><span>Internal redirect destinations rewritten back to the public website</span></div>
                       <div id="proxy-overview-redirect-list" class="proxy-overview-rule-list"><span class="muted">No mapping available</span></div>
                     </div>
                   </section>
@@ -322,10 +323,22 @@
                     </label>
                   <p id="rewrite-redirects-hint" class="field-hint">Rewrites redirects pointing to the configured upstream or the additional internal origins. Other redirects remain unchanged.</p>
                   <label id="redirect-origins-row" hidden>
-                    Additional redirect origins
+                    Additional advertised origins (optional)
                     <textarea id="redirect-origins" rows="3" placeholder="https://internal.example.local:443"></textarea>
                   </label>
                   <p id="redirect-origins-hint" class="field-hint" hidden>One internal HTTP or HTTPS origin per line. Paths and external destinations are not accepted.</p>
+                </section>
+
+                <section id="site-editor-panel-security" class="site-editor-panel" role="tabpanel" aria-labelledby="site-editor-tab-security" data-site-editor-panel="security" hidden>
+                  <label class="status-check">
+                    <input id="tls-enabled" type="checkbox" />
+                    <span class="status-check-title">TLS enabled</span>
+                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                    </label>
+                  <label id="acme-issuer-row" hidden>
+                    ACME Authority
+                    <select id="acme-issuer"></select>
+                  </label>
                   <label id="hsts-enabled-row" class="status-check">
                     <input id="hsts-enabled" type="checkbox" />
                     <span class="status-check-title">HTTP Strict Transport Security (HSTS)</span>
@@ -341,6 +354,10 @@
                     </select>
                   </label>
                   <p id="security-header-profile-hint" class="field-hint">No managed security headers. Existing upstream headers remain unchanged.</p>
+                  <label>
+                    Additional settings
+                    <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
+                  </label>
                 </section>
 
                 <section id="site-editor-panel-authentication" class="site-editor-panel" role="tabpanel" aria-labelledby="site-editor-tab-authentication" data-site-editor-panel="authentication" hidden>

@@ -35,6 +35,10 @@ const els = {
   editor: document.querySelector("#editor"),
   form: document.querySelector("#site-form"),
   formTitle: document.querySelector("#form-title"),
+  editorHostAddress: document.querySelector("#editor-host-address"),
+  editorHostProtocol: document.querySelector("#editor-host-protocol"),
+  editorHostMode: document.querySelector("#editor-host-mode"),
+  editorHostStatus: document.querySelector("#editor-host-status"),
   id: document.querySelector("#site-id"),
   address: document.querySelector("#address"),
   comment: document.querySelector("#comment"),
@@ -55,6 +59,7 @@ const els = {
   proxyBehaviorOverview: document.querySelector("#proxy-behavior-overview"),
   proxyOverviewHost: document.querySelector("#proxy-overview-host"),
   proxyOverviewForwarded: document.querySelector("#proxy-overview-forwarded"),
+  proxyOverviewRequestRoute: document.querySelector("#proxy-overview-request-route"),
   proxyOverviewRedirectList: document.querySelector("#proxy-overview-redirect-list"),
   hstsEnabledHint: document.querySelector("#hsts-enabled-hint"),
   securityHeaderProfileHint: document.querySelector("#security-header-profile-hint"),
@@ -234,6 +239,7 @@ document.querySelector("#new-site").addEventListener("click", () => {
 });
 document.querySelector("#cancel").addEventListener("click", closeEditor);
 els.form.addEventListener("submit", saveSite);
+els.form.addEventListener("invalid", handleSiteFormInvalid, true);
 els.form.addEventListener("invalid", (event) => {
   const panel = event.target.closest("[data-site-editor-panel]");
   if (panel) showSiteEditorTab(panel.dataset.siteEditorPanel);
@@ -278,6 +284,9 @@ els.basicAuthEnabled.addEventListener("change", syncBasicAuth);
 els.upstream.addEventListener("input", syncUpstreamTLS);
 els.upstream.addEventListener("input", syncProxyBehaviorOverview);
 els.address.addEventListener("input", syncProxyBehaviorOverview);
+els.address.addEventListener("input", syncEditorHostSummary);
+els.comment.addEventListener("input", syncEditorHostSummary);
+els.enabled.addEventListener("change", syncEditorHostSummary);
 els.redirectOrigins.addEventListener("input", syncProxyBehaviorOverview);
 els.acmeDialogClose.addEventListener("click", closeACMEStatus);
 els.acmeDialog.addEventListener("close", stopACMEStatusPolling);
@@ -427,6 +436,11 @@ function showSiteEditorTab(name, focus = false) {
   document.querySelectorAll("[data-site-editor-panel]").forEach((panel) => {
     panel.hidden = panel.dataset.siteEditorPanel !== name;
   });
+}
+
+function handleSiteFormInvalid(event) {
+  const panel = event.target.closest("[data-site-editor-panel]");
+  if (panel?.hidden) showSiteEditorTab(panel.dataset.siteEditorPanel);
 }
 
 function handleSiteEditorTabKeydown(event) {
@@ -1440,7 +1454,7 @@ function editSite(site = null) {
   els.proxyGrid.classList.add("editor-open");
   els.form.reset();
   els.id.value = site?.id || "";
-  els.formTitle.textContent = site ? "Edit Website" : "Create Website";
+  els.formTitle.textContent = site ? site.comment || site.address : "New Website";
   showSiteEditorTab("general");
   els.address.value = site?.address || "";
   els.comment.value = site?.comment || "";
@@ -1474,6 +1488,7 @@ function editSite(site = null) {
   syncSiteAuth();
   syncSecurityHeaderProfile();
   syncBasicAuth();
+  syncEditorHostSummary();
   els.editor.scrollIntoView({ behavior: "smooth", block: "start" });
   els.address.focus({ preventScroll: true });
 }
@@ -1514,6 +1529,24 @@ function syncMode() {
   }
   syncUpstreamTLS();
   syncProxyBehaviorOverview();
+  syncEditorHostSummary();
+}
+
+function syncEditorHostSummary() {
+  const address = els.address.value.trim();
+  const comment = els.comment.value.trim();
+  const mode = getMode();
+  const tlsEnabled = els.tlsEnabled.checked;
+  const enabled = els.enabled.checked;
+
+  els.formTitle.textContent = comment || address || (editingSite ? "Website" : "New Website");
+  els.editorHostAddress.textContent = address || "Address not configured";
+  els.editorHostProtocol.textContent = tlsEnabled ? "HTTPS" : "HTTP";
+  els.editorHostProtocol.className = `badge ${tlsEnabled ? "secure" : "warn"}`;
+  els.editorHostMode.textContent = mode === "proxy" ? "Reverse Proxy" : mode === "static" ? "Static Files" : "Not configured";
+  els.editorHostMode.className = `badge ${mode ? "public" : "off"}`;
+  els.editorHostStatus.textContent = enabled ? "Active" : "Inactive";
+  els.editorHostStatus.className = `badge ${enabled ? "secure" : "off"}`;
 }
 
 function syncProxyBehaviorOverview() {
@@ -1525,12 +1558,15 @@ function syncProxyBehaviorOverview() {
   els.proxyOverviewForwarded.textContent = `${publicHost} · ${publicScheme}`;
 
   const origins = [];
+  let upstreamOrigin = "";
   try {
     const upstream = new URL(els.upstream.value.trim());
-    origins.push(upstream.origin);
+    upstreamOrigin = upstream.origin;
+    origins.push(upstreamOrigin);
   } catch (_) {
     // The regular form validation reports an incomplete upstream.
   }
+  els.proxyOverviewRequestRoute.textContent = upstreamOrigin ? `${publicOrigin} → ${upstreamOrigin}` : "Upstream not configured";
   els.redirectOrigins.value.split(/\r?\n/).map((origin) => origin.trim()).filter(Boolean).forEach((origin) => origins.push(origin.replace(/\/$/, "")));
   const uniqueOrigins = [...new Set(origins.map((origin) => origin.toLowerCase()))];
   els.proxyOverviewRedirectList.replaceChildren();
@@ -1578,6 +1614,7 @@ function syncTLSMode() {
     els.acmeIssuer.value = els.acmeIssuer.options[0].value;
   }
   syncProxyBehaviorOverview();
+  syncEditorHostSummary();
 }
 
 function syncSecurityHeaderProfile() {

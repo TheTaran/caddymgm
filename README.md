@@ -21,13 +21,18 @@ CaddyMGM gives you a web UI to:
 The Caddy configuration stays outside the container.
 Caddy can run separately and can be updated independently from CaddyMGM.
 
-## Planned Upcoming Features
+## Recently Added Features
 
 - OIDC Authentication for Website access — Updated: 2026-08-26
+- Security controls for managed websites — Added: 2026-08-28
+  - rewrite redirects that expose the configured internal reverse-proxy origin
+  - HTTP Strict Transport Security (HSTS) for TLS-enabled web hosts
+
+## Planned Upcoming Features
+
 - Integration of LDAP for authentication of websites or OIDC
-- Security features to protect managed websites, including:
-  - security headers
-  - HTTP Strict Transport Security (HSTS)
+- Additional security features to protect managed websites, including:
+  - configurable security header profiles
   - access policies for everyone, allowed IPs, or blocked IPs
   - IP address and CIDR lists
   - basic authentication with username and password

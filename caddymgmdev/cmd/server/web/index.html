@@ -175,7 +175,7 @@
               <span role="columnheader"><button class="sort-button" type="button" data-sort="target">Target</button></span>
               <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="upstreamTls" aria-label="Filter dashboard by upstream TLS"><option value="all">All</option><option value="verified">Verified</option><option value="skipped">Skipped</option><option value="not-applicable">N/A</option></select></span>
               <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="status" aria-label="Filter dashboard by status"><option value="all">All</option><option value="active">Active</option><option value="inactive">Inactive</option></select></span>
-              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="auth">SSO / OIDC</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="auth" aria-label="Filter dashboard by authentication"><option value="all">All</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></span>
+              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="auth">Authentication</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="auth" aria-label="Filter dashboard by authentication"><option value="all">All</option><option value="oidc">OIDC</option><option value="basic">Basic</option><option value="disabled">Disabled</option></select></span>
               <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="comment">Comment</button><input class="column-filter column-filter-text table-filter" data-filter-table="dashboard" data-filter-key="comment" type="search" placeholder="Filter" aria-label="Filter dashboard by comment" /><button class="filter-reset-button" type="button" data-reset-filters="dashboard">Reset</button></span>
             </div>
             <div id="dashboard-site-list" class="site-list"></div>
@@ -209,7 +209,7 @@
                   <span role="columnheader"><button class="sort-button" type="button" data-sort="target">Target</button></span>
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button><select id="host-filter-upstream-tls" class="column-filter" aria-label="Filter by upstream TLS"><option value="all">All</option><option value="verified">Verified</option><option value="skipped">Skipped</option><option value="not-applicable">N/A</option></select></span>
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><select id="host-filter-status" class="column-filter" aria-label="Filter by status"><option value="all">All</option><option value="active">Active</option><option value="inactive">Inactive</option></select></span>
-                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="auth">SSO / OIDC</button><select id="host-filter-auth" class="column-filter" aria-label="Filter by SSO or OIDC"><option value="all">All</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></span>
+                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="auth">Authentication</button><select id="host-filter-auth" class="column-filter" aria-label="Filter by authentication"><option value="all">All</option><option value="oidc">OIDC</option><option value="basic">Basic</option><option value="disabled">Disabled</option></select></span>
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="comment">Comment</button><input id="host-filter-comment" class="column-filter column-filter-text" type="search" placeholder="Filter" aria-label="Filter by comment" /></span>
                   <span class="actions-head"><span>Actions</span><button id="host-filter-reset" class="filter-reset-button" type="button" title="Reset all filters">Reset</button></span>
                 </div>
@@ -323,6 +323,20 @@
                     <span class="status-check-title">Require OIDC authentication</span>
                     <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
                     </label>
+                  <label class="status-check">
+                    <input id="basic-auth-enabled" type="checkbox" />
+                    <span class="status-check-title">Require Basic Authentication</span>
+                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                    </label>
+                  <label id="basic-auth-username-row" hidden>
+                    Username
+                    <input id="basic-auth-username" autocomplete="username" maxlength="64" placeholder="website-user" />
+                  </label>
+                  <label id="basic-auth-password-row" hidden>
+                    Password
+                    <input id="basic-auth-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" placeholder="At least 8 characters" />
+                  </label>
+                  <p id="basic-auth-hint" class="field-hint" hidden>Passwords are stored only as bcrypt hashes. Leave the password empty while editing to keep the current password.</p>
                 </section>
 
                 <div class="form-actions">

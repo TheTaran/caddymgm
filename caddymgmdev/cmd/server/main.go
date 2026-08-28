@@ -86,6 +86,10 @@ type Site struct {
 	Enabled               bool   `json:"enabled"`
 	AuthEnabled           bool   `json:"authEnabled,omitempty"`
 	AuthProviderID        string `json:"authProviderId,omitempty"`
+	BasicAuthEnabled      bool   `json:"basicAuthEnabled,omitempty"`
+	BasicAuthUsername     string `json:"basicAuthUsername,omitempty"`
+	BasicAuthPasswordHash string `json:"-"`
+	BasicAuthPassword     string `json:"-"`
 }
 
 type sitePayload struct {
@@ -105,6 +109,9 @@ type sitePayload struct {
 	Enabled               bool   `json:"enabled"`
 	AuthEnabled           bool   `json:"authEnabled,omitempty"`
 	AuthProviderID        string `json:"authProviderId,omitempty"`
+	BasicAuthEnabled      bool   `json:"basicAuthEnabled,omitempty"`
+	BasicAuthUsername     string `json:"basicAuthUsername,omitempty"`
+	BasicAuthPassword     string `json:"basicAuthPassword,omitempty"`
 }
 
 func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
@@ -134,6 +141,9 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		Enabled:               p.Enabled,
 		AuthEnabled:           p.AuthEnabled,
 		AuthProviderID:        p.AuthProviderID,
+		BasicAuthEnabled:      p.BasicAuthEnabled,
+		BasicAuthUsername:     p.BasicAuthUsername,
+		BasicAuthPassword:     p.BasicAuthPassword,
 	}
 }
 
@@ -430,6 +440,10 @@ func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if err := prepareBasicAuth(&site, nil); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -483,6 +497,21 @@ func (a *App) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 	sites, head, tail, err := a.load()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	var existing *Site
+	for i := range sites {
+		if sites[i].ID == id {
+			existing = &sites[i]
+			break
+		}
+	}
+	if existing == nil {
+		writeError(w, http.StatusNotFound, errors.New("site not found"))
+		return
+	}
+	if err := prepareBasicAuth(&updated, existing); err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	if err := a.validateSiteLocked(updated); err != nil {
@@ -1520,6 +1549,7 @@ func parseSite(id string, lines []string) (Site, error) {
 	inTransport := false
 	inAuthDirective := false
 	inSecurityHeaderDirective := false
+	inBasicAuthDirective := false
 	logDepth := 0
 	reverseProxyDepth := 0
 	transportDepth := 0
@@ -1542,10 +1572,29 @@ func parseSite(id string, lines []string) (Site, error) {
 			inSecurityHeaderDirective = false
 			continue
 		}
+		if line == "# caddymgm:basic-auth-directive" {
+			inBasicAuthDirective = true
+			continue
+		}
+		if line == "# caddymgm:end-basic-auth-directive" {
+			inBasicAuthDirective = false
+			continue
+		}
 		if inAuthDirective {
 			continue
 		}
 		if inSecurityHeaderDirective {
+			continue
+		}
+		if inBasicAuthDirective {
+			if line == "basic_auth {" || line == "}" || line == "" {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) == 2 {
+				site.BasicAuthUsername = fields[0]
+				site.BasicAuthPasswordHash = fields[1]
+			}
 			continue
 		}
 		if inLog {
@@ -1624,6 +1673,8 @@ func parseSite(id string, lines []string) (Site, error) {
 			continue
 		case strings.HasPrefix(line, "# caddymgm:security-header-profile "):
 			site.SecurityHeaderProfile = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:security-header-profile "))
+		case line == "# caddymgm:basic-auth":
+			site.BasicAuthEnabled = true
 		case strings.HasPrefix(line, "# caddymgm:tls-issuer "):
 			site.ACMEIssuerID = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:tls-issuer "))
 		case line == "tls internal":
@@ -1783,6 +1834,14 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 	if site.Comment != "" {
 		out.WriteString(prefix + "\t# caddymgm:comment " + strconv.Quote(site.Comment) + "\n")
 	}
+	if site.BasicAuthEnabled {
+		out.WriteString(prefix + "\t# caddymgm:basic-auth\n")
+		out.WriteString(prefix + "\t# caddymgm:basic-auth-directive\n")
+		out.WriteString(prefix + "\tbasic_auth {\n")
+		out.WriteString(prefix + "\t\t" + site.BasicAuthUsername + " " + site.BasicAuthPasswordHash + "\n")
+		out.WriteString(prefix + "\t}\n")
+		out.WriteString(prefix + "\t# caddymgm:end-basic-auth-directive\n")
+	}
 	if site.AuthEnabled {
 		out.WriteString(prefix + "\t# caddymgm:auth-provider " + site.AuthProviderID + "\n")
 		out.WriteString(prefix + "\t# caddymgm:auth-directive\n")
@@ -1885,6 +1944,7 @@ func normalizeSite(site *Site) error {
 	site.TLSMode = strings.TrimSpace(site.TLSMode)
 	site.ACMEIssuerID = strings.TrimSpace(site.ACMEIssuerID)
 	site.AuthProviderID = strings.TrimSpace(site.AuthProviderID)
+	site.BasicAuthUsername = strings.TrimSpace(site.BasicAuthUsername)
 	site.SecurityHeaderProfile = strings.ToLower(strings.TrimSpace(site.SecurityHeaderProfile))
 	if site.Address == "" {
 		return errors.New("address is required")
@@ -1949,6 +2009,47 @@ func normalizeSite(site *Site) error {
 		}
 	} else {
 		site.AuthProviderID = ""
+	}
+	return nil
+}
+
+var basicAuthUsernamePattern = regexp.MustCompile(`^[A-Za-z0-9._@-]{1,64}$`)
+
+func prepareBasicAuth(site *Site, existing *Site) error {
+	site.BasicAuthUsername = strings.TrimSpace(site.BasicAuthUsername)
+	password := site.BasicAuthPassword
+	site.BasicAuthPassword = ""
+	if !site.BasicAuthEnabled {
+		site.BasicAuthUsername = ""
+		site.BasicAuthPasswordHash = ""
+		return nil
+	}
+	if site.AuthEnabled {
+		return errors.New("basic authentication and OIDC authentication cannot be enabled together")
+	}
+	if site.TLSMode == "" || site.TLSMode == "off" {
+		return errors.New("basic authentication requires TLS")
+	}
+	if !basicAuthUsernamePattern.MatchString(site.BasicAuthUsername) {
+		return errors.New("basic authentication username must use 1-64 letters, numbers, dots, underscores, @ signs or hyphens")
+	}
+	if password != "" {
+		if len([]byte(password)) < 8 || len([]byte(password)) > 72 {
+			return errors.New("basic authentication password must contain 8-72 bytes")
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return errors.New("could not secure basic authentication password")
+		}
+		site.BasicAuthPasswordHash = string(hash)
+	} else if existing != nil && existing.BasicAuthEnabled {
+		site.BasicAuthPasswordHash = existing.BasicAuthPasswordHash
+	}
+	if site.BasicAuthPasswordHash == "" {
+		return errors.New("basic authentication password is required")
+	}
+	if _, err := bcrypt.Cost([]byte(site.BasicAuthPasswordHash)); err != nil {
+		return errors.New("basic authentication password hash is invalid")
 	}
 	return nil
 }

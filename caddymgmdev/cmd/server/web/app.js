@@ -59,6 +59,12 @@ const els = {
   acmeIssuerRow: document.querySelector("#acme-issuer-row"),
   acmeIssuer: document.querySelector("#acme-issuer"),
   siteAuthEnabled: document.querySelector("#site-auth-enabled"),
+  basicAuthEnabled: document.querySelector("#basic-auth-enabled"),
+  basicAuthUsername: document.querySelector("#basic-auth-username"),
+  basicAuthPassword: document.querySelector("#basic-auth-password"),
+  basicAuthUsernameRow: document.querySelector("#basic-auth-username-row"),
+  basicAuthPasswordRow: document.querySelector("#basic-auth-password-row"),
+  basicAuthHint: document.querySelector("#basic-auth-hint"),
   delete: document.querySelector("#delete"),
   totalSites: document.querySelector("#total-sites"),
   activeSites: document.querySelector("#active-sites"),
@@ -260,6 +266,7 @@ els.tlsEnabled.addEventListener("change", syncTLSMode);
 els.hstsEnabled.addEventListener("change", syncTLSMode);
 els.securityHeaderProfile.addEventListener("change", syncSecurityHeaderProfile);
 els.siteAuthEnabled.addEventListener("change", syncSiteAuth);
+els.basicAuthEnabled.addEventListener("change", syncBasicAuth);
 els.upstream.addEventListener("input", syncUpstreamTLS);
 els.acmeDialogClose.addEventListener("click", closeACMEStatus);
 els.acmeDialog.addEventListener("close", stopACMEStatusPolling);
@@ -930,6 +937,12 @@ function sortedLogs(logs, table) {
   }).map(({ entry }) => entry);
 }
 
+function authenticationForSite(site) {
+  if (site.basicAuthEnabled) return { key: "basic", label: "Basic" };
+  if (site.authEnabled) return { key: "oidc", label: "OIDC" };
+  return { key: "disabled", label: "Disabled" };
+}
+
 function hostSortValue(site, key) {
   switch (key) {
     case "certificateProvider": return certificateProviderName(site);
@@ -939,7 +952,7 @@ function hostSortValue(site, key) {
     case "target": return site.mode === "static" ? site.root : site.upstream;
     case "upstreamTls": return site.mode === "proxy" ? (site.skipTlsVerify ? "Skipped" : "Verified") : "-";
     case "status": return site.enabled ? "Active" : "Inactive";
-    case "auth": return site.authEnabled ? "Enabled" : "Disabled";
+    case "auth": return authenticationForSite(site).label;
     case "comment": return site.comment || "";
     default: return site.address || "";
   }
@@ -980,7 +993,7 @@ function siteMatchesFilters(site, filters) {
   const mode = site.mode === "static" ? "static" : "proxy";
   const upstreamTls = site.mode !== "proxy" ? "not-applicable" : site.skipTlsVerify ? "skipped" : "verified";
   const status = site.enabled ? "active" : "inactive";
-  const auth = site.authEnabled ? "enabled" : "disabled";
+  const auth = authenticationForSite(site).key;
   const comment = (site.comment || "").toLowerCase();
   return (filters.protocol === "all" || protocol === filters.protocol)
     && (!filters.certificateProvider || filters.certificateProvider === "all" || provider.includes(filters.certificateProvider))
@@ -1110,9 +1123,10 @@ function renderSiteList(container, editable, table) {
     row.children[6].classList.toggle("off", site.mode !== "proxy");
     row.children[7].textContent = site.enabled ? "Active" : "Inactive";
     row.children[7].classList.toggle("off", !site.enabled);
-    row.children[8].textContent = site.authEnabled ? "Enabled" : "Disabled";
-    row.children[8].classList.toggle("secure", !!site.authEnabled);
-    row.children[8].classList.toggle("off", !site.authEnabled);
+    const authentication = authenticationForSite(site);
+    row.children[8].textContent = authentication.label;
+    row.children[8].classList.toggle("secure", authentication.key !== "disabled");
+    row.children[8].classList.toggle("off", authentication.key === "disabled");
     row.children[9].textContent = site.comment || "-";
     row.children[9].title = site.comment || "";
     if (editable) {
@@ -1152,11 +1166,17 @@ async function toggleSiteEnabled(site) {
         skipTlsVerify: !!site.skipTlsVerify,
         rewriteRedirects: site.rewriteRedirects !== false,
         hstsEnabled: !!site.hstsEnabled,
+        securityHeaderProfile: site.securityHeaderProfile || "",
         root: site.root || "",
         extraDirectives: site.extraDirectives || "",
         logsEnabled: !!site.logsEnabled,
         tlsMode: site.tlsMode || "off",
         acmeIssuerId: site.tlsMode === "acme" ? site.acmeIssuerId || "" : "",
+        authEnabled: !!site.authEnabled,
+        authProviderId: site.authEnabled ? "oidc" : "",
+        basicAuthEnabled: !!site.basicAuthEnabled,
+        basicAuthUsername: site.basicAuthUsername || "",
+        basicAuthPassword: "",
         enabled: nextEnabled,
       }),
     });
@@ -1423,6 +1443,9 @@ function editSite(site = null) {
   els.logsEnabled.checked = site?.logsEnabled ?? true;
   els.tlsEnabled.checked = !!site && site?.tlsMode !== "off";
   els.siteAuthEnabled.checked = !!site?.authEnabled;
+  els.basicAuthEnabled.checked = !!site?.basicAuthEnabled;
+  els.basicAuthUsername.value = site?.basicAuthUsername || "";
+  els.basicAuthPassword.value = "";
   renderIssuerOptions();
   els.acmeIssuer.value = site?.acmeIssuerId || "";
   document.querySelectorAll("input[name='mode']").forEach((input) => {
@@ -1437,6 +1460,7 @@ function editSite(site = null) {
   syncTLSMode();
   syncSiteAuth();
   syncSecurityHeaderProfile();
+  syncBasicAuth();
   els.editor.scrollIntoView({ behavior: "smooth", block: "start" });
   els.address.focus({ preventScroll: true });
 }
@@ -1496,6 +1520,9 @@ function syncTLSMode() {
   if (!enabled) {
     els.acmeIssuer.value = "";
     els.hstsEnabled.checked = false;
+    els.siteAuthEnabled.checked = false;
+    els.basicAuthEnabled.checked = false;
+    syncBasicAuthFields();
   } else if (!els.acmeIssuer.value && els.acmeIssuer.options.length > 0) {
     els.acmeIssuer.value = els.acmeIssuer.options[0].value;
   }
@@ -1511,10 +1538,37 @@ function syncSecurityHeaderProfile() {
 
 function syncSiteAuth() {
   const enabled = els.siteAuthEnabled.checked;
-  if (enabled && !els.tlsEnabled.checked) {
-    els.tlsEnabled.checked = true;
-    syncTLSMode();
+  if (enabled) {
+    els.basicAuthEnabled.checked = false;
+    if (!els.tlsEnabled.checked) {
+      els.tlsEnabled.checked = true;
+      syncTLSMode();
+    }
   }
+  syncBasicAuthFields();
+}
+
+function syncBasicAuth() {
+  if (els.basicAuthEnabled.checked) {
+    els.siteAuthEnabled.checked = false;
+    if (!els.tlsEnabled.checked) {
+      els.tlsEnabled.checked = true;
+      syncTLSMode();
+    }
+  }
+  syncBasicAuthFields();
+}
+
+function syncBasicAuthFields() {
+  const enabled = els.basicAuthEnabled.checked;
+  setFieldVisible(els.basicAuthUsernameRow, enabled);
+  setFieldVisible(els.basicAuthPasswordRow, enabled);
+  setFieldVisible(els.basicAuthHint, enabled);
+  els.basicAuthUsername.disabled = !enabled;
+  els.basicAuthPassword.disabled = !enabled;
+  els.basicAuthUsername.required = enabled;
+  els.basicAuthPassword.required = enabled && !editingSite?.basicAuthEnabled;
+  els.basicAuthPassword.placeholder = editingSite?.basicAuthEnabled ? "Leave empty to keep current password" : "At least 8 characters";
 }
 
 async function saveSite(event) {
@@ -1542,6 +1596,9 @@ async function saveSite(event) {
     enabled: els.enabled.checked,
     authEnabled: els.siteAuthEnabled.checked,
     authProviderId: els.siteAuthEnabled.checked ? "oidc" : "",
+    basicAuthEnabled: els.basicAuthEnabled.checked,
+    basicAuthUsername: els.basicAuthEnabled.checked ? els.basicAuthUsername.value : "",
+    basicAuthPassword: els.basicAuthEnabled.checked ? els.basicAuthPassword.value : "",
   };
   const id = els.id.value;
   try {
@@ -1549,6 +1606,7 @@ async function saveSite(event) {
       method: id ? "PUT" : "POST",
       body: JSON.stringify(payload),
     });
+    els.basicAuthPassword.value = "";
     await loadSites();
     await loadLogs();
     const savedID = saved?.id || id;

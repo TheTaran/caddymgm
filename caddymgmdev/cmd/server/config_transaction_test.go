@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -125,6 +126,52 @@ func TestRenderAndParseSitePreservesManagedSecurityOptions(t *testing.T) {
 	}
 	if strings.Contains(parsed.ExtraDirectives, "header_down Location") || strings.Contains(parsed.ExtraDirectives, "Strict-Transport-Security") || strings.Contains(parsed.ExtraDirectives, "X-Content-Type-Options") {
 		t.Fatalf("managed security directives leaked into extra settings: %q", parsed.ExtraDirectives)
+	}
+}
+
+func TestBasicAuthRenderParseAndPasswordRetention(t *testing.T) {
+	site := Site{Address: "basic.example.test", Mode: "proxy", Upstream: "http://127.0.0.1:8080", TLSMode: "acme", BasicAuthEnabled: true, BasicAuthUsername: "web-user", BasicAuthPassword: "correct-horse"}
+	if err := prepareBasicAuth(&site, nil); err != nil {
+		t.Fatal(err)
+	}
+	if site.BasicAuthPassword != "" || site.BasicAuthPasswordHash == "" {
+		t.Fatalf("password was not converted to a write-only hash: %+v", site)
+	}
+	rendered := renderSite(site, nil, "/logs", "caddymgm:8080")
+	if !strings.Contains(rendered, "basic_auth {") || !strings.Contains(rendered, site.BasicAuthPasswordHash) || strings.Contains(rendered, "correct-horse") {
+		t.Fatalf("unexpected rendered basic auth block:\n%s", rendered)
+	}
+	parsed, err := parseSite("basic", strings.Split(rendered, "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.BasicAuthEnabled || parsed.BasicAuthUsername != "web-user" || parsed.BasicAuthPasswordHash != site.BasicAuthPasswordHash {
+		t.Fatalf("parsed basic auth = %+v", parsed)
+	}
+	if strings.Contains(parsed.ExtraDirectives, "basic_auth") {
+		t.Fatalf("managed basic auth leaked into extra settings: %q", parsed.ExtraDirectives)
+	}
+	encoded, err := json.Marshal(parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), site.BasicAuthPasswordHash) || strings.Contains(string(encoded), "basicAuthPassword") {
+		t.Fatalf("API JSON exposed basic auth password material: %s", encoded)
+	}
+	updated := Site{TLSMode: "acme", BasicAuthEnabled: true, BasicAuthUsername: "web-user"}
+	if err := prepareBasicAuth(&updated, &site); err != nil || updated.BasicAuthPasswordHash != site.BasicAuthPasswordHash {
+		t.Fatalf("existing password hash was not retained: hash=%q err=%v", updated.BasicAuthPasswordHash, err)
+	}
+}
+
+func TestBasicAuthRequiresTLSAndExcludesOIDC(t *testing.T) {
+	for _, site := range []Site{
+		{TLSMode: "off", BasicAuthEnabled: true, BasicAuthUsername: "user", BasicAuthPassword: "password-123"},
+		{TLSMode: "acme", AuthEnabled: true, BasicAuthEnabled: true, BasicAuthUsername: "user", BasicAuthPassword: "password-123"},
+	} {
+		if err := prepareBasicAuth(&site, nil); err == nil {
+			t.Fatalf("prepareBasicAuth(%+v) succeeded, want error", site)
+		}
 	}
 }
 

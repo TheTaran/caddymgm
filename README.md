@@ -28,6 +28,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
   - rewrite redirects that expose the configured internal reverse-proxy origin
   - HTTP Strict Transport Security (HSTS) for TLS-enabled web hosts
   - configurable Standard and Strict security header profiles per web host
+  - per-web-host Basic Authentication with bcrypt-hashed passwords
 
 ## Planned Upcoming Features
 
@@ -35,7 +36,6 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 - Additional security features to protect managed websites, including:
   - access policies for everyone, allowed IPs, or blocked IPs
   - IP address and CIDR lists
-  - basic authentication with username and password
   - maximum request body size limits
   - allowed HTTP methods
   - blocked paths

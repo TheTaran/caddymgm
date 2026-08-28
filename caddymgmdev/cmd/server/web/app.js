@@ -21,6 +21,16 @@ const els = {
   geoIPLimit: document.querySelector("#geo-ip-limit"),
   geoMapDetails: document.querySelector("#geo-map-details"),
   siteList: document.querySelector("#site-list"),
+  hostFilterProtocol: document.querySelector("#host-filter-protocol"),
+  hostFilterCertificateProvider: document.querySelector("#host-filter-certificate-provider"),
+  hostFilterVisibility: document.querySelector("#host-filter-visibility"),
+  hostFilterMode: document.querySelector("#host-filter-mode"),
+  hostFilterUpstreamTLS: document.querySelector("#host-filter-upstream-tls"),
+  hostFilterStatus: document.querySelector("#host-filter-status"),
+  hostFilterAuth: document.querySelector("#host-filter-auth"),
+  hostFilterComment: document.querySelector("#host-filter-comment"),
+  hostFilterReset: document.querySelector("#host-filter-reset"),
+  hostFilterSummary: document.querySelector("#host-filter-summary"),
   proxyGrid: document.querySelector("#proxy-hosts-grid"),
   editor: document.querySelector("#editor"),
   form: document.querySelector("#site-form"),
@@ -30,9 +40,15 @@ const els = {
   comment: document.querySelector("#comment"),
   upstream: document.querySelector("#upstream"),
   skipTlsVerify: document.querySelector("#skip-tls-verify"),
+  rewriteRedirects: document.querySelector("#rewrite-redirects"),
+  hstsEnabled: document.querySelector("#hsts-enabled"),
   root: document.querySelector("#root"),
   upstreamRow: document.querySelector("#upstream-row"),
   skipTlsVerifyRow: document.querySelector("#skip-tls-verify-row"),
+  rewriteRedirectsRow: document.querySelector("#rewrite-redirects-row"),
+  hstsEnabledRow: document.querySelector("#hsts-enabled-row"),
+  rewriteRedirectsHint: document.querySelector("#rewrite-redirects-hint"),
+  hstsEnabledHint: document.querySelector("#hsts-enabled-hint"),
   rootRow: document.querySelector("#root-row"),
   extra: document.querySelector("#extra"),
   enabled: document.querySelector("#enabled"),
@@ -157,11 +173,28 @@ const hostSort = {
   dashboard: { key: "address", direction: "asc" },
   "web-hosts": { key: "address", direction: "asc" },
 };
+const hostFilters = {
+  protocol: "all",
+  certificateProvider: "all",
+  visibility: "all",
+  mode: "all",
+  upstreamTls: "all",
+  status: "all",
+  auth: "all",
+  comment: "",
+};
 const auxiliarySort = {
   certificates: { key: "domain", direction: "asc" },
   "service-logs": { key: "time", direction: "desc" },
   "site-logs": { key: "time", direction: "desc" },
   "oidc-logs": { key: "time", direction: "desc" },
+};
+const tableFilters = {
+  dashboard: { protocol: "all", certificateProvider: "", visibility: "all", mode: "all", upstreamTls: "all", status: "all", auth: "all", comment: "" },
+  certificates: { issuer: "", expires: "all", status: "all" },
+  "service-logs": { type: "", message: "", status: "" },
+  "site-logs": { method: "all", path: "", status: "" },
+  "oidc-logs": { type: "", user: "", ip: "", site: "", status: "" },
 };
 const hostCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 let settings = null;
@@ -202,6 +235,16 @@ els.oidcLogToggle.addEventListener("click", toggleOIDCLogsExpanded);
 els.geoIPScope.addEventListener("change", renderTopIPs);
 els.geoIPHost.addEventListener("change", renderTopIPs);
 els.geoIPLimit.addEventListener("change", renderTopIPs);
+[els.hostFilterProtocol, els.hostFilterCertificateProvider, els.hostFilterVisibility, els.hostFilterMode, els.hostFilterUpstreamTLS, els.hostFilterStatus, els.hostFilterAuth, els.hostFilterComment].forEach((filter) => {
+  filter.addEventListener(filter.tagName === "INPUT" ? "input" : "change", applyHostFilters);
+});
+els.hostFilterReset.addEventListener("click", resetHostFilters);
+document.querySelectorAll(".table-filter").forEach((filter) => {
+  filter.addEventListener(filter.tagName === "INPUT" ? "input" : "change", applyTableFilter);
+});
+document.querySelectorAll("[data-reset-filters]").forEach((button) => {
+  button.addEventListener("click", resetTableFilters);
+});
 els.settingsForm.addEventListener("submit", saveSettings);
 els.settingsPassword.addEventListener("input", syncSettingsPasswordConfirmation);
 els.settingsPasswordConfirm.addEventListener("input", syncSettingsPasswordConfirmation);
@@ -212,6 +255,7 @@ els.issuerReset.addEventListener("click", closeIssuerForm);
 els.issuerDelete.addEventListener("click", deleteIssuer);
 els.issuerRootCAUploadButton.addEventListener("click", uploadRootCA);
 els.tlsEnabled.addEventListener("change", syncTLSMode);
+els.hstsEnabled.addEventListener("change", syncTLSMode);
 els.siteAuthEnabled.addEventListener("change", syncSiteAuth);
 els.upstream.addEventListener("input", syncUpstreamTLS);
 els.acmeDialogClose.addEventListener("click", closeACMEStatus);
@@ -678,7 +722,16 @@ function renderIssuedCertificates() {
 function sortedCertificates() {
   const sort = auxiliarySort.certificates;
   const direction = sort.direction === "desc" ? -1 : 1;
-  const tlsSites = sites.filter((site) => site.tlsMode && site.tlsMode !== "off");
+  const filters = tableFilters.certificates;
+  const tlsSites = sites.filter((site) => {
+    if (!site.tlsMode || site.tlsMode === "off") return false;
+    const issuer = certificateIssuerName(site).toLowerCase();
+    const expiry = site.certificateExpiresAt ? "known" : "unknown";
+    const status = site.enabled ? "active" : "disabled";
+    return (!filters.issuer || issuer.includes(filters.issuer))
+      && (filters.expires === "all" || expiry === filters.expires)
+      && (filters.status === "all" || status === filters.status);
+  });
   return tlsSites.map((site, index) => ({ site, index })).sort((left, right) => {
     let result;
     if (sort.key === "expires") {
@@ -798,6 +851,7 @@ function renderMetrics() {
 }
 
 function renderHostLists() {
+  renderHostFilterOptions();
   updateSortHeaders();
   renderSiteList(els.dashboardSiteList, false, "dashboard");
   renderSiteList(els.siteList, true, "web-hosts");
@@ -831,10 +885,26 @@ function renderSortedTable(table) {
   }
 }
 
+function logMatchesFilters(entry, table) {
+  const filters = tableFilters[table];
+  if (!filters) return true;
+  const values = {
+    type: String(entry.action || "service").replaceAll("_", " ").toLowerCase(),
+    message: String(entry.message || "").toLowerCase(),
+    method: String(entry.method || "").toLowerCase(),
+    path: String(entry.path || entry.message || "").toLowerCase(),
+    user: String(entry.username || entry.email || "").toLowerCase(),
+    ip: String(entry.ip || "").toLowerCase(),
+    site: String(entry.site || "").toLowerCase(),
+    status: String(entry.status || "").toLowerCase(),
+  };
+  return Object.entries(filters).every(([key, filter]) => !filter || filter === "all" || values[key]?.includes(filter));
+}
+
 function sortedLogs(logs, table) {
   const sort = auxiliarySort[table];
   const direction = sort.direction === "desc" ? -1 : 1;
-  return logs.map((entry, index) => ({ entry, index })).sort((left, right) => {
+  return logs.filter((entry) => logMatchesFilters(entry, table)).map((entry, index) => ({ entry, index })).sort((left, right) => {
     let result;
     if (sort.key === "time") {
       const leftTime = new Date(left.entry.time || 0).getTime();
@@ -882,6 +952,90 @@ function sortedSitesFor(table) {
   }).map(({ site }) => site);
 }
 
+function renderHostFilterOptions() {
+  const current = els.hostFilterCertificateProvider.value;
+  const providers = [...new Set(sites.map(certificateProviderName))].sort((left, right) => hostCollator.compare(left, right));
+  els.hostFilterCertificateProvider.innerHTML = "";
+  const all = document.createElement("option");
+  all.value = "all";
+  all.textContent = "All";
+  els.hostFilterCertificateProvider.append(all);
+  for (const provider of providers) {
+    const option = document.createElement("option");
+    option.value = provider.toLowerCase();
+    option.textContent = provider;
+    els.hostFilterCertificateProvider.append(option);
+  }
+  els.hostFilterCertificateProvider.value = [...els.hostFilterCertificateProvider.options].some((option) => option.value === current) ? current : "all";
+  hostFilters.certificateProvider = els.hostFilterCertificateProvider.value;
+}
+
+function siteMatchesFilters(site, filters) {
+  const protocol = protocolForSite(site).toLowerCase();
+  const provider = certificateProviderName(site).toLowerCase();
+  const visibility = visibilityForSite(site).label.toLowerCase();
+  const mode = site.mode === "static" ? "static" : "proxy";
+  const upstreamTls = site.mode !== "proxy" ? "not-applicable" : site.skipTlsVerify ? "skipped" : "verified";
+  const status = site.enabled ? "active" : "inactive";
+  const auth = site.authEnabled ? "enabled" : "disabled";
+  const comment = (site.comment || "").toLowerCase();
+  return (filters.protocol === "all" || protocol === filters.protocol)
+    && (!filters.certificateProvider || filters.certificateProvider === "all" || provider.includes(filters.certificateProvider))
+    && (filters.visibility === "all" || visibility === filters.visibility)
+    && (filters.mode === "all" || mode === filters.mode)
+    && (filters.upstreamTls === "all" || upstreamTls === filters.upstreamTls)
+    && (filters.status === "all" || status === filters.status)
+    && (filters.auth === "all" || auth === filters.auth)
+    && (!filters.comment || comment.includes(filters.comment));
+}
+
+function filteredSitesFor(table) {
+  const sorted = sortedSitesFor(table);
+  if (table === "web-hosts") return sorted.filter((site) => siteMatchesFilters(site, hostFilters));
+  if (table === "dashboard") return sorted.filter((site) => siteMatchesFilters(site, tableFilters.dashboard));
+  return sorted;
+}
+
+function applyHostFilters() {
+  hostFilters.protocol = els.hostFilterProtocol.value;
+  hostFilters.certificateProvider = els.hostFilterCertificateProvider.value;
+  hostFilters.visibility = els.hostFilterVisibility.value;
+  hostFilters.mode = els.hostFilterMode.value;
+  hostFilters.upstreamTls = els.hostFilterUpstreamTLS.value;
+  hostFilters.status = els.hostFilterStatus.value;
+  hostFilters.auth = els.hostFilterAuth.value;
+  hostFilters.comment = els.hostFilterComment.value.trim().toLowerCase();
+  renderSiteList(els.siteList, true, "web-hosts");
+}
+
+function resetHostFilters() {
+  document.querySelectorAll("select.column-filter").forEach((filter) => { filter.value = "all"; });
+  els.hostFilterComment.value = "";
+  applyHostFilters();
+}
+
+function applyTableFilter(event) {
+  const input = event.currentTarget;
+  const filters = tableFilters[input.dataset.filterTable];
+  if (!filters) return;
+  filters[input.dataset.filterKey] = input.value.trim().toLowerCase();
+  renderSortedTable(input.dataset.filterTable);
+}
+
+function resetTableFilters(event) {
+  const table = event.currentTarget.dataset.resetFilters;
+  const filters = tableFilters[table];
+  if (!filters) return;
+  document.querySelectorAll("[data-filter-table=" + table + "]").forEach((input) => {
+    input.value = input.tagName === "SELECT" ? "all" : "";
+  });
+  for (const key of Object.keys(filters)) filters[key] = "";
+  if (table === "dashboard") Object.assign(filters, { protocol: "all", visibility: "all", mode: "all", upstreamTls: "all", status: "all", auth: "all" });
+  if (table === "certificates") Object.assign(filters, { expires: "all", status: "all" });
+  if (table === "site-logs") filters.method = "all";
+  renderSortedTable(table);
+}
+
 function renderSiteList(container, editable, table) {
   container.innerHTML = "";
   if (!sites.length) {
@@ -892,7 +1046,20 @@ function renderSiteList(container, editable, table) {
     return;
   }
 
-  for (const site of sortedSitesFor(table)) {
+  const visibleSites = filteredSitesFor(table);
+  if (table === "web-hosts") {
+    els.hostFilterSummary.textContent = visibleSites.length + " of " + sites.length + " websites";
+    els.hostFilterReset.disabled = Object.entries(hostFilters).every(([key, value]) => key === "comment" ? value === "" : value === "all");
+  }
+  if (!visibleSites.length) {
+    const empty = document.createElement("div");
+    empty.className = "site-row empty filtered-empty";
+    empty.textContent = "No websites match the selected filters.";
+    container.append(empty);
+    return;
+  }
+
+  for (const site of visibleSites) {
     const row = document.createElement("div");
     row.className = `site-row ${editable ? "site-row-editable" : "site-row-dashboard"}`;
     row.innerHTML = editable
@@ -980,6 +1147,8 @@ async function toggleSiteEnabled(site) {
         mode: site.mode,
         upstream: site.upstream || "",
         skipTlsVerify: !!site.skipTlsVerify,
+        rewriteRedirects: site.rewriteRedirects !== false,
+        hstsEnabled: !!site.hstsEnabled,
         root: site.root || "",
         extraDirectives: site.extraDirectives || "",
         logsEnabled: !!site.logsEnabled,
@@ -1059,6 +1228,13 @@ function renderLogs(logs) {
   }
 
   const sorted = sortedLogs(logs, "site-logs");
+  if (!sorted.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No website log lines match the selected filters.";
+    els.logList.append(empty);
+    return;
+  }
   const visibleLogs = siteLogsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
   for (const entry of visibleLogs) {
     const row = document.createElement("div");
@@ -1078,7 +1254,7 @@ function renderLogs(logs) {
     row.children[3].classList.toggle("off", !String(entry.status || "").startsWith("2"));
     els.logList.append(row);
   }
-  syncLogToggle(els.siteLogToggle, logs.length, siteLogsExpanded);
+  syncLogToggle(els.siteLogToggle, sorted.length, siteLogsExpanded);
 }
 
 function renderServiceLogs(logs, available = true) {
@@ -1103,6 +1279,13 @@ function renderServiceLogs(logs, available = true) {
   }
 
   const sorted = sortedLogs(logs, "service-logs");
+  if (!sorted.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No service log lines match the selected filters.";
+    els.serviceLogList.append(empty);
+    return;
+  }
   const visibleLogs = serviceLogsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
   for (const entry of visibleLogs) {
     const row = document.createElement("div");
@@ -1122,7 +1305,7 @@ function renderServiceLogs(logs, available = true) {
     row.children[3].classList.toggle("off", String(entry.status || "").toUpperCase() === "ERROR");
     els.serviceLogList.append(row);
   }
-  syncLogToggle(els.serviceLogToggle, logs.length, serviceLogsExpanded);
+  syncLogToggle(els.serviceLogToggle, sorted.length, serviceLogsExpanded);
 }
 
 async function loadOIDCLogs() {
@@ -1145,6 +1328,13 @@ function renderOIDCLogs(logs) {
     return;
   }
   const sorted = sortedLogs(logs, "oidc-logs");
+  if (!sorted.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No OIDC events match the selected filters.";
+    els.oidcLogList.append(empty);
+    return;
+  }
   const visibleLogs = oidcLogsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
   for (const entry of visibleLogs) {
     const row = document.createElement("div");
@@ -1163,7 +1353,7 @@ function renderOIDCLogs(logs) {
     row.children[5].classList.toggle("off", !["success", "pending"].includes(String(entry.status || "").toLowerCase()));
     els.oidcLogList.append(row);
   }
-  syncLogToggle(els.oidcLogToggle, logs.length, oidcLogsExpanded);
+  syncLogToggle(els.oidcLogToggle, sorted.length, oidcLogsExpanded);
 }
 
 function syncLogToggle(button, total, expanded) {
@@ -1221,6 +1411,8 @@ function editSite(site = null) {
   els.comment.value = site?.comment || "";
   els.upstream.value = site?.upstream || "";
   els.skipTlsVerify.checked = !!site?.skipTlsVerify;
+  els.rewriteRedirects.checked = site ? site.rewriteRedirects !== false : true;
+  els.hstsEnabled.checked = !!site?.hstsEnabled;
   els.root.value = site?.root || "";
   els.extra.value = site?.extraDirectives || "";
   els.enabled.checked = site?.enabled ?? true;
@@ -1254,11 +1446,14 @@ function syncMode() {
   const mode = getMode();
   setFieldVisible(els.upstreamRow, mode === "proxy");
   setFieldVisible(els.skipTlsVerifyRow, mode === "proxy");
+  setFieldVisible(els.rewriteRedirectsRow, mode === "proxy");
+  setFieldVisible(els.rewriteRedirectsHint, mode === "proxy");
   setFieldVisible(els.rootRow, mode === "static");
   els.upstream.required = mode === "proxy";
   els.root.required = mode === "static";
   els.upstream.disabled = mode !== "proxy";
   els.skipTlsVerify.disabled = mode !== "proxy";
+  els.rewriteRedirects.disabled = mode !== "proxy";
   els.root.disabled = mode !== "static";
   if (mode === "proxy") {
     els.root.value = "";
@@ -1287,11 +1482,15 @@ function setFieldVisible(row, visible) {
 
 function syncTLSMode() {
   const enabled = els.tlsEnabled.checked;
+  els.hstsEnabled.disabled = !enabled;
+  els.hstsEnabledRow.classList.toggle("disabled", !enabled);
+  els.hstsEnabledHint.classList.toggle("disabled", !enabled);
   els.acmeIssuerRow.hidden = !enabled;
   els.acmeIssuer.required = enabled;
   els.acmeIssuer.disabled = !enabled;
   if (!enabled) {
     els.acmeIssuer.value = "";
+    els.hstsEnabled.checked = false;
   } else if (!els.acmeIssuer.value && els.acmeIssuer.options.length > 0) {
     els.acmeIssuer.value = els.acmeIssuer.options[0].value;
   }
@@ -1319,6 +1518,8 @@ async function saveSite(event) {
     mode,
     upstream: els.upstream.value,
     skipTlsVerify: els.skipTlsVerify.checked,
+    rewriteRedirects: mode === "proxy" && els.rewriteRedirects.checked,
+    hstsEnabled: els.tlsEnabled.checked && els.hstsEnabled.checked,
     root: els.root.value,
     extraDirectives: els.extra.value,
     logsEnabled: els.logsEnabled.checked,

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -81,5 +82,47 @@ func TestSaveRepairsLegacyInvalidAndDuplicateSites(t *testing.T) {
 	}
 	if strings.Contains(string(content), "tls_insecure_skip_verify") {
 		t.Fatalf("invalid HTTP upstream TLS transport was not removed:\n%s", content)
+	}
+}
+
+func TestRedirectRewriteRuleMatchesOnlyConfiguredUpstreamOrigin(t *testing.T) {
+	site := Site{Address: "public.example.test", Upstream: "http://10.0.100.102:8080", TLSMode: "acme"}
+	pattern, replacement, ok := redirectRewriteRule(site)
+	if !ok {
+		t.Fatal("redirect rewrite rule was not generated")
+	}
+	matcher := regexp.MustCompile(pattern)
+	if !matcher.MatchString("http://10.0.100.102:8080/login?next=/") {
+		t.Fatalf("pattern %q does not match configured upstream redirect", pattern)
+	}
+	if matcher.MatchString("https://login.example.com/oauth") || matcher.MatchString("http://10.0.100.102.evil.test/") {
+		t.Fatalf("pattern %q matches an external redirect", pattern)
+	}
+	if !strings.HasPrefix(replacement, "https://public.example.test") {
+		t.Fatalf("replacement = %q, want public HTTPS origin", replacement)
+	}
+}
+
+func TestRenderAndParseSitePreservesRedirectRewriteAndHSTS(t *testing.T) {
+	site := Site{
+		ID: "public", Address: "public.example.test", Mode: "proxy",
+		Upstream: "http://10.0.100.102", TLSMode: "acme", Enabled: true,
+		RewriteRedirects: true, HSTSEnabled: true,
+	}
+	rendered := renderSite(site, nil, "/logs", "caddymgm:8080")
+	for _, want := range []string{"header_down Location", "# caddymgm:hsts", "header Strict-Transport-Security", "max-age=31536000"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered site is missing %q:\n%s", want, rendered)
+		}
+	}
+	parsed, err := parseSite(site.ID, strings.Split(rendered, "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.RewriteRedirects || !parsed.HSTSEnabled {
+		t.Fatalf("parsed security options = rewrite:%v hsts:%v", parsed.RewriteRedirects, parsed.HSTSEnabled)
+	}
+	if strings.Contains(parsed.ExtraDirectives, "header_down Location") || strings.Contains(parsed.ExtraDirectives, "Strict-Transport-Security") {
+		t.Fatalf("managed security directives leaked into extra settings: %q", parsed.ExtraDirectives)
 	}
 }

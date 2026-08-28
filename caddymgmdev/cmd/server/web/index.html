@@ -166,17 +166,17 @@
                 </h2>
                 <span>Dashboard Overview</span>
               </div>
-            <div class="table-head" data-sort-table="dashboard">
-              <span role="columnheader"><button class="sort-button" type="button" data-sort="protocol">Protocol</button></span>
+            <div class="table-head table-head-filtered" data-sort-table="dashboard">
+              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="protocol">Protocol</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="protocol" aria-label="Filter dashboard by protocol"><option value="all">All</option><option value="https">HTTPS</option><option value="http">HTTP</option></select></span>
               <span role="columnheader"><button class="sort-button" type="button" data-sort="address">Address</button></span>
-              <span role="columnheader"><button class="sort-button" type="button" data-sort="certificateProvider">Certificate Provider</button></span>
-              <span role="columnheader"><button class="sort-button" type="button" data-sort="visibility">Visibility</button></span>
-              <span role="columnheader"><button class="sort-button" type="button" data-sort="mode">Type</button></span>
+              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="certificateProvider">Certificate Provider</button><input class="column-filter column-filter-text table-filter" data-filter-table="dashboard" data-filter-key="certificateProvider" type="search" placeholder="Filter" aria-label="Filter dashboard by certificate provider" /></span>
+              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="visibility">Visibility</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="visibility" aria-label="Filter dashboard by visibility"><option value="all">All</option><option value="internal">Internal</option><option value="public">Public</option></select></span>
+              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="mode">Type</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="mode" aria-label="Filter dashboard by type"><option value="all">All</option><option value="proxy">Proxy</option><option value="static">Static</option></select></span>
               <span role="columnheader"><button class="sort-button" type="button" data-sort="target">Target</button></span>
-              <span role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button></span>
-              <span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="auth">SSO / OIDC</button></span>
-              <span role="columnheader"><button class="sort-button" type="button" data-sort="comment">Comment</button></span>
+              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="upstreamTls" aria-label="Filter dashboard by upstream TLS"><option value="all">All</option><option value="verified">Verified</option><option value="skipped">Skipped</option><option value="not-applicable">N/A</option></select></span>
+              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="status" aria-label="Filter dashboard by status"><option value="all">All</option><option value="active">Active</option><option value="inactive">Inactive</option></select></span>
+              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="auth">SSO / OIDC</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="auth" aria-label="Filter dashboard by authentication"><option value="all">All</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></span>
+              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="comment">Comment</button><input class="column-filter column-filter-text table-filter" data-filter-table="dashboard" data-filter-key="comment" type="search" placeholder="Filter" aria-label="Filter dashboard by comment" /><button class="filter-reset-button" type="button" data-reset-filters="dashboard">Reset</button></span>
             </div>
             <div id="dashboard-site-list" class="site-list"></div>
           </section>
@@ -197,21 +197,21 @@
                   </span>
                   <span>Configuration</span>
                 </h2>
-                <span>Manage individual websites</span>
+                <span class="host-table-meta"><span id="host-filter-summary" aria-live="polite"></span><span>Manage individual websites</span></span>
               </div>
               <div class="site-table-scroll">
                 <div class="table-head" data-sort-table="web-hosts">
-                  <span role="columnheader"><button class="sort-button" type="button" data-sort="protocol">Protocol</button></span>
+                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="protocol">Protocol</button><select id="host-filter-protocol" class="column-filter" aria-label="Filter by protocol"><option value="all">All</option><option value="https">HTTPS</option><option value="http">HTTP</option></select></span>
                   <span role="columnheader"><button class="sort-button" type="button" data-sort="address">Address</button></span>
-                  <span role="columnheader"><button class="sort-button" type="button" data-sort="certificateProvider">Certificate Provider</button></span>
-                  <span role="columnheader"><button class="sort-button" type="button" data-sort="visibility">Visibility</button></span>
-                  <span role="columnheader"><button class="sort-button" type="button" data-sort="mode">Type</button></span>
+                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="certificateProvider">Certificate Provider</button><select id="host-filter-certificate-provider" class="column-filter" aria-label="Filter by certificate provider"><option value="all">All</option></select></span>
+                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="visibility">Visibility</button><select id="host-filter-visibility" class="column-filter" aria-label="Filter by visibility"><option value="all">All</option><option value="internal">Internal</option><option value="public">Public</option></select></span>
+                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="mode">Type</button><select id="host-filter-mode" class="column-filter" aria-label="Filter by type"><option value="all">All</option><option value="proxy">Proxy</option><option value="static">Static</option></select></span>
                   <span role="columnheader"><button class="sort-button" type="button" data-sort="target">Target</button></span>
-                  <span role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button></span>
-                  <span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
-                  <span role="columnheader"><button class="sort-button" type="button" data-sort="auth">SSO / OIDC</button></span>
-                  <span role="columnheader"><button class="sort-button" type="button" data-sort="comment">Comment</button></span>
-                  <span>Actions</span>
+                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button><select id="host-filter-upstream-tls" class="column-filter" aria-label="Filter by upstream TLS"><option value="all">All</option><option value="verified">Verified</option><option value="skipped">Skipped</option><option value="not-applicable">N/A</option></select></span>
+                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><select id="host-filter-status" class="column-filter" aria-label="Filter by status"><option value="all">All</option><option value="active">Active</option><option value="inactive">Inactive</option></select></span>
+                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="auth">SSO / OIDC</button><select id="host-filter-auth" class="column-filter" aria-label="Filter by SSO or OIDC"><option value="all">All</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></span>
+                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="comment">Comment</button><input id="host-filter-comment" class="column-filter column-filter-text" type="search" placeholder="Filter" aria-label="Filter by comment" /></span>
+                  <span class="actions-head"><span>Actions</span><button id="host-filter-reset" class="filter-reset-button" type="button" title="Reset all filters">Reset</button></span>
                 </div>
                 <div id="site-list" class="site-list"></div>
               </div>
@@ -294,6 +294,18 @@
                     <span class="status-check-title">Skip upstream TLS verification</span>
                     <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
                     </label>
+                  <label id="rewrite-redirects-row" class="status-check" hidden>
+                    <input id="rewrite-redirects" type="checkbox" checked />
+                    <span class="status-check-title">Rewrite internal redirects</span>
+                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                    </label>
+                  <p id="rewrite-redirects-hint" class="field-hint">Rewrites only redirects pointing to the configured upstream origin. External redirects remain unchanged.</p>
+                  <label id="hsts-enabled-row" class="status-check">
+                    <input id="hsts-enabled" type="checkbox" />
+                    <span class="status-check-title">HTTP Strict Transport Security (HSTS)</span>
+                    <span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span>
+                    </label>
+                  <p id="hsts-enabled-hint" class="field-hint">Available with TLS. Instructs browsers to use HTTPS for this host for one year.</p>
                 </section>
 
                 <section id="site-editor-panel-authentication" class="site-editor-panel" role="tabpanel" aria-labelledby="site-editor-tab-authentication" data-site-editor-panel="authentication" hidden>
@@ -375,12 +387,12 @@
                 </h2>
                 <span>Managed hosts with TLS enabled</span>
               </div>
-              <div class="certificate-head" data-sort-table="certificates">
+              <div class="certificate-head table-head-filtered" data-sort-table="certificates">
                 <span role="columnheader"><button class="sort-button" type="button" data-sort="domain">Domain</button></span>
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="issuer">Issuer</button></span>
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="expires">Expires</button></span>
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
-                <span></span>
+                <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="issuer">Issuer</button><input class="column-filter column-filter-text table-filter" data-filter-table="certificates" data-filter-key="issuer" type="search" placeholder="Filter" aria-label="Filter certificates by issuer" /></span>
+                <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="expires">Expires</button><select class="column-filter table-filter" data-filter-table="certificates" data-filter-key="expires" aria-label="Filter certificates by expiry availability"><option value="all">All</option><option value="known">Known</option><option value="unknown">Unknown</option></select></span>
+                <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><select class="column-filter table-filter" data-filter-table="certificates" data-filter-key="status" aria-label="Filter certificates by status"><option value="all">All</option><option value="active">Active</option><option value="disabled">Disabled</option></select></span>
+                <span><button class="filter-reset-button" type="button" data-reset-filters="certificates">Reset</button></span>
               </div>
               <div id="certificate-list" class="certificate-list"></div>
             </section>
@@ -397,8 +409,8 @@
             <section id="logs-panel-service" class="panel-card logs-panel" role="tabpanel" aria-labelledby="logs-tab-service" data-logs-panel="service">
               <div class="panel-heading"><h2><span>Caddy Service Log</span></h2><span>Realtime service log</span></div>
               <div class="log-stream-label"><span>Service</span><strong>Caddy</strong></div>
-              <div class="log-head service-log-head" data-sort-table="service-logs">
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="type">Type</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="message">Message</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
+              <div class="log-head service-log-head table-head-filtered" data-sort-table="service-logs">
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="type">Type</button><input class="column-filter column-filter-text table-filter" data-filter-table="service-logs" data-filter-key="type" type="search" placeholder="Filter" aria-label="Filter service logs by type" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="message">Message</button><input class="column-filter log-text-filter table-filter" data-filter-table="service-logs" data-filter-key="message" type="search" placeholder="Filter message" aria-label="Filter service logs by message" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><input class="column-filter column-filter-text table-filter" data-filter-table="service-logs" data-filter-key="status" type="search" placeholder="Filter" aria-label="Filter service logs by status" /><button class="filter-reset-button" type="button" data-reset-filters="service-logs">Reset</button></span>
               </div>
               <div id="service-log-list" class="log-list"></div><div class="log-actions"><button id="service-log-toggle" type="button" class="secondary" hidden>Show more</button></div>
             </section>
@@ -406,15 +418,15 @@
               <div class="panel-heading"><h2><span>Website Access Logs</span></h2><span>Realtime per web host</span></div>
               <label class="filter-row">Web Host<select id="log-site-filter"><option value="">Select Web Host</option></select></label>
               <div id="log-stream-label" class="log-stream-label" hidden><span>Realtime Logs</span><strong></strong></div>
-              <div class="log-head" data-sort-table="site-logs">
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="method">Method</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="path">Path</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
+              <div class="log-head table-head-filtered" data-sort-table="site-logs">
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="method">Method</button><select class="column-filter table-filter" data-filter-table="site-logs" data-filter-key="method" aria-label="Filter website logs by method"><option value="all">All</option><option value="get">GET</option><option value="post">POST</option><option value="put">PUT</option><option value="patch">PATCH</option><option value="delete">DELETE</option></select></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="path">Path</button><input class="column-filter log-text-filter table-filter" data-filter-table="site-logs" data-filter-key="path" type="search" placeholder="Filter path" aria-label="Filter website logs by path" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><input class="column-filter column-filter-text table-filter" data-filter-table="site-logs" data-filter-key="status" type="search" placeholder="Filter" aria-label="Filter website logs by status" /><button class="filter-reset-button" type="button" data-reset-filters="site-logs">Reset</button></span>
               </div>
               <div id="log-list" class="log-list"></div><div class="log-actions"><button id="site-log-toggle" type="button" class="secondary" hidden>Show more</button></div>
             </section>
             <section id="logs-panel-oidc" class="panel-card logs-panel" role="tabpanel" aria-labelledby="logs-tab-oidc" data-logs-panel="oidc" hidden>
               <div class="panel-heading"><h2><span>OIDC Authentication Logs</span></h2><span>Authentication events for CaddyMGM and protected web hosts</span></div>
-              <div class="log-head oidc-log-head" data-sort-table="oidc-logs">
-                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="type">Event</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="user">User</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="ip">IP Address</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="site">Web Host</button></span><span role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button></span>
+              <div class="log-head oidc-log-head table-head-filtered" data-sort-table="oidc-logs">
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="type">Event</button><input class="column-filter column-filter-text table-filter" data-filter-table="oidc-logs" data-filter-key="type" type="search" placeholder="Filter" aria-label="Filter OIDC logs by event" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="user">User</button><input class="column-filter column-filter-text table-filter" data-filter-table="oidc-logs" data-filter-key="user" type="search" placeholder="Filter" aria-label="Filter OIDC logs by user" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="ip">IP Address</button><input class="column-filter column-filter-text table-filter" data-filter-table="oidc-logs" data-filter-key="ip" type="search" placeholder="Filter" aria-label="Filter OIDC logs by IP address" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="site">Web Host</button><input class="column-filter column-filter-text table-filter" data-filter-table="oidc-logs" data-filter-key="site" type="search" placeholder="Filter" aria-label="Filter OIDC logs by web host" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><input class="column-filter column-filter-text table-filter" data-filter-table="oidc-logs" data-filter-key="status" type="search" placeholder="Filter" aria-label="Filter OIDC logs by status" /><button class="filter-reset-button" type="button" data-reset-filters="oidc-logs">Reset</button></span>
               </div>
               <div id="oidc-log-list" class="log-list"></div><div class="log-actions"><button id="oidc-log-toggle" type="button" class="secondary" hidden>Show more</button></div>
             </section>

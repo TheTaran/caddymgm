@@ -2003,6 +2003,10 @@ function renderTopIPs() {
     const content = document.createElement("div");
     const primary = document.createElement("div");
     primary.className = "geo-ip-primary";
+    const country = document.createElement("span");
+    country.className = "geo-ip-country";
+    country.textContent = ip.scope === "internal" ? "Local network" : (ip.country || ip.countryCode || "Unknown country");
+    if (ip.countryCode && ip.country) country.title = ip.countryCode;
     const address = document.createElement("code");
     address.textContent = ip.address || "Unknown IP";
     const requests = document.createElement("span");
@@ -2011,7 +2015,7 @@ function renderTopIPs() {
     const badge = document.createElement("span");
     badge.className = `geo-scope-badge ${ip.scope === "internal" ? "internal" : "external"}`;
     badge.textContent = ip.scope === "internal" ? "Internal" : "External";
-    primary.append(address, requests, badge);
+    primary.append(country, address, requests, badge);
     const meta = document.createElement("span");
     meta.textContent = host === "all" ? ((ip.sites || []).join(", ") || "Unknown website") : host;
     content.append(primary, meta);
@@ -2026,11 +2030,20 @@ function showGeoLocation(location, marker) {
   els.geoMapDetails.hidden = false;
   const heading = document.createElement("div");
   heading.className = "geo-location-heading";
+  const headingCopy = document.createElement("div");
+  headingCopy.className = "geo-location-heading-copy";
   const title = document.createElement("strong");
   title.textContent = geoLocationLabel(location);
   const count = document.createElement("span");
-  count.textContent = `${location.count || 0} requests`;
-  heading.append(title, count);
+  count.textContent = String(location.count || 0) + " requests";
+  headingCopy.append(title, count);
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "geo-details-close";
+  close.setAttribute("aria-label", "Close location details");
+  close.textContent = "×";
+  close.addEventListener("click", closeGeoLocation);
+  heading.append(headingCopy, close);
   els.geoMapDetails.append(heading);
   for (const ip of location.ips || []) {
     const row = document.createElement("div");
@@ -2048,6 +2061,12 @@ function showGeoLocation(location, marker) {
     row.append(primary, meta);
     els.geoMapDetails.append(row);
   }
+}
+
+function closeGeoLocation() {
+  els.geoMap.querySelectorAll(".geo-marker").forEach((item) => item.classList.remove("active"));
+  els.geoMapDetails.hidden = true;
+  els.geoMapDetails.innerHTML = "";
 }
 
 function geoLocationLabel(location) {

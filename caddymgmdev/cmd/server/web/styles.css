@@ -1806,10 +1806,17 @@ pre {
 .geo-map {
   position: relative;
   min-height: 300px;
+  isolation: isolate;
   overflow: hidden;
   border: 1px solid rgba(91, 184, 255, 0.14);
   border-radius: 10px;
   background: radial-gradient(circle at 50% 45%, rgba(31, 87, 120, 0.28), rgba(10, 17, 25, 0.9));
+}
+
+.geo-map-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
 }
 
 .geo-map svg {
@@ -1847,12 +1854,22 @@ pre {
 }
 
 .geo-map-details {
-  min-height: 300px;
-  max-height: 360px;
+  position: absolute;
+  z-index: 3;
+  top: 14px;
+  right: 14px;
+  width: min(380px, calc(100% - 28px));
+  max-height: calc(100% - 28px);
   overflow: auto;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(91, 184, 255, 0.3);
   border-radius: 10px;
-  background: var(--panel-soft);
+  background: rgba(27, 30, 37, 0.96);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(8px);
+}
+
+.geo-map-details[hidden] {
+  display: none;
 }
 
 .geo-location-heading,
@@ -1865,10 +1882,39 @@ pre {
 
 .geo-location-heading {
   position: sticky;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
   top: 0;
   z-index: 1;
   border-bottom: 1px solid var(--line);
   background: #1b1e25;
+}
+
+.geo-location-heading-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.geo-details-close {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.geo-details-close:hover,
+.geo-details-close:focus-visible {
+  color: var(--text);
+  border-color: rgba(91, 184, 255, 0.45);
 }
 
 .geo-location-heading span,
@@ -1903,8 +1949,10 @@ pre {
   }
 
   .geo-map-details {
-    min-height: auto;
-    max-height: 280px;
+    top: 10px;
+    right: 10px;
+    width: calc(100% - 20px);
+    max-height: calc(100% - 20px);
   }
 }
 
@@ -1940,8 +1988,7 @@ pre {
   overflow: hidden;
 }
 
-.geo-top-ips,
-.geo-map-sidebar .geo-map-details {
+.geo-top-ips {
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -2040,10 +2087,6 @@ pre {
   text-align: center;
 }
 
-.geo-map-sidebar .geo-map-details {
-  max-height: none;
-}
-
 @media (max-width: 900px) {
   .geo-map-sidebar {
     height: auto;
@@ -2088,9 +2131,19 @@ pre {
 
 .geo-ip-primary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(82px, auto) minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
+}
+
+.geo-ip-country {
+  max-width: 120px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .geo-location-ip-primary {

@@ -16,11 +16,13 @@ import (
 const geoTopIPLimit = 1_000
 
 type geoMapIP struct {
-	Address    string         `json:"address"`
-	Scope      string         `json:"scope"`
-	Count      int            `json:"count"`
-	Sites      []string       `json:"sites"`
-	SiteCounts map[string]int `json:"siteCounts"`
+	Address     string         `json:"address"`
+	Scope       string         `json:"scope"`
+	Country     string         `json:"country,omitempty"`
+	CountryCode string         `json:"countryCode,omitempty"`
+	Count       int            `json:"count"`
+	Sites       []string       `json:"sites"`
+	SiteCounts  map[string]int `json:"siteCounts"`
 }
 
 type geoMapLocation struct {
@@ -102,7 +104,7 @@ func (a *App) handleGeoMap(w http.ResponseWriter, _ *http.Request) {
 			if !ok || !address.IsValid() {
 				continue
 			}
-			addGeoIPAggregate(topByAddress, address.String(), site.Address)
+			topIP := addGeoIPAggregate(topByAddress, address.String(), site.Address)
 			if databaseErr != nil || !isPublicAddress(address) {
 				continue
 			}
@@ -111,6 +113,8 @@ func (a *App) handleGeoMap(w http.ResponseWriter, _ *http.Request) {
 			if lookupErr := database.Lookup(address).Decode(&record); lookupErr != nil {
 				continue
 			}
+			topIP.entry.Country = geoFirstNonEmpty(record.Country.Names["en"], record.Country.Names["de"])
+			topIP.entry.CountryCode = record.Country.ISOCode
 			if record.Location.Latitude == 0 && record.Location.Longitude == 0 {
 				continue
 			}
@@ -153,7 +157,7 @@ func (a *App) handleGeoMap(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-func addGeoIPAggregate(aggregates map[string]*geoIPAggregate, address, site string) {
+func addGeoIPAggregate(aggregates map[string]*geoIPAggregate, address, site string) *geoIPAggregate {
 	item := aggregates[address]
 	if item == nil {
 		item = &geoIPAggregate{entry: geoMapIP{Address: address, Scope: geoIPScope(address), SiteCounts: make(map[string]int)}, sites: make(map[string]struct{})}
@@ -162,6 +166,7 @@ func addGeoIPAggregate(aggregates map[string]*geoIPAggregate, address, site stri
 	item.entry.Count++
 	item.entry.SiteCounts[site]++
 	item.sites[site] = struct{}{}
+	return item
 }
 
 func sortedGeoIPs(aggregates map[string]*geoIPAggregate, limit int) []geoMapIP {

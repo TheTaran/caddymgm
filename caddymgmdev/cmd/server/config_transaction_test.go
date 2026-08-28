@@ -175,6 +175,50 @@ func TestBasicAuthRequiresTLSAndExcludesOIDC(t *testing.T) {
 	}
 }
 
+func TestDisabledSiteRendersUnavailablePageAndPreservesConfiguration(t *testing.T) {
+	site := Site{
+		ID: "disabled", Address: "disabled.example.test", Mode: "proxy",
+		Upstream: "http://app:3000", TLSMode: "internal", Enabled: false,
+		LogsEnabled: true, HSTSEnabled: true, SecurityHeaderProfile: "standard",
+	}
+	rendered := renderManaged([]Site{site}, nil, "/logs", WebInterface{}, AccessOIDCProvider{}, "file", "8080")
+	for _, want := range []string{
+		"(caddymgm_unavailable) {",
+		"respond \"<!doctype html>",
+		" 503\n",
+		"# disabled.example.test {",
+		"# \treverse_proxy http://app:3000",
+		"# caddymgm:unavailable-site disabled",
+		"disabled.example.test {\n\timport caddymgm_unavailable",
+		"\ttls internal",
+		"\tlog {",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered managed config is missing %q:\n%s", want, rendered)
+		}
+	}
+
+	parsed, err := parseManaged(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("parsed sites = %d, want 1: %+v", len(parsed), parsed)
+	}
+	got := parsed[0]
+	if got.Enabled || got.Address != site.Address || got.Upstream != site.Upstream || got.TLSMode != site.TLSMode || !got.LogsEnabled || !got.HSTSEnabled || got.SecurityHeaderProfile != site.SecurityHeaderProfile {
+		t.Fatalf("disabled site did not survive render/parse round trip: %+v", got)
+	}
+}
+
+func TestEnabledSiteDoesNotRenderUnavailableVirtualHost(t *testing.T) {
+	site := Site{ID: "enabled", Address: "enabled.example.test", Mode: "proxy", Upstream: "http://app:3000", TLSMode: "off", Enabled: true}
+	rendered := renderManaged([]Site{site}, nil, "/logs", WebInterface{}, AccessOIDCProvider{}, "file", "8080")
+	if strings.Contains(rendered, "caddymgm:unavailable-site enabled") || strings.Contains(rendered, "enabled.example.test {\n\timport caddymgm_unavailable") {
+		t.Fatalf("enabled site received an unavailable virtual host:\n%s", rendered)
+	}
+}
+
 func TestStrictSecurityHeaderProfileAndValidation(t *testing.T) {
 	directives := strings.Join(securityHeaderProfileDirectives("strict"), "\n")
 	for _, want := range []string{"Content-Security-Policy", "Permissions-Policy", `X-Frame-Options "DENY"`, `Referrer-Policy "no-referrer"`} {

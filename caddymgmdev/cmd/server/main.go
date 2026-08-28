@@ -1720,6 +1720,7 @@ func parseSite(id string, lines []string) (Site, error) {
 func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string, webInterface WebInterface, accessProvider AccessOIDCProvider, caddyMode string, webPort string) string {
 	var out strings.Builder
 	out.WriteString(managedStart + "\n")
+	out.WriteString(renderUnavailableSnippet())
 	if block := renderWebInterface(webInterface, issuers, caddyMode, webPort); block != "" {
 		out.WriteString(block)
 	}
@@ -1730,8 +1731,71 @@ func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string, webInterfa
 		out.WriteString("# caddymgm:site " + site.ID + "\n")
 		out.WriteString(renderSite(site, issuers, logDir, effectiveWebInterfaceUpstream(webInterface, caddyMode)))
 		out.WriteString("# caddymgm:end-site\n")
+		if !site.Enabled {
+			out.WriteString(renderUnavailableSite(site, issuers, logDir))
+		}
 	}
 	out.WriteString(managedEnd + "\n")
+	return out.String()
+}
+
+const unavailablePageHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Website unavailable</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#07080b;color:#f3f6fb;font:16px/1.5 Inter,system-ui,sans-serif}.card{width:min(560px,100%);padding:42px;border:1px solid #2b2d36;border-radius:18px;background:#191a20;box-shadow:0 24px 80px rgba(0,0,0,.4);text-align:center}.mark{display:grid;width:54px;height:54px;margin:0 auto 22px;place-items:center;border:1px solid rgba(91,184,255,.3);border-radius:50%;background:rgba(91,184,255,.1);color:#5bb8ff;font-size:26px}h1{margin:0 0 10px;font-size:28px}p{margin:0;color:#8d96a8}</style></head><body><main class="card"><div class="mark" aria-hidden="true">!</div><h1>Website unavailable</h1><p>This website is currently disabled. Please try again later.</p></main></body></html>`
+
+func renderUnavailableSnippet() string {
+	var out strings.Builder
+	out.WriteString("(caddymgm_unavailable) {\n")
+	out.WriteString("\theader {\n")
+	out.WriteString("\t\tContent-Type \"text/html; charset=utf-8\"\n")
+	out.WriteString("\t\tCache-Control \"no-store\"\n")
+	out.WriteString("\t\tRetry-After \"3600\"\n")
+	out.WriteString("\t\tX-Content-Type-Options \"nosniff\"\n")
+	out.WriteString("\t\tX-Frame-Options \"DENY\"\n")
+	out.WriteString("\t}\n")
+	out.WriteString("\trespond " + strconv.Quote(unavailablePageHTML) + " 503\n")
+	out.WriteString("}\n")
+	return out.String()
+}
+
+func renderUnavailableSite(site Site, issuers []ACMEIssuer, logDir string) string {
+	var out strings.Builder
+	address := site.Address
+	if site.TLSMode == "" || site.TLSMode == "off" {
+		address = "http://" + strings.TrimPrefix(strings.TrimPrefix(address, "http://"), "https://")
+	}
+	out.WriteString("# caddymgm:unavailable-site " + site.ID + "\n")
+	out.WriteString(address + " {\n")
+	out.WriteString("\timport caddymgm_unavailable\n")
+	if site.HSTSEnabled && site.TLSMode != "" && site.TLSMode != "off" {
+		out.WriteString("\theader Strict-Transport-Security \"max-age=31536000\"\n")
+	}
+	switch site.TLSMode {
+	case "internal":
+		out.WriteString("\ttls internal\n")
+	case "acme":
+		if issuer, ok := findACMEIssuer(issuers, site.ACMEIssuerID); ok {
+			out.WriteString("\ttls {\n")
+			out.WriteString("\t\tissuer acme {\n")
+			out.WriteString("\t\t\tdir " + issuer.DirectoryURL + "\n")
+			if issuer.Email != "" {
+				out.WriteString("\t\t\temail " + issuer.Email + "\n")
+			}
+			if issuer.RootCAFile != "" {
+				out.WriteString("\t\t\ttrusted_roots " + caddyfileQuote(issuer.RootCAFile) + "\n")
+			}
+			out.WriteString("\t\t}\n")
+			out.WriteString("\t}\n")
+		}
+	}
+	if site.LogsEnabled {
+		out.WriteString("\tlog {\n")
+		out.WriteString("\t\toutput file " + accessLogPath(logDir, site.ID) + " {\n")
+		out.WriteString("\t\t\tmode 0644\n")
+		out.WriteString("\t\t}\n")
+		out.WriteString("\t\tformat json\n")
+		out.WriteString("\t}\n")
+	}
+	out.WriteString("}\n")
+	out.WriteString("# caddymgm:end-unavailable-site\n")
 	return out.String()
 }
 

@@ -29,6 +29,8 @@ Caddy can run separately and can be updated independently from CaddyMGM.
   - HTTP Strict Transport Security (HSTS) for TLS-enabled web hosts
   - configurable Standard and Strict security header profiles per web host
   - per-web-host Basic Authentication with bcrypt-hashed passwords
+- Central unavailable page for disabled web hosts — Added: 2026-08-28
+  - serves a consistent private 503 response while retaining the complete web-host configuration
 
 ## Planned Upcoming Features
 

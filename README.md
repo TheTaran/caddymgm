@@ -38,10 +38,6 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 ## Planned Upcoming Features
 
-### Configuration and policy management
-
-- Global defaults with per-web-host `Use Global` / `Customize` overrides
-
 ### Client IP and network listeners
 
 - Configurable visitor IP source (`Get Attack IP From`)

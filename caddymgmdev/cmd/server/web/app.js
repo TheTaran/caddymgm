@@ -2112,6 +2112,64 @@ function renderGeoMap(data = {}) {
     svg.append(marker);
   }
   els.geoMap.append(svg);
+  addGeoMapZoomControls(svg);
+}
+
+function addGeoMapZoomControls(svg) {
+  const minZoom = 1, maxZoom = 4, zoomStep = 0.25;
+  let zoom = minZoom, centerX = 500, centerY = 250, dragStart = null;
+  const controls = document.createElement("div");
+  controls.className = "geo-zoom-controls";
+  controls.setAttribute("aria-label", "Map zoom controls");
+  const zoomOut = document.createElement("button");
+  zoomOut.type = "button"; zoomOut.textContent = "−"; zoomOut.setAttribute("aria-label", "Zoom out");
+  const slider = document.createElement("input");
+  slider.type = "range"; slider.min = String(minZoom); slider.max = String(maxZoom);
+  slider.step = String(zoomStep); slider.value = String(zoom); slider.setAttribute("aria-label", "Map zoom level");
+  const zoomIn = document.createElement("button");
+  zoomIn.type = "button"; zoomIn.textContent = "+"; zoomIn.setAttribute("aria-label", "Zoom in");
+  const reset = document.createElement("button");
+  reset.type = "button"; reset.className = "geo-zoom-reset"; reset.textContent = "Reset";
+  reset.setAttribute("aria-label", "Reset map zoom and position");
+  const clampCenter = () => {
+    const width = 1000 / zoom, height = 500 / zoom;
+    centerX = Math.min(1000 - width / 2, Math.max(width / 2, centerX));
+    centerY = Math.min(500 - height / 2, Math.max(height / 2, centerY));
+  };
+  const render = () => {
+    clampCenter();
+    const width = 1000 / zoom, height = 500 / zoom;
+    svg.setAttribute("viewBox", `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`);
+    slider.value = String(zoom);
+    slider.setAttribute("aria-valuetext", `${Math.round(zoom * 100)} percent`);
+    zoomOut.disabled = zoom <= minZoom; zoomIn.disabled = zoom >= maxZoom;
+    reset.disabled = zoom === minZoom && centerX === 500 && centerY === 250;
+    svg.classList.toggle("zoomed", zoom > minZoom);
+  };
+  const setZoom = (nextZoom) => { zoom = Math.min(maxZoom, Math.max(minZoom, Number(nextZoom))); render(); };
+  zoomOut.addEventListener("click", () => setZoom(zoom - zoomStep));
+  zoomIn.addEventListener("click", () => setZoom(zoom + zoomStep));
+  slider.addEventListener("input", () => setZoom(slider.value));
+  reset.addEventListener("click", () => { zoom = minZoom; centerX = 500; centerY = 250; render(); });
+  svg.addEventListener("wheel", (event) => { event.preventDefault(); setZoom(zoom + (event.deltaY < 0 ? zoomStep : -zoomStep)); }, { passive: false });
+  svg.addEventListener("pointerdown", (event) => {
+    if (zoom <= minZoom || event.button !== 0 || event.target.closest(".geo-marker")) return;
+    dragStart = { x: event.clientX, y: event.clientY, centerX, centerY };
+    svg.setPointerCapture(event.pointerId); svg.classList.add("dragging");
+  });
+  svg.addEventListener("pointermove", (event) => {
+    if (!dragStart) return;
+    const bounds = svg.getBoundingClientRect();
+    centerX = dragStart.centerX - ((event.clientX - dragStart.x) / bounds.width) * (1000 / zoom);
+    centerY = dragStart.centerY - ((event.clientY - dragStart.y) / bounds.height) * (500 / zoom);
+    render();
+  });
+  const stopDragging = () => { dragStart = null; svg.classList.remove("dragging"); };
+  svg.addEventListener("pointerup", stopDragging);
+  svg.addEventListener("pointercancel", stopDragging);
+  controls.append(zoomOut, slider, zoomIn, reset);
+  els.geoMap.append(controls);
+  render();
 }
 
 function syncGeoTopHostOptions() {

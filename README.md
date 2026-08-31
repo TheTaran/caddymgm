@@ -25,6 +25,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 | Date | Feature | What's included |
 | --- | --- | --- |
+| 2026-08-31 | **Runtime Security Hardening** | Supported Alpine 3.24 runtime with current security packages plus updated Go cryptography and OAuth dependencies. |
 | 2026-08-31 | **Response Compression** | Per-host `Off`, `Gzip`, or `Zstandard + Gzip` profiles with automatic client negotiation and Gzip fallback. |
 | 2026-08-31 | **TLS Controls** | Configurable minimum and maximum TLS versions plus selectable TLS 1.2 cipher suites. TLS 1.3 cipher suites remain managed by Caddy. |
 | 2026-08-28 | **Web Host Navigation** | Structured editor with `Basic`, `Forwarding Rules`, `Advanced`, and `Authentication` sections plus a live host summary. |

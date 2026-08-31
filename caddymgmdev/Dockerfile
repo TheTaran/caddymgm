@@ -9,9 +9,10 @@ COPY go.sum ./
 COPY cmd ./cmd
 RUN go build -ldflags "-X main.version=${VERSION}" -o /out/caddymgm ./cmd/server
 
-FROM alpine:3.20
+FROM alpine:3.24
 
-RUN apk add --no-cache ca-certificates \
+RUN apk upgrade --no-cache \
+  && apk add --no-cache ca-certificates \
   && adduser -D -H -u 10001 caddymgm
 WORKDIR /app
 COPY --from=build /out/caddymgm /app/caddymgm

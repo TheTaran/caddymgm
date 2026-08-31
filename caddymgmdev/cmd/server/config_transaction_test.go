@@ -184,6 +184,94 @@ func TestRenderAndParseSitePreservesManagedSecurityOptions(t *testing.T) {
 	}
 }
 
+func TestTLSControlsRenderParseAndValidate(t *testing.T) {
+	issuer := ACMEIssuer{ID: "letsencrypt", DirectoryURL: "https://acme.example.test/directory"}
+	site := Site{
+		ID: "secure", Address: "secure.example.test", Mode: "proxy", Upstream: "http://app:8080",
+		TLSMode: "acme", ACMEIssuerID: issuer.ID, Enabled: true,
+		TLSMinVersion: "tls1.2", TLSMaxVersion: "tls1.3",
+		TLSCipherSuites: []string{
+			"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+			"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+		},
+	}
+	if err := normalizeSite(&site); err != nil {
+		t.Fatal(err)
+	}
+	rendered := renderSite(site, []ACMEIssuer{issuer}, "/logs", "caddymgm:8080")
+	for _, want := range []string{
+		"protocols tls1.2 tls1.3",
+		"ciphers TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+		"issuer acme {",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered site is missing %q:\n%s", want, rendered)
+		}
+	}
+	parsed, err := parseSite(site.ID, strings.Split(rendered, "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.TLSMinVersion != site.TLSMinVersion || parsed.TLSMaxVersion != site.TLSMaxVersion || strings.Join(parsed.TLSCipherSuites, ",") != strings.Join(site.TLSCipherSuites, ",") {
+		t.Fatalf("TLS controls did not survive render/parse: %+v", parsed)
+	}
+
+	invalidRange := site
+	invalidRange.TLSMinVersion = "tls1.3"
+	invalidRange.TLSMaxVersion = "tls1.2"
+	if err := normalizeSite(&invalidRange); err == nil || !strings.Contains(err.Error(), "cannot exceed") {
+		t.Fatalf("invalid TLS range error = %v", err)
+	}
+	invalidCipher := site
+	invalidCipher.TLSCipherSuites = []string{"TLS_RSA_WITH_3DES_EDE_CBC_SHA"}
+	if err := normalizeSite(&invalidCipher); err == nil || !strings.Contains(err.Error(), "unsupported TLS cipher") {
+		t.Fatalf("invalid TLS cipher error = %v", err)
+	}
+}
+
+func TestCompressionProfilesRenderParseAndValidate(t *testing.T) {
+	for _, test := range []struct {
+		profile   string
+		directive string
+	}{
+		{profile: "gzip", directive: "encode gzip"},
+		{profile: "zstd-gzip", directive: "encode zstd gzip"},
+	} {
+		t.Run(test.profile, func(t *testing.T) {
+			site := Site{
+				ID: "compressed", Address: "compressed.example.test", Mode: "proxy",
+				Upstream: "http://app:8080", TLSMode: "off", Enabled: true,
+				CompressionProfile: test.profile,
+			}
+			if err := normalizeSite(&site); err != nil {
+				t.Fatal(err)
+			}
+			rendered := renderSite(site, nil, "/logs", "caddymgm:8080")
+			for _, want := range []string{"# caddymgm:compression " + test.profile, test.directive} {
+				if !strings.Contains(rendered, want) {
+					t.Fatalf("rendered site is missing %q:\n%s", want, rendered)
+				}
+			}
+			parsed, err := parseSite(site.ID, strings.Split(rendered, "\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.CompressionProfile != test.profile || strings.Contains(parsed.ExtraDirectives, "encode ") {
+				t.Fatalf("compression profile did not survive render/parse: %+v", parsed)
+			}
+		})
+	}
+
+	invalid := Site{Address: "invalid.example.test", Mode: "proxy", Upstream: "http://app:8080", CompressionProfile: "brotli"}
+	if err := normalizeSite(&invalid); err == nil || !strings.Contains(err.Error(), "compression profile") {
+		t.Fatalf("invalid compression profile error = %v", err)
+	}
+	conflict := Site{Address: "conflict.example.test", Mode: "proxy", Upstream: "http://app:8080", CompressionProfile: "gzip", ExtraDirectives: "encode zstd gzip"}
+	if err := normalizeSite(&conflict); err == nil || !strings.Contains(err.Error(), "manual encode") {
+		t.Fatalf("manual compression conflict error = %v", err)
+	}
+}
+
 func TestBasicAuthRenderParseAndPasswordRetention(t *testing.T) {
 	site := Site{Address: "basic.example.test", Mode: "proxy", Upstream: "http://127.0.0.1:8080", TLSMode: "acme", BasicAuthEnabled: true, BasicAuthUsername: "web-user", BasicAuthPassword: "correct-horse"}
 	if err := prepareBasicAuth(&site, nil); err != nil {
@@ -235,6 +323,7 @@ func TestDisabledSiteRendersUnavailablePageAndPreservesConfiguration(t *testing.
 		ID: "disabled", Address: "disabled.example.test", Mode: "proxy",
 		Upstream: "http://app:3000", TLSMode: "internal", Enabled: false,
 		LogsEnabled: true, HSTSEnabled: true, SecurityHeaderProfile: "standard",
+		TLSMinVersion: "tls1.2", TLSMaxVersion: "tls1.3",
 	}
 	rendered := renderManaged([]Site{site}, nil, "/logs", WebInterface{}, AccessOIDCProvider{}, "file", "8080")
 	for _, want := range []string{
@@ -245,7 +334,8 @@ func TestDisabledSiteRendersUnavailablePageAndPreservesConfiguration(t *testing.
 		"# \treverse_proxy http://app:3000",
 		"# caddymgm:unavailable-site disabled",
 		"disabled.example.test {\n\timport caddymgm_unavailable",
-		"\ttls internal",
+		"\t\tprotocols tls1.2 tls1.3",
+		"\t\tissuer internal",
 		"\tlog {",
 	} {
 		if !strings.Contains(rendered, want) {
@@ -261,7 +351,7 @@ func TestDisabledSiteRendersUnavailablePageAndPreservesConfiguration(t *testing.
 		t.Fatalf("parsed sites = %d, want 1: %+v", len(parsed), parsed)
 	}
 	got := parsed[0]
-	if got.Enabled || got.Address != site.Address || got.Upstream != site.Upstream || got.TLSMode != site.TLSMode || !got.LogsEnabled || !got.HSTSEnabled || got.SecurityHeaderProfile != site.SecurityHeaderProfile {
+	if got.Enabled || got.Address != site.Address || got.Upstream != site.Upstream || got.TLSMode != site.TLSMode || got.TLSMinVersion != site.TLSMinVersion || got.TLSMaxVersion != site.TLSMaxVersion || !got.LogsEnabled || !got.HSTSEnabled || got.SecurityHeaderProfile != site.SecurityHeaderProfile {
 		t.Fatalf("disabled site did not survive render/parse round trip: %+v", got)
 	}
 }

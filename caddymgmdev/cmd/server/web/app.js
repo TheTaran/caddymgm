@@ -48,6 +48,7 @@ const els = {
   redirectOrigins: document.querySelector("#redirect-origins"),
   hstsEnabled: document.querySelector("#hsts-enabled"),
   securityHeaderProfile: document.querySelector("#security-header-profile"),
+  compressionProfile: document.querySelector("#compression-profile"),
   root: document.querySelector("#root"),
   upstreamRow: document.querySelector("#upstream-row"),
   skipTlsVerifyRow: document.querySelector("#skip-tls-verify-row"),
@@ -70,6 +71,10 @@ const els = {
   tlsEnabled: document.querySelector("#tls-enabled"),
   acmeIssuerRow: document.querySelector("#acme-issuer-row"),
   acmeIssuer: document.querySelector("#acme-issuer"),
+  tlsMinVersion: document.querySelector("#tls-min-version"),
+  tlsMaxVersion: document.querySelector("#tls-max-version"),
+  tlsCipherSuites: document.querySelector("#tls-cipher-suites"),
+  tlsControlsHint: document.querySelector("#tls-controls-hint"),
   siteAuthEnabled: document.querySelector("#site-auth-enabled"),
   basicAuthEnabled: document.querySelector("#basic-auth-enabled"),
   basicAuthUsername: document.querySelector("#basic-auth-username"),
@@ -276,6 +281,12 @@ els.issuerReset.addEventListener("click", closeIssuerForm);
 els.issuerDelete.addEventListener("click", deleteIssuer);
 els.issuerRootCAUploadButton.addEventListener("click", uploadRootCA);
 els.tlsEnabled.addEventListener("change", syncTLSMode);
+els.tlsMinVersion.addEventListener("change", () => {
+  if (els.tlsMinVersion.value === "tls1.3" && els.tlsMaxVersion.value === "tls1.2") els.tlsMaxVersion.value = "tls1.3";
+});
+els.tlsMaxVersion.addEventListener("change", () => {
+  if (els.tlsMaxVersion.value === "tls1.2" && els.tlsMinVersion.value === "tls1.3") els.tlsMinVersion.value = "tls1.2";
+});
 els.hstsEnabled.addEventListener("change", syncTLSMode);
 els.securityHeaderProfile.addEventListener("change", syncSecurityHeaderProfile);
 els.rewriteRedirects.addEventListener("change", syncMode);
@@ -1193,11 +1204,15 @@ async function toggleSiteEnabled(site) {
         redirectOrigins: site.redirectOrigins || [],
         hstsEnabled: !!site.hstsEnabled,
         securityHeaderProfile: site.securityHeaderProfile || "",
+        compressionProfile: site.compressionProfile || "",
         root: site.root || "",
         extraDirectives: site.extraDirectives || "",
         logsEnabled: !!site.logsEnabled,
         tlsMode: site.tlsMode || "off",
         acmeIssuerId: site.tlsMode === "acme" ? site.acmeIssuerId || "" : "",
+        tlsMinVersion: site.tlsMinVersion || "",
+        tlsMaxVersion: site.tlsMaxVersion || "",
+        tlsCipherSuites: site.tlsCipherSuites || [],
         authEnabled: !!site.authEnabled,
         authProviderId: site.authEnabled ? "oidc" : "",
         basicAuthEnabled: !!site.basicAuthEnabled,
@@ -1464,11 +1479,16 @@ function editSite(site = null) {
   els.redirectOrigins.value = (site?.redirectOrigins || []).join("\n");
   els.hstsEnabled.checked = !!site?.hstsEnabled;
   els.securityHeaderProfile.value = site?.securityHeaderProfile || "";
+  els.compressionProfile.value = site?.compressionProfile || "";
   els.root.value = site?.root || "";
   els.extra.value = site?.extraDirectives || "";
   els.enabled.checked = site?.enabled ?? true;
   els.logsEnabled.checked = site?.logsEnabled ?? true;
   els.tlsEnabled.checked = !!site && site?.tlsMode !== "off";
+  els.tlsMinVersion.value = site?.tlsMinVersion || "";
+  els.tlsMaxVersion.value = site?.tlsMaxVersion || "";
+  const selectedCipherSuites = new Set(site?.tlsCipherSuites || []);
+  Array.from(els.tlsCipherSuites.options).forEach((option) => { option.selected = selectedCipherSuites.has(option.value); });
   els.siteAuthEnabled.checked = !!site?.authEnabled;
   els.basicAuthEnabled.checked = !!site?.basicAuthEnabled;
   els.basicAuthUsername.value = site?.basicAuthUsername || "";
@@ -1604,6 +1624,10 @@ function syncTLSMode() {
   els.acmeIssuerRow.hidden = !enabled;
   els.acmeIssuer.required = enabled;
   els.acmeIssuer.disabled = !enabled;
+  els.tlsMinVersion.disabled = !enabled;
+  els.tlsMaxVersion.disabled = !enabled;
+  els.tlsCipherSuites.disabled = !enabled;
+  els.tlsControlsHint.classList.toggle("disabled", !enabled);
   if (!enabled) {
     els.acmeIssuer.value = "";
     els.hstsEnabled.checked = false;
@@ -1680,11 +1704,15 @@ async function saveSite(event) {
       : [],
     hstsEnabled: els.tlsEnabled.checked && els.hstsEnabled.checked,
     securityHeaderProfile: els.securityHeaderProfile.value,
+    compressionProfile: els.compressionProfile.value,
     root: els.root.value,
     extraDirectives: els.extra.value,
     logsEnabled: els.logsEnabled.checked,
     tlsMode: els.tlsEnabled.checked ? "acme" : "off",
     acmeIssuerId: els.tlsEnabled.checked ? els.acmeIssuer.value : "",
+    tlsMinVersion: els.tlsEnabled.checked ? els.tlsMinVersion.value : "",
+    tlsMaxVersion: els.tlsEnabled.checked ? els.tlsMaxVersion.value : "",
+    tlsCipherSuites: els.tlsEnabled.checked ? Array.from(els.tlsCipherSuites.selectedOptions, (option) => option.value) : [],
     enabled: els.enabled.checked,
     authEnabled: els.siteAuthEnabled.checked,
     authProviderId: els.siteAuthEnabled.checked ? "oidc" : "",
@@ -2140,6 +2168,7 @@ function addGeoMapZoomControls(svg) {
     clampCenter();
     const width = 1000 / zoom, height = 500 / zoom;
     svg.setAttribute("viewBox", `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`);
+    svg.querySelectorAll(".geo-marker").forEach((marker) => marker.setAttribute("r", String(8 / zoom)));
     slider.value = String(zoom);
     slider.setAttribute("aria-valuetext", `${Math.round(zoom * 100)} percent`);
     zoomOut.disabled = zoom <= minZoom; zoomIn.disabled = zoom >= maxZoom;

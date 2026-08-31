@@ -339,6 +339,36 @@
                     ACME Authority
                     <select id="acme-issuer"></select>
                   </label>
+                  <div class="tls-version-grid">
+                    <label>
+                      Minimum TLS version
+                      <select id="tls-min-version">
+                        <option value="">Caddy default</option>
+                        <option value="tls1.2">TLS 1.2</option>
+                        <option value="tls1.3">TLS 1.3</option>
+                      </select>
+                    </label>
+                    <label>
+                      Maximum TLS version
+                      <select id="tls-max-version">
+                        <option value="">Caddy default</option>
+                        <option value="tls1.2">TLS 1.2</option>
+                        <option value="tls1.3">TLS 1.3</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    TLS 1.2 cipher suites
+                    <select id="tls-cipher-suites" multiple size="6">
+                      <option value="TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384">ECDHE ECDSA · AES 256 GCM</option>
+                      <option value="TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384">ECDHE RSA · AES 256 GCM</option>
+                      <option value="TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256">ECDHE ECDSA · AES 128 GCM</option>
+                      <option value="TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256">ECDHE RSA · AES 128 GCM</option>
+                      <option value="TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256">ECDHE ECDSA · ChaCha20 Poly1305</option>
+                      <option value="TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256">ECDHE RSA · ChaCha20 Poly1305</option>
+                    </select>
+                  </label>
+                  <p id="tls-controls-hint" class="field-hint">Leave unselected to use Caddy's secure defaults. Use Ctrl/Cmd-click for multiple cipher selections. Cipher selection applies to TLS 1.2; TLS 1.3 cipher suites are managed automatically.</p>
                   <label id="hsts-enabled-row" class="status-check">
                     <input id="hsts-enabled" type="checkbox" />
                     <span class="status-check-title">HTTP Strict Transport Security (HSTS)</span>
@@ -355,8 +385,17 @@
                   </label>
                   <p id="security-header-profile-hint" class="field-hint">No managed security headers. Existing upstream headers remain unchanged.</p>
                   <label>
+                    Compression
+                    <select id="compression-profile">
+                      <option value="">Off</option>
+                      <option value="gzip">Gzip</option>
+                      <option value="zstd-gzip">Zstandard + Gzip (Recommended)</option>
+                    </select>
+                  </label>
+                  <p class="field-hint">Compresses suitable text responses at the proxy. Zstandard is preferred when supported and Gzip remains available as a compatible fallback.</p>
+                  <label>
                     Additional settings
-                    <textarea id="extra" rows="7" placeholder="encode zstd gzip"></textarea>
+                    <textarea id="extra" rows="7" placeholder="request_body {&#10;  max_size 10MB&#10;}"></textarea>
                   </label>
                 </section>
 

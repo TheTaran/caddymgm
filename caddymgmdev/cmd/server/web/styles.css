@@ -80,6 +80,28 @@ button.danger {
   display: none !important;
 }
 
+.tls-version-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+#tls-cipher-suites {
+  min-height: 142px;
+  padding: 6px;
+}
+
+#tls-cipher-suites option {
+  border-radius: 5px;
+  padding: 5px 7px;
+}
+
+@media (max-width: 760px) {
+  .tls-version-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
@@ -2021,6 +2043,7 @@ pre {
   fill: #5bb8ff;
   stroke: rgba(225, 246, 255, 0.95);
   stroke-width: 2;
+  vector-effect: non-scaling-stroke;
   cursor: pointer;
   filter: drop-shadow(0 0 8px rgba(91, 184, 255, 0.7));
   transition: fill 120ms ease, stroke-width 120ms ease;

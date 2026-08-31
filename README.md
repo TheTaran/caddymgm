@@ -35,6 +35,11 @@ Caddy can run separately and can be updated independently from CaddyMGM.
   - serves a consistent private 503 response while retaining the complete web-host configuration
 - Structured Web Host detail navigation — Added: 2026-08-28
   - groups Basic, Forwarding Rules, Advanced, and Authentication settings under a live host summary
+- Per-web-host TLS controls — Added: 2026-08-31
+  - configurable minimum and maximum TLS protocol versions
+  - selectable TLS 1.2 cipher suites while TLS 1.3 cipher suites remain securely managed by Caddy
+- Per-web-host response compression — Added: 2026-08-31
+  - optional Gzip or recommended Zstandard with Gzip fallback
 
 ## Planned Upcoming Features
 
@@ -53,20 +58,10 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 - Configurable upstream connection timeout
 - Advanced low-level reverse-proxy configuration
 
-### Compression and performance
-
-- Configurable Gzip compression
-- Configurable Brotli compression
-
 ### Authentication
 
 - LDAP integration for website authentication or OIDC
 - NTLM authentication
-
-### TLS controls
-
-- Configurable allowed TLS protocol versions, including TLS 1.2 and TLS 1.3
-- Configurable TLS cipher suites
 
 ### HTTP headers and access security
 
@@ -172,6 +167,79 @@ The repository root is the runtime structure:
 | `native` | Writes the Caddyfile and reloads a native or remote Caddy via Admin API |
 | `docker` | Writes the Caddyfile and reloads the Compose Caddy service via Admin API |
 | `api` | Same behavior as API-driven mode for a reachable Caddy Admin API |
+
+## Per-Web-Host TLS Controls
+
+TLS remains disabled for newly created web hosts. After TLS is enabled and an ACME authority is selected, each host can optionally restrict its accepted TLS protocol versions and TLS 1.2 cipher suites under `Web Hosts -> Advanced`.
+
+### Protocol versions
+
+The minimum and maximum protocol versions can independently use `Caddy default`, `TLS 1.2`, or `TLS 1.3`.
+
+- `Caddy default` currently means a minimum of TLS 1.2 and a maximum of TLS 1.3. These defaults come from Caddy and may evolve with future Caddy security updates.
+- Leave both fields at `Caddy default` to inherit those current secure defaults automatically. This is the recommended setting unless a specific security or compatibility policy requires fixed values.
+- Set the minimum to `TLS 1.2` and maximum to `TLS 1.3` to explicitly allow both supported versions.
+- Set both fields to the same version to allow only that protocol version.
+- The minimum version cannot be higher than the maximum version.
+
+### TLS 1.2 cipher suites
+
+The following modern TLS 1.2 cipher suites can be selected per host:
+
+- `TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384`
+- `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384`
+- `TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256`
+- `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`
+- `TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256`
+- `TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256`
+
+Leave the cipher list empty to inherit Caddy's secure defaults. Custom cipher selection applies only to TLS 1.2 because Go and Caddy intentionally manage TLS 1.3 cipher suites automatically. Selecting an unnecessarily narrow set can prevent older clients from connecting, so explicit cipher configuration should only be used when required by a security policy or compatibility target.
+
+CaddyMGM validates protocol ranges and cipher names before writing the Caddyfile. The settings survive Caddyfile read/write cycles and also remain enforced while a host is disabled and serves the managed unavailable page. Certificate issuance and ACME authority selection are independent from these protocol and cipher restrictions.
+
+## Security Header Profiles
+
+The `Security header profile` setting is configured per web host under `Web Hosts -> Advanced`. The default is `Off`, which means CaddyMGM does not add or replace managed security headers and leaves the upstream application's response headers unchanged.
+
+### Standard (Recommended)
+
+The Standard profile provides broadly compatible browser protections:
+
+- removes the `Server` response header
+- sets `X-Content-Type-Options: nosniff` to prevent MIME type sniffing
+- sets `Referrer-Policy: strict-origin-when-cross-origin` to limit referrer details sent across origins
+- sets `X-Frame-Options: SAMEORIGIN` to allow framing only by the same origin
+
+### Strict
+
+The Strict profile provides stronger restrictions:
+
+- removes the `Server` response header
+- sets `X-Content-Type-Options: nosniff`
+- sets `Referrer-Policy: no-referrer` so no referrer information is sent
+- sets `X-Frame-Options: DENY` to prevent all framing
+- sets `Permissions-Policy: camera=(), geolocation=(), microphone=()` to disable those browser features
+- sets the following Content Security Policy:
+
+```text
+default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: https:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: wss:
+```
+
+The Strict profile can break applications that require external scripts, CDNs, embedded frames, inline JavaScript, external API connections, or restricted browser capabilities. Use Standard as the normal starting point and enable Strict only after testing the application. HSTS is configured separately through `HTTP Strict Transport Security (HSTS)` and is not part of either security header profile.
+
+## Response Compression
+
+Response compression is configured per web host under `Web Hosts -> Advanced`. The default is `Off`, so existing hosts keep their current behavior until compression is explicitly enabled.
+
+| Profile | Caddy directive | Behavior |
+| --- | --- | --- |
+| `Off` | none | Does not add managed response compression. |
+| `Gzip` | `encode gzip` | Provides broadly compatible compression for suitable responses. |
+| `Zstandard + Gzip (Recommended)` | `encode zstd gzip` | Prefers Zstandard when the client supports it and falls back to Gzip. |
+
+Caddy negotiates the encoding from the client's `Accept-Encoding` header and only compresses suitable response types. Text-based content such as HTML, CSS, JavaScript, JSON, XML, and SVG usually benefits most. Files that are already compressed, including JPEG, PNG, MP4, ZIP, and most PDFs, generally see little or no benefit.
+
+Brotli is intentionally not offered because it is not included in the standard Caddy image used by this project and would require a custom Caddy build. A managed compression profile cannot be combined with a manual `encode` directive under `Additional settings`; remove the manual directive before enabling managed compression.
 
 ## Central Website SSO
 

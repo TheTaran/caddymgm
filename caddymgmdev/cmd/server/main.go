@@ -78,11 +78,15 @@ type Site struct {
 	RedirectOrigins       []string `json:"redirectOrigins,omitempty"`
 	HSTSEnabled           bool     `json:"hstsEnabled,omitempty"`
 	SecurityHeaderProfile string   `json:"securityHeaderProfile,omitempty"`
+	CompressionProfile    string   `json:"compressionProfile,omitempty"`
 	Root                  string   `json:"root,omitempty"`
 	ExtraDirectives       string   `json:"extraDirectives,omitempty"`
 	LogsEnabled           bool     `json:"logsEnabled"`
 	TLSMode               string   `json:"tlsMode"`
 	ACMEIssuerID          string   `json:"acmeIssuerId,omitempty"`
+	TLSMinVersion         string   `json:"tlsMinVersion,omitempty"`
+	TLSMaxVersion         string   `json:"tlsMaxVersion,omitempty"`
+	TLSCipherSuites       []string `json:"tlsCipherSuites,omitempty"`
 	CertificateExpiresAt  string   `json:"certificateExpiresAt,omitempty"`
 	Enabled               bool     `json:"enabled"`
 	AuthEnabled           bool     `json:"authEnabled,omitempty"`
@@ -103,11 +107,15 @@ type sitePayload struct {
 	RedirectOrigins       []string `json:"redirectOrigins,omitempty"`
 	HSTSEnabled           bool     `json:"hstsEnabled,omitempty"`
 	SecurityHeaderProfile string   `json:"securityHeaderProfile,omitempty"`
+	CompressionProfile    string   `json:"compressionProfile,omitempty"`
 	Root                  string   `json:"root,omitempty"`
 	ExtraDirectives       string   `json:"extraDirectives,omitempty"`
 	LogsEnabled           *bool    `json:"logsEnabled,omitempty"`
 	TLSMode               string   `json:"tlsMode,omitempty"`
 	ACMEIssuerID          string   `json:"acmeIssuerId,omitempty"`
+	TLSMinVersion         string   `json:"tlsMinVersion,omitempty"`
+	TLSMaxVersion         string   `json:"tlsMaxVersion,omitempty"`
+	TLSCipherSuites       []string `json:"tlsCipherSuites,omitempty"`
 	Enabled               bool     `json:"enabled"`
 	AuthEnabled           bool     `json:"authEnabled,omitempty"`
 	AuthProviderID        string   `json:"authProviderId,omitempty"`
@@ -136,11 +144,15 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		RedirectOrigins:       p.RedirectOrigins,
 		HSTSEnabled:           p.HSTSEnabled,
 		SecurityHeaderProfile: p.SecurityHeaderProfile,
+		CompressionProfile:    p.CompressionProfile,
 		Root:                  p.Root,
 		ExtraDirectives:       p.ExtraDirectives,
 		LogsEnabled:           logsEnabled,
 		TLSMode:               p.TLSMode,
 		ACMEIssuerID:          p.ACMEIssuerID,
+		TLSMinVersion:         p.TLSMinVersion,
+		TLSMaxVersion:         p.TLSMaxVersion,
+		TLSCipherSuites:       p.TLSCipherSuites,
 		Enabled:               p.Enabled,
 		AuthEnabled:           p.AuthEnabled,
 		AuthProviderID:        p.AuthProviderID,
@@ -1553,6 +1565,7 @@ func parseSite(id string, lines []string) (Site, error) {
 	inAuthDirective := false
 	inSecurityHeaderDirective := false
 	inBasicAuthDirective := false
+	skipManagedEncode := false
 	logDepth := 0
 	reverseProxyDepth := 0
 	transportDepth := 0
@@ -1648,6 +1661,18 @@ func parseSite(id string, lines []string) (Site, error) {
 		}
 		if inTLS {
 			switch {
+			case strings.HasPrefix(line, "protocols "):
+				versions := strings.Fields(strings.TrimPrefix(line, "protocols "))
+				if len(versions) > 0 {
+					site.TLSMinVersion = versions[0]
+				}
+				if len(versions) > 1 {
+					site.TLSMaxVersion = versions[1]
+				}
+			case strings.HasPrefix(line, "ciphers "):
+				site.TLSCipherSuites = strings.Fields(strings.TrimPrefix(line, "ciphers "))
+			case line == "issuer internal":
+				site.TLSMode = "internal"
 			case strings.HasPrefix(line, "dir "):
 				site.TLSMode = "acme"
 			case strings.HasPrefix(line, "# caddymgm:tls-issuer "):
@@ -1659,6 +1684,12 @@ func parseSite(id string, lines []string) (Site, error) {
 		}
 		switch {
 		case line == "" || line == "}":
+			continue
+		case strings.HasPrefix(line, "# caddymgm:compression "):
+			site.CompressionProfile = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:compression "))
+			skipManagedEncode = true
+		case skipManagedEncode && strings.HasPrefix(line, "encode "):
+			skipManagedEncode = false
 			continue
 		case strings.HasPrefix(line, "# caddymgm:comment "):
 			site.Comment = parseManagedComment(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:comment ")))
@@ -1692,7 +1723,9 @@ func parseSite(id string, lines []string) (Site, error) {
 		case line == "tls internal":
 			site.TLSMode = "internal"
 		case line == "tls {" || strings.HasPrefix(line, "tls {"):
-			site.TLSMode = "acme"
+			if site.TLSMode == "off" {
+				site.TLSMode = "acme"
+			}
 			inTLS = true
 		case strings.HasPrefix(line, "reverse_proxy ") && strings.HasSuffix(line, "{"):
 			site.Mode = "proxy"
@@ -1777,15 +1810,25 @@ func renderUnavailableSite(site Site, issuers []ACMEIssuer, logDir string) strin
 	out.WriteString("# caddymgm:unavailable-site " + site.ID + "\n")
 	out.WriteString(address + " {\n")
 	out.WriteString("\timport caddymgm_unavailable\n")
+	writeCompression(&out, "", site)
 	if site.HSTSEnabled && site.TLSMode != "" && site.TLSMode != "off" {
 		out.WriteString("\theader Strict-Transport-Security \"max-age=31536000\"\n")
 	}
+	tlsOptions := site.TLSMinVersion != "" || site.TLSMaxVersion != "" || len(site.TLSCipherSuites) > 0
 	switch site.TLSMode {
 	case "internal":
-		out.WriteString("\ttls internal\n")
+		if !tlsOptions {
+			out.WriteString("\ttls internal\n")
+		} else {
+			out.WriteString("\ttls {\n")
+			writeTLSOptions(&out, "", site)
+			out.WriteString("\t\tissuer internal\n")
+			out.WriteString("\t}\n")
+		}
 	case "acme":
 		if issuer, ok := findACMEIssuer(issuers, site.ACMEIssuerID); ok {
 			out.WriteString("\ttls {\n")
+			writeTLSOptions(&out, "", site)
 			out.WriteString("\t\tissuer acme {\n")
 			out.WriteString("\t\t\tdir " + issuer.DirectoryURL + "\n")
 			if issuer.Email != "" {
@@ -1998,13 +2041,23 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 		out.WriteString(prefix + "\t}\n")
 		out.WriteString(prefix + "\t# caddymgm:end-security-header-directive\n")
 	}
+	writeCompression(&out, prefix, site)
+	tlsOptions := site.TLSMinVersion != "" || site.TLSMaxVersion != "" || len(site.TLSCipherSuites) > 0
 	switch site.TLSMode {
 	case "internal":
-		out.WriteString(prefix + "\ttls internal\n")
+		if !tlsOptions {
+			out.WriteString(prefix + "\ttls internal\n")
+		} else {
+			out.WriteString(prefix + "\ttls {\n")
+			writeTLSOptions(&out, prefix, site)
+			out.WriteString(prefix + "\t\tissuer internal\n")
+			out.WriteString(prefix + "\t}\n")
+		}
 	case "acme":
 		if issuer, ok := findACMEIssuer(issuers, site.ACMEIssuerID); ok {
 			out.WriteString(prefix + "\t# caddymgm:tls-issuer " + issuer.ID + "\n")
 			out.WriteString(prefix + "\ttls {\n")
+			writeTLSOptions(&out, prefix, site)
 			out.WriteString(prefix + "\t\tissuer acme {\n")
 			out.WriteString(prefix + "\t\t\tdir " + issuer.DirectoryURL + "\n")
 			if issuer.Email != "" {
@@ -2036,6 +2089,43 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 	return out.String()
 }
 
+func writeCompression(out *strings.Builder, prefix string, site Site) {
+	switch site.CompressionProfile {
+	case "gzip":
+		out.WriteString(prefix + "\t# caddymgm:compression gzip\n")
+		out.WriteString(prefix + "\tencode gzip\n")
+	case "zstd-gzip":
+		out.WriteString(prefix + "\t# caddymgm:compression zstd-gzip\n")
+		out.WriteString(prefix + "\tencode zstd gzip\n")
+	}
+}
+
+func writeTLSOptions(out *strings.Builder, prefix string, site Site) {
+	if site.TLSMinVersion != "" || site.TLSMaxVersion != "" {
+		minVersion := site.TLSMinVersion
+		if minVersion == "" {
+			minVersion = "tls1.2"
+		}
+		out.WriteString(prefix + "\t\tprotocols " + minVersion)
+		if site.TLSMaxVersion != "" {
+			out.WriteString(" " + site.TLSMaxVersion)
+		}
+		out.WriteString("\n")
+	}
+	if len(site.TLSCipherSuites) > 0 {
+		out.WriteString(prefix + "\t\tciphers " + strings.Join(site.TLSCipherSuites, " ") + "\n")
+	}
+}
+
+var supportedTLSCipherSuites = map[string]bool{
+	"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384":       true,
+	"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":         true,
+	"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256":       true,
+	"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256":         true,
+	"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256": true,
+	"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256":   true,
+}
+
 var addressPattern = regexp.MustCompile(`^[A-Za-z0-9*._:-]+$`)
 
 func normalizeSite(site *Site) error {
@@ -2047,9 +2137,12 @@ func normalizeSite(site *Site) error {
 	site.ExtraDirectives = cleanExtraDirectives(site.ExtraDirectives)
 	site.TLSMode = strings.TrimSpace(site.TLSMode)
 	site.ACMEIssuerID = strings.TrimSpace(site.ACMEIssuerID)
+	site.TLSMinVersion = strings.ToLower(strings.TrimSpace(site.TLSMinVersion))
+	site.TLSMaxVersion = strings.ToLower(strings.TrimSpace(site.TLSMaxVersion))
 	site.AuthProviderID = strings.TrimSpace(site.AuthProviderID)
 	site.BasicAuthUsername = strings.TrimSpace(site.BasicAuthUsername)
 	site.SecurityHeaderProfile = strings.ToLower(strings.TrimSpace(site.SecurityHeaderProfile))
+	site.CompressionProfile = strings.ToLower(strings.TrimSpace(site.CompressionProfile))
 	redirectOrigins := make([]string, 0, len(site.RedirectOrigins))
 	seenRedirectOrigins := map[string]bool{}
 	for _, rawOrigin := range site.RedirectOrigins {
@@ -2121,11 +2214,48 @@ func normalizeSite(site *Site) error {
 	}
 	if site.TLSMode == "off" {
 		site.HSTSEnabled = false
+		site.TLSMinVersion = ""
+		site.TLSMaxVersion = ""
+		site.TLSCipherSuites = nil
+	} else {
+		for _, tlsVersion := range []string{site.TLSMinVersion, site.TLSMaxVersion} {
+			if tlsVersion != "" && tlsVersion != "tls1.2" && tlsVersion != "tls1.3" {
+				return errors.New("TLS protocol version must be tls1.2 or tls1.3")
+			}
+		}
+		if site.TLSMinVersion == "tls1.3" && site.TLSMaxVersion == "tls1.2" {
+			return errors.New("minimum TLS protocol version cannot exceed maximum version")
+		}
+		cipherSuites := make([]string, 0, len(site.TLSCipherSuites))
+		seenCipherSuites := map[string]bool{}
+		for _, cipherSuite := range site.TLSCipherSuites {
+			cipherSuite = strings.ToUpper(strings.TrimSpace(cipherSuite))
+			if !supportedTLSCipherSuites[cipherSuite] {
+				return fmt.Errorf("unsupported TLS cipher suite %q", cipherSuite)
+			}
+			if !seenCipherSuites[cipherSuite] {
+				seenCipherSuites[cipherSuite] = true
+				cipherSuites = append(cipherSuites, cipherSuite)
+			}
+		}
+		site.TLSCipherSuites = cipherSuites
 	}
 	switch site.SecurityHeaderProfile {
 	case "", "standard", "strict":
 	default:
 		return errors.New("security header profile must be off, standard or strict")
+	}
+	switch site.CompressionProfile {
+	case "", "gzip", "zstd-gzip":
+	default:
+		return errors.New("compression profile must be off, gzip or zstd-gzip")
+	}
+	if site.CompressionProfile != "" {
+		for _, line := range strings.Split(site.ExtraDirectives, "\n") {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "encode ") {
+				return errors.New("remove the manual encode directive before enabling managed compression")
+			}
+		}
 	}
 	if site.AuthEnabled {
 		if site.TLSMode == "off" {

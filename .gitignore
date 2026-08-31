@@ -7,3 +7,4 @@ caddymgm/*
 caddy-logs/
 caddy-data/
 AGENTS.md
+.agents/

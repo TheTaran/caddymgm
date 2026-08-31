@@ -1,17 +1,49 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/oschwald/maxminddb-golang/v2"
 )
+
+func (a *App) handleGeoFlag(w http.ResponseWriter, r *http.Request) {
+	code := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/geo-flag/")))
+	if !countryCodePattern.MatchString(strings.ToUpper(code)) {
+		writeError(w, http.StatusBadRequest, errors.New("invalid country code"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://flagcdn.com/32x24/"+code+".png", nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, errors.New("country flag unavailable"))
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		writeError(w, http.StatusBadGateway, errors.New("country flag unavailable"))
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=604800")
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, 64<<10))
+}
 
 const geoTopIPLimit = 1_000
 
@@ -55,6 +87,98 @@ type geoMapResponse struct {
 	Requests  int              `json:"requests"`
 	Locations []geoMapLocation `json:"locations"`
 	TopIPs    []geoMapIP       `json:"topIps"`
+}
+
+type geoCountry struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+type geoCountryCache struct {
+	DatabaseModified int64        `json:"databaseModified"`
+	DatabaseSize     int64        `json:"databaseSize"`
+	Countries        []geoCountry `json:"countries"`
+}
+
+func (a *App) handleGeoCountries(w http.ResponseWriter, _ *http.Request) {
+	countries, err := a.loadGeoCountries()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"countries": countries})
+}
+
+func (a *App) loadGeoCountries() ([]geoCountry, error) {
+	info, err := os.Stat(a.geoIPDBPath)
+	if err != nil {
+		return nil, errors.New("GeoLite2 City database is unavailable")
+	}
+	a.geoCountriesMu.Lock()
+	defer a.geoCountriesMu.Unlock()
+	if len(a.geoCountries) > 0 && info.ModTime().Equal(a.geoCountriesMTime) {
+		return append([]geoCountry(nil), a.geoCountries...), nil
+	}
+	if countries := readGeoCountryCache(a.geoIPDBPath, info); len(countries) > 0 {
+		a.geoCountries = countries
+		a.geoCountriesMTime = info.ModTime()
+		return append([]geoCountry(nil), countries...), nil
+	}
+
+	database, err := maxminddb.Open(a.geoIPDBPath)
+	if err != nil {
+		return nil, errors.New("GeoLite2 City database is unavailable")
+	}
+	defer database.Close()
+
+	countriesByCode := make(map[string]string)
+	for result := range database.Networks() {
+		var record geoCityRecord
+		if err := result.Decode(&record); err != nil {
+			continue
+		}
+		code := strings.ToUpper(strings.TrimSpace(record.Country.ISOCode))
+		if !countryCodePattern.MatchString(code) {
+			continue
+		}
+		name := geoFirstNonEmpty(record.Country.Names["en"], record.Country.Names["de"], code)
+		if _, exists := countriesByCode[code]; !exists {
+			countriesByCode[code] = name
+		}
+	}
+	countries := make([]geoCountry, 0, len(countriesByCode))
+	for code, name := range countriesByCode {
+		countries = append(countries, geoCountry{Code: code, Name: name})
+	}
+	sort.Slice(countries, func(i, j int) bool { return countries[i].Name < countries[j].Name })
+	a.geoCountries = append([]geoCountry(nil), countries...)
+	a.geoCountriesMTime = info.ModTime()
+	writeGeoCountryCache(a.geoIPDBPath, info, countries)
+	return countries, nil
+}
+
+func readGeoCountryCache(databasePath string, info os.FileInfo) []geoCountry {
+	content, err := os.ReadFile(databasePath + ".countries.json")
+	if err != nil {
+		return nil
+	}
+	var cache geoCountryCache
+	if json.Unmarshal(content, &cache) != nil || cache.DatabaseModified != info.ModTime().UnixNano() || cache.DatabaseSize != info.Size() {
+		return nil
+	}
+	return cache.Countries
+}
+
+func writeGeoCountryCache(databasePath string, info os.FileInfo, countries []geoCountry) {
+	content, err := json.Marshal(geoCountryCache{DatabaseModified: info.ModTime().UnixNano(), DatabaseSize: info.Size(), Countries: countries})
+	if err != nil {
+		return
+	}
+	cachePath := databasePath + ".countries.json"
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o750); err != nil {
+		return
+	}
+	_ = writeFileAtomically(cachePath, append(content, '\n'), 0o600)
 }
 
 type geoIPAggregate struct {

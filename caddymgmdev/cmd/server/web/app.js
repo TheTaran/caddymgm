@@ -32,6 +32,23 @@ const els = {
   hostFilterReset: document.querySelector("#host-filter-reset"),
   hostFilterSummary: document.querySelector("#host-filter-summary"),
   proxyGrid: document.querySelector("#proxy-hosts-grid"),
+  webProtectionForm: document.querySelector("#web-protection-form"),
+  webProtectionEnabled: document.querySelector("#web-protection-enabled"),
+  webProtectionCountryMode: document.querySelector("#web-protection-country-mode"),
+  webProtectionCountriesButton: document.querySelector("#web-protection-countries-button"),
+  webProtectionCountriesSummary: document.querySelector("#web-protection-countries-summary"),
+  countryPickerDialog: document.querySelector("#country-picker-dialog"),
+  countryPickerSearch: document.querySelector("#country-picker-search"),
+  countryPickerList: document.querySelector("#country-picker-list"),
+  countryPickerApply: document.querySelector("#country-picker-apply"),
+  webProtectionBlockedIPs: document.querySelector("#web-protection-blocked-ips"),
+  webProtectionAllowedIPs: document.querySelector("#web-protection-allowed-ips"),
+  externalBlocklistsPanel: document.querySelector("#external-blocklists-panel"),
+  externalBlocklistsForm: document.querySelector("#external-blocklists-form"),
+  externalBlocklistList: document.querySelector("#external-blocklist-list"),
+  externalBlocklistEmpty: document.querySelector("#external-blocklist-empty"),
+  externalBlocklistAdd: document.querySelector("#external-blocklist-add"),
+  externalBlocklistTotal: document.querySelector("#external-blocklist-total"),
   editor: document.querySelector("#editor"),
   form: document.querySelector("#site-form"),
   formTitle: document.querySelector("#form-title"),
@@ -73,8 +90,14 @@ const els = {
   acmeIssuer: document.querySelector("#acme-issuer"),
   tlsMinVersion: document.querySelector("#tls-min-version"),
   tlsMaxVersion: document.querySelector("#tls-max-version"),
-  tlsCipherSuites: document.querySelector("#tls-cipher-suites"),
   tlsControlsHint: document.querySelector("#tls-controls-hint"),
+  protectionOverride: document.querySelector("#protection-override"),
+  protectionOverrideFields: document.querySelector("#protection-override-fields"),
+  siteProtectionEnabled: document.querySelector("#site-protection-enabled"),
+  siteProtectionCountryMode: document.querySelector("#site-protection-country-mode"),
+  siteProtectionCountries: document.querySelector("#site-protection-countries"),
+  siteProtectionBlockedIPs: document.querySelector("#site-protection-blocked-ips"),
+  siteProtectionAllowedIPs: document.querySelector("#site-protection-allowed-ips"),
   siteAuthEnabled: document.querySelector("#site-auth-enabled"),
   basicAuthEnabled: document.querySelector("#basic-auth-enabled"),
   basicAuthUsername: document.querySelector("#basic-auth-username"),
@@ -150,6 +173,7 @@ const els = {
 const viewTitles = {
   dashboard: ["Dashboard", "Web Hosts Overview"],
   "proxy-hosts": ["Web Hosts", "Website Configuration"],
+  "web-protection": ["Web Protection", "GEO IP Blocking"],
   certificates: ["Certificates", "TLS Certificates"],
   logs: ["Logs", "Website Logs"],
   settings: ["Settings", "CaddyMGM Settings"],
@@ -170,6 +194,9 @@ const viewIcons = {
       <path d="M8 8.5h.01M8 15.5h.01" />
       <path d="M13 8.5h4M13 15.5h4" />
     </svg>
+  `,
+  "web-protection": `
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 6 5.5v5.5c0 4 2.56 7.2 6 10 3.44-2.8 6-6 6-10V5.5L12 3Z" /><path d="m9.5 12 1.8 1.8 3.7-4" /></svg>
   `,
   certificates: `
     <svg viewBox="0 0 24 24" fill="none">
@@ -272,6 +299,31 @@ document.querySelectorAll("[data-reset-filters]").forEach((button) => {
   button.addEventListener("click", resetTableFilters);
 });
 els.settingsForm.addEventListener("submit", saveSettings);
+els.webProtectionForm.addEventListener("submit", saveWebProtection);
+els.externalBlocklistsForm.addEventListener("submit", saveExternalBlocklists);
+els.externalBlocklistAdd.addEventListener("click", addExternalBlocklist);
+els.externalBlocklistList.addEventListener("click", (event) => {
+  const removeButton = event.target.closest("[data-remove-blocklist]");
+  if (removeButton) {
+    removeButton.closest(".blocklist-row")?.remove();
+    els.externalBlocklistEmpty.hidden = els.externalBlocklistList.children.length > 0;
+    return;
+  }
+  const updateButton = event.target.closest("[data-update-blocklist]");
+  if (!updateButton) return;
+  const url = updateButton.closest(".blocklist-row")?.querySelector('[data-blocklist-field="url"]')?.value.trim();
+  if (url) persistExternalBlocklists(url, false);
+});
+document.querySelectorAll("[data-protection-tab]").forEach((tab) => tab.addEventListener("click", () => showProtectionTab(tab.dataset.protectionTab)));
+els.webProtectionCountriesButton.addEventListener("click", openCountryPicker);
+els.countryPickerSearch.addEventListener("input", renderCountryPicker);
+els.countryPickerList.addEventListener("change", (event) => {
+  if (!(event.target instanceof HTMLInputElement) || event.target.type !== "checkbox") return;
+  const selected = new Set(selectedProtectionCountries);
+  if (event.target.checked) selected.add(event.target.value); else selected.delete(event.target.value);
+  selectedProtectionCountries = [...selected].sort();
+});
+els.countryPickerApply.addEventListener("click", applyCountryPicker);
 els.settingsPassword.addEventListener("input", syncSettingsPasswordConfirmation);
 els.settingsPasswordConfirm.addEventListener("input", syncSettingsPasswordConfirmation);
 els.settingsWebTLSEnabled.addEventListener("change", syncSettingsWebTLS);
@@ -288,6 +340,7 @@ els.tlsMaxVersion.addEventListener("change", () => {
   if (els.tlsMaxVersion.value === "tls1.2" && els.tlsMinVersion.value === "tls1.3") els.tlsMinVersion.value = "tls1.2";
 });
 els.hstsEnabled.addEventListener("change", syncTLSMode);
+els.protectionOverride.addEventListener("change", syncProtectionOverride);
 els.securityHeaderProfile.addEventListener("change", syncSecurityHeaderProfile);
 els.rewriteRedirects.addEventListener("change", syncMode);
 els.siteAuthEnabled.addEventListener("change", syncSiteAuth);
@@ -508,6 +561,91 @@ function showView(view) {
   if (view === "certificates") renderCertificatesView();
 }
 
+function protectionValues(value) {
+  return String(value || "").split(/[\n,]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
+}
+
+function showProtectionTab(tab) {
+  const blocklists = tab === "blocklists";
+  els.webProtectionForm.closest("section").hidden = blocklists;
+  els.externalBlocklistsPanel.hidden = !blocklists;
+  document.querySelectorAll("[data-protection-tab]").forEach((button) => button.classList.toggle("active", button.dataset.protectionTab === tab));
+}
+
+async function saveExternalBlocklists(event) {
+  event.preventDefault();
+  await persistExternalBlocklists("", true);
+}
+
+function collectExternalBlocklists() {
+  return [...els.externalBlocklistList.querySelectorAll(".blocklist-row")].map((row) => ({
+    name: row.querySelector('[data-blocklist-field="name"]').value.trim(),
+    url: row.querySelector('[data-blocklist-field="url"]').value.trim(),
+  }));
+}
+
+async function persistExternalBlocklists(refreshURL = "", refreshAll = false) {
+  const feeds = collectExternalBlocklists();
+  try {
+    settings = await request("/api/settings", { method: "PUT", body: JSON.stringify({ ...settings, externalBlocklists: feeds, refreshExternalBlocklists: refreshAll, refreshExternalBlocklistUrl: refreshURL }) });
+    renderExternalBlocklists(settings.externalBlocklists || []);
+    setStatus(`${feeds.length} external blocklist${feeds.length === 1 ? "" : "s"} active`);
+    showConfirmation(refreshURL ? "External blocklist updated" : "External blocklists refreshed", "success");
+  } catch (err) { setStatus(err.message); }
+}
+
+function renderExternalBlocklists(feeds) {
+  els.externalBlocklistList.innerHTML = feeds.map((feed, index) => `<div class="blocklist-row" data-blocklist-row="${index}"><input data-blocklist-field="name" maxlength="80" required placeholder="Blocklist name" value="${escapeHTML(feed.name)}" /><input data-blocklist-field="url" type="url" required placeholder="https://example.org/blocklist.txt" value="${escapeHTML(feed.url)}" /><span class="blocklist-meta">${Number(feed.count || 0).toLocaleString()} IPs</span><span class="blocklist-meta">${feed.updatedAt ? new Date(feed.updatedAt).toLocaleString() : "Not recorded"}</span><span class="blocklist-actions"><button type="button" class="secondary" data-update-blocklist>Update</button><button type="button" class="danger" data-remove-blocklist>Remove</button></span></div>`).join("");
+  els.externalBlocklistEmpty.hidden = feeds.length > 0;
+  const total = Number(settings?.externalBlockedIpCount || 0);
+  els.externalBlocklistTotal.textContent = `${total.toLocaleString()} blocked IP${total === 1 ? "" : "s"} across all lists`;
+}
+
+function addExternalBlocklist() {
+  const feeds = collectExternalBlocklists();
+  feeds.push({ name: "", url: "" });
+  renderExternalBlocklists(feeds);
+  els.externalBlocklistList.lastElementChild?.querySelector('[data-blocklist-field="name"]')?.focus();
+}
+
+let protectionCountries = [];
+let selectedProtectionCountries = [];
+async function openCountryPicker() {
+  selectedProtectionCountries = [...(settings?.webProtection?.blockedCountries || [])];
+  els.countryPickerSearch.value = "";
+  els.countryPickerList.innerHTML = '<p class="muted">Loading countries from GeoLite2...</p>';
+  els.countryPickerDialog.showModal();
+  try {
+    const data = await request("/api/geo-countries");
+    protectionCountries = data.countries || [];
+    renderCountryPicker();
+  } catch (err) {
+    els.countryPickerList.innerHTML = `<p class="error-text">${escapeHTML(err.message)}</p>`;
+  }
+}
+function renderCountryPicker() { const query = els.countryPickerSearch.value.trim().toLowerCase(); const matches = protectionCountries.filter((country) => !query || country.name.toLowerCase().includes(query) || country.code.toLowerCase().includes(query)); els.countryPickerList.innerHTML = matches.length ? matches.map((country) => `<label class="country-picker-row"><input type="checkbox" value="${country.code}" ${selectedProtectionCountries.includes(country.code) ? "checked" : ""} /><img src="/api/geo-flag/${country.code}" width="24" height="18" alt="" loading="lazy" /><strong>${escapeHTML(country.name)}</strong><code>${country.code}</code></label>`).join("") : '<p class="muted">No countries match this search.</p>'; }
+function applyCountryPicker() { settings.webProtection = { ...(settings.webProtection || {}), blockedCountries: selectedProtectionCountries }; els.webProtectionCountriesSummary.textContent = selectedProtectionCountries.length ? `${selectedProtectionCountries.length} countries selected: ${selectedProtectionCountries.join(", ")}` : "No countries selected."; els.countryPickerDialog.close(); }
+
+async function saveWebProtection(event) {
+  event.preventDefault();
+  const next = { ...settings, webProtection: {
+    enabled: els.webProtectionEnabled.checked,
+    countryMode: els.webProtectionCountryMode.value,
+    blockedCountries: selectedProtectionCountries,
+    blockedIps: protectionValues(els.webProtectionBlockedIPs.value),
+    allowedIps: protectionValues(els.webProtectionAllowedIPs.value),
+  }};
+  try {
+    settings = await request("/api/settings", { method: "PUT", body: JSON.stringify(next) });
+    setStatus("GEO IP blocking defaults saved");
+    showConfirmation("GEO IP blocking defaults saved", "success");
+  } catch (err) { setStatus(err.message); }
+}
+
 async function loadSites() {
   setStatus("Loading websites...");
   try {
@@ -527,6 +665,14 @@ async function loadSettings() {
   try {
     const [loadedSettings, providers] = await Promise.all([request("/api/settings"), request("/api/auth-providers")]);
     settings = loadedSettings;
+    const protection = settings.webProtection || {};
+    renderExternalBlocklists(settings.externalBlocklists || []);
+    els.webProtectionEnabled.checked = !!protection.enabled;
+    els.webProtectionCountryMode.value = protection.countryMode || "block";
+    selectedProtectionCountries = protection.blockedCountries || [];
+    els.webProtectionCountriesSummary.textContent = selectedProtectionCountries.length ? `${selectedProtectionCountries.length} countries selected: ${selectedProtectionCountries.join(", ")}` : "No countries selected.";
+    els.webProtectionBlockedIPs.value = (protection.blockedIps || []).join("\n");
+    els.webProtectionAllowedIPs.value = (protection.allowedIps || []).join("\n");
     els.settingsUsername.value = settings.username || "admin";
     els.settingsPassword.value = "";
     els.settingsPasswordConfirm.value = "";
@@ -587,6 +733,8 @@ async function saveSettings(event) {
     },
     logRetention: Number(els.settingsLogRetention.value || 100),
     acmeIssuers: settings?.acmeIssuers || [],
+    webProtection: settings?.webProtection || {},
+    externalBlocklists: settings?.externalBlocklists || [],
   };
   try {
     settings = await request("/api/settings", {
@@ -1212,7 +1360,6 @@ async function toggleSiteEnabled(site) {
         acmeIssuerId: site.tlsMode === "acme" ? site.acmeIssuerId || "" : "",
         tlsMinVersion: site.tlsMinVersion || "",
         tlsMaxVersion: site.tlsMaxVersion || "",
-        tlsCipherSuites: site.tlsCipherSuites || [],
         authEnabled: !!site.authEnabled,
         authProviderId: site.authEnabled ? "oidc" : "",
         basicAuthEnabled: !!site.basicAuthEnabled,
@@ -1487,12 +1634,17 @@ function editSite(site = null) {
   els.tlsEnabled.checked = !!site && site?.tlsMode !== "off";
   els.tlsMinVersion.value = site?.tlsMinVersion || "";
   els.tlsMaxVersion.value = site?.tlsMaxVersion || "";
-  const selectedCipherSuites = new Set(site?.tlsCipherSuites || []);
-  Array.from(els.tlsCipherSuites.options).forEach((option) => { option.selected = selectedCipherSuites.has(option.value); });
   els.siteAuthEnabled.checked = !!site?.authEnabled;
   els.basicAuthEnabled.checked = !!site?.basicAuthEnabled;
   els.basicAuthUsername.value = site?.basicAuthUsername || "";
   els.basicAuthPassword.value = "";
+  els.protectionOverride.checked = !!site?.protectionOverride;
+  els.siteProtectionEnabled.checked = !!site?.webProtection?.enabled;
+  els.siteProtectionCountryMode.value = site?.webProtection?.countryMode || "block";
+  els.siteProtectionCountries.value = (site?.webProtection?.blockedCountries || []).join(", ");
+  els.siteProtectionBlockedIPs.value = (site?.webProtection?.blockedIps || []).join("\n");
+  els.siteProtectionAllowedIPs.value = (site?.webProtection?.allowedIps || []).join("\n");
+  syncProtectionOverride();
   renderIssuerOptions();
   els.acmeIssuer.value = site?.acmeIssuerId || "";
   document.querySelectorAll("input[name='mode']").forEach((input) => {
@@ -1626,7 +1778,6 @@ function syncTLSMode() {
   els.acmeIssuer.disabled = !enabled;
   els.tlsMinVersion.disabled = !enabled;
   els.tlsMaxVersion.disabled = !enabled;
-  els.tlsCipherSuites.disabled = !enabled;
   els.tlsControlsHint.classList.toggle("disabled", !enabled);
   if (!enabled) {
     els.acmeIssuer.value = "";
@@ -1684,6 +1835,10 @@ function syncBasicAuthFields() {
   els.basicAuthPassword.placeholder = editingSite?.basicAuthEnabled ? "Leave empty to keep current password" : "At least 8 characters";
 }
 
+function syncProtectionOverride() {
+  els.protectionOverrideFields.hidden = !els.protectionOverride.checked;
+}
+
 async function saveSite(event) {
   event.preventDefault();
   const previousSite = editingSite ? { ...editingSite } : null;
@@ -1712,13 +1867,20 @@ async function saveSite(event) {
     acmeIssuerId: els.tlsEnabled.checked ? els.acmeIssuer.value : "",
     tlsMinVersion: els.tlsEnabled.checked ? els.tlsMinVersion.value : "",
     tlsMaxVersion: els.tlsEnabled.checked ? els.tlsMaxVersion.value : "",
-    tlsCipherSuites: els.tlsEnabled.checked ? Array.from(els.tlsCipherSuites.selectedOptions, (option) => option.value) : [],
     enabled: els.enabled.checked,
     authEnabled: els.siteAuthEnabled.checked,
     authProviderId: els.siteAuthEnabled.checked ? "oidc" : "",
     basicAuthEnabled: els.basicAuthEnabled.checked,
     basicAuthUsername: els.basicAuthEnabled.checked ? els.basicAuthUsername.value : "",
     basicAuthPassword: els.basicAuthEnabled.checked ? els.basicAuthPassword.value : "",
+    protectionOverride: els.protectionOverride.checked,
+    webProtection: els.protectionOverride.checked ? {
+      enabled: els.siteProtectionEnabled.checked,
+      countryMode: els.siteProtectionCountryMode.value,
+      blockedCountries: protectionValues(els.siteProtectionCountries.value),
+      blockedIps: protectionValues(els.siteProtectionBlockedIPs.value),
+      allowedIps: protectionValues(els.siteProtectionAllowedIPs.value),
+    } : {},
   };
   const id = els.id.value;
   try {

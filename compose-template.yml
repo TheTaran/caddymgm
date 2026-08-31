@@ -34,7 +34,12 @@ services:
       - management
 
   caddy:
-    image: ${CADDY_IMAGE:-caddy:2-alpine}
+    image: ${CADDY_IMAGE:-caddymgm-caddy:development}
+    build:
+      context: ./caddy
+      args:
+        CADDY_VERSION: ${CADDY_VERSION:-2.11.4}
+        CADDY_GEOIP_MODULE_VERSION: ${CADDY_GEOIP_MODULE_VERSION:-v0.6.0}
     container_name: caddy
     profiles:
       - docker-caddy
@@ -60,6 +65,7 @@ services:
       - ./caddy-data:/data
       - ./caddy-data/state:/config
       - ./caddy-data/ca-certificates:/ca-certificates:ro
+      - ./caddymgm/geoip:/geoip:ro
     networks:
       default:
       management:

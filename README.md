@@ -26,8 +26,9 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 | Date | Feature | What's included |
 | --- | --- | --- |
 | 2026-08-31 | **Runtime Security Hardening** | Supported Alpine 3.24 runtime with current security packages plus updated Go cryptography and OAuth dependencies. |
+| 2026-08-31 | **Web Protection** | Global Geo-IP country blocking, IP/CIDR deny and allow rules, per-host overrides, and validated external threat feeds. |
 | 2026-08-31 | **Response Compression** | Per-host `Off`, `Gzip`, or `Zstandard + Gzip` profiles with automatic client negotiation and Gzip fallback. |
-| 2026-08-31 | **TLS Controls** | Configurable minimum and maximum TLS versions plus selectable TLS 1.2 cipher suites. TLS 1.3 cipher suites remain managed by Caddy. |
+| 2026-08-31 | **TLS Controls** | Configurable minimum and maximum TLS versions while cipher suites remain securely managed by Caddy. |
 | 2026-08-28 | **Web Host Navigation** | Structured editor with `Basic`, `Forwarding Rules`, `Advanced`, and `Authentication` sections plus a live host summary. |
 | 2026-08-28 | **Disabled Host Page** | Managed HTTP 503 response while retaining the complete web-host configuration. |
 | 2026-08-28 | **Website Security Controls** | Redirect rewriting, additional advertised origins, managed Host and forwarded headers, HSTS, Standard/Strict security headers, and bcrypt-based Basic Authentication. |
@@ -112,6 +113,12 @@ docker compose up -d --build
 
 CaddyMGM runs the official `geoipupdate` client inside the CaddyMGM container and refreshes `GeoLite2-City` every 72 hours. The database remains outside the image under `./caddymgm/geoip/GeoLite2-City.mmdb`. No separate updater service is required. Without the database, the dashboard displays a configuration notice and all other features remain available. Client IPs are read only from the retained local Caddy logs and returned only by the authenticated dashboard API.
 
+## Web Protection
+
+`Web Protection` is a main navigation page for global protection defaults. Its country picker is generated from the installed GeoLite2 database and displays searchable country or territory names, ISO codes, checkboxes, and flag images. Country rules can either block only the selected countries or allow only the selected countries. Global rules also support blocked public IP addresses or CIDR ranges and a higher-priority IP/CIDR allowlist. Individual web hosts inherit these defaults unless `Web Hosts -> Advanced -> Web Protection` enables an explicit override.
+
+The `External Blocklists` subpage accepts administrator-defined feeds with a descriptive name and HTTPS URL. Entries can be added and removed in the table. It shows the deduplicated total of blocked IPs, the entry count and last successful update per feed, and provides a per-feed update action as well as an update-all action. CaddyMGM rejects URLs that target or resolve to local and private addresses, validates and deduplicates public IP/CIDR entries, rejects oversized responses, and keeps the previously active rules if a refresh fails. External entries extend the global blocked-IP rules; the allowlist continues to take priority.
+
 ## Optional Caddy Service
 
 If you also want Docker Compose to run Caddy, enable the profile:
@@ -119,6 +126,10 @@ If you also want Docker Compose to run Caddy, enable the profile:
 ```bash
 COMPOSE_PROFILES=docker-caddy docker compose up -d --build
 ```
+
+The Compose-managed Caddy service is built locally from the official, version-pinned Caddy image. It includes the Geo-IP module required for country-based access controls. The Caddy image and module versions are fixed through `CADDY_VERSION` and `CADDY_GEOIP_MODULE_VERSION`; both can be reviewed and updated explicitly. The GeoLite2 database remains a read-only runtime mount at `/geoip/GeoLite2-City.mmdb`, so database refreshes do not rebuild the Caddy image.
+
+The scheduled GitHub workflow `Check Caddy version` compares the pinned version with the latest official Caddy release every Monday. When an update is available, it creates or refreshes one GitHub issue; it never updates the image or publishes a release automatically.
 
 This publishes:
 
@@ -162,7 +173,7 @@ The repository root is the runtime structure:
 
 ## Per-Web-Host TLS Controls
 
-TLS remains disabled for newly created web hosts. After TLS is enabled and an ACME authority is selected, each host can optionally restrict its accepted TLS protocol versions and TLS 1.2 cipher suites under `Web Hosts -> Advanced`.
+TLS remains disabled for newly created web hosts. After TLS is enabled and an ACME authority is selected, each host can optionally restrict its accepted TLS protocol versions under `Web Hosts -> Advanced`. Cipher suites remain securely managed by Caddy.
 
 ### Protocol versions
 
@@ -174,20 +185,7 @@ The minimum and maximum protocol versions can independently use `Caddy default`,
 - Set both fields to the same version to allow only that protocol version.
 - The minimum version cannot be higher than the maximum version.
 
-### TLS 1.2 cipher suites
-
-The following modern TLS 1.2 cipher suites can be selected per host:
-
-- `TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384`
-- `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384`
-- `TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256`
-- `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`
-- `TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256`
-- `TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256`
-
-Leave the cipher list empty to inherit Caddy's secure defaults. Custom cipher selection applies only to TLS 1.2 because Go and Caddy intentionally manage TLS 1.3 cipher suites automatically. Selecting an unnecessarily narrow set can prevent older clients from connecting, so explicit cipher configuration should only be used when required by a security policy or compatibility target.
-
-CaddyMGM validates protocol ranges and cipher names before writing the Caddyfile. The settings survive Caddyfile read/write cycles and also remain enforced while a host is disabled and serves the managed unavailable page. Certificate issuance and ACME authority selection are independent from these protocol and cipher restrictions.
+CaddyMGM validates protocol ranges before writing the Caddyfile. The settings survive Caddyfile read/write cycles and also remain enforced while a host is disabled and serves the managed unavailable page. Certificate issuance and ACME authority selection are independent from these protocol restrictions.
 
 ## Security Header Profiles
 
@@ -314,7 +312,9 @@ The following variables are used by Docker Compose and CaddyMGM.
 | `CADDYMGM_SETTINGS_PATH` | `/caddymgm/caddymgm-settings.json` | Path to the CaddyMGM settings file |
 | `CADDY_ACCESS_LOG_DIR` | `/logs` | Directory written into generated Caddy log directives |
 | `COMPOSE_PROFILES` | `docker-caddy` in example | Start optional Compose services such as Caddy |
-| `CADDY_IMAGE` | `caddy:2-alpine` | Caddy Docker image |
+| `CADDY_IMAGE` | `caddymgm-caddy:development` | Locally built Caddy image including the Geo-IP module |
+| `CADDY_VERSION` | `2.11.4` | Version-pinned official Caddy base image used for the local build |
+| `CADDY_GEOIP_MODULE_VERSION` | `v0.6.0` | Version-pinned Geo-IP Caddy module used for the local build |
 | `CADDY_HTTP_PORT` | `80` | Host port mapped to Caddy HTTP |
 | `CADDY_HTTPS_PORT` | `443` | Host port mapped to Caddy HTTPS and HTTP/3 UDP |
 

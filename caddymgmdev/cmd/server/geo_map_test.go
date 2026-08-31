@@ -6,9 +6,39 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestGeoCountriesUsesInstalledDatabase(t *testing.T) {
+	databasePath := filepath.Clean("../../../caddymgm/geoip/GeoLite2-City.mmdb")
+	if _, err := os.Stat(databasePath); err != nil {
+		t.Skip("installed GeoLite2 database is not available")
+	}
+	testDatabasePath := filepath.Join(filepath.Dir(databasePath), ".test-GeoLite2-City.mmdb")
+	if err := os.Link(databasePath, testDatabasePath); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(testDatabasePath)
+	defer os.Remove(testDatabasePath + ".countries.json")
+	app := &App{geoIPDBPath: testDatabasePath}
+	response := httptest.NewRecorder()
+	app.handleGeoCountries(response, httptest.NewRequest(http.MethodGet, "/api/geo-countries", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("handleGeoCountries status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Countries []geoCountry `json:"countries"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Countries) < 200 {
+		t.Fatalf("GeoLite2 country list has only %d entries", len(payload.Countries))
+	}
+	t.Logf("loaded %d countries and territories from GeoLite2", len(payload.Countries))
+}
 
 func TestAccessLogClientAddress(t *testing.T) {
 	tests := []struct {

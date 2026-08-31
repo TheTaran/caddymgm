@@ -38,6 +38,12 @@
             </span>
             <span>Web Hosts</span>
           </button>
+          <button class="nav-item" type="button" data-view="web-protection">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 6 5.5v5.5c0 4 2.56 7.2 6 10 3.44-2.8 6-6 6-10V5.5L12 3Z" /><path d="m9.5 12 1.8 1.8 3.7-4" /></svg>
+            </span>
+            <span>Web Protection</span>
+          </button>
           <button class="nav-item" type="button" data-view="certificates">
             <span class="nav-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none">
@@ -357,18 +363,7 @@
                       </select>
                     </label>
                   </div>
-                  <label>
-                    TLS 1.2 cipher suites
-                    <select id="tls-cipher-suites" multiple size="6">
-                      <option value="TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384">ECDHE ECDSA · AES 256 GCM</option>
-                      <option value="TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384">ECDHE RSA · AES 256 GCM</option>
-                      <option value="TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256">ECDHE ECDSA · AES 128 GCM</option>
-                      <option value="TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256">ECDHE RSA · AES 128 GCM</option>
-                      <option value="TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256">ECDHE ECDSA · ChaCha20 Poly1305</option>
-                      <option value="TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256">ECDHE RSA · ChaCha20 Poly1305</option>
-                    </select>
-                  </label>
-                  <p id="tls-controls-hint" class="field-hint">Leave unselected to use Caddy's secure defaults. Use Ctrl/Cmd-click for multiple cipher selections. Cipher selection applies to TLS 1.2; TLS 1.3 cipher suites are managed automatically.</p>
+                  <p id="tls-controls-hint" class="field-hint">Caddy securely manages TLS cipher suites automatically.</p>
                   <label id="hsts-enabled-row" class="status-check">
                     <input id="hsts-enabled" type="checkbox" />
                     <span class="status-check-title">HTTP Strict Transport Security (HSTS)</span>
@@ -393,6 +388,17 @@
                     </select>
                   </label>
                   <p class="field-hint">Compresses suitable text responses at the proxy. Zstandard is preferred when supported and Gzip remains available as a compatible fallback.</p>
+                  <fieldset class="protection-override-card">
+                    <legend>Web Protection</legend>
+                    <label class="status-check"><input id="protection-override" type="checkbox" /><span class="status-check-title">Override global Web Protection defaults</span><span class="status-check-state" data-disabled="Inherited" data-enabled="Custom" aria-hidden="true"></span></label>
+                    <div id="protection-override-fields" hidden>
+                      <label class="status-check"><input id="site-protection-enabled" type="checkbox" /><span class="status-check-title">Enable protection for this host</span><span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span></label>
+                      <label>Country access mode<select id="site-protection-country-mode"><option value="block">Block selected countries</option><option value="allow">Allow selected countries only</option></select></label>
+                      <label>Selected country codes<textarea id="site-protection-countries" rows="2" placeholder="RU, CN"></textarea></label>
+                      <label>Blocked IP addresses and CIDR ranges<textarea id="site-protection-blocked-ips" rows="3"></textarea></label>
+                      <label>Allowed IP addresses and CIDR ranges<textarea id="site-protection-allowed-ips" rows="3"></textarea></label>
+                    </div>
+                  </fieldset>
                   <label>
                     Additional settings
                     <textarea id="extra" rows="7" placeholder="request_body {&#10;  max_size 10MB&#10;}"></textarea>
@@ -431,6 +437,34 @@
           </div>
 
         </section>
+
+        <section id="view-web-protection" class="view">
+          <div class="site-editor-tabs" role="tablist" aria-label="Web Protection sections"><button type="button" class="site-editor-tab active" data-protection-tab="geo">GEO IP Blocking</button><button type="button" class="site-editor-tab" data-protection-tab="blocklists">External Blocklists</button></div>
+          <section id="web-protection-defaults" class="panel-card editor-card">
+            <form id="web-protection-form">
+              <div class="panel-heading"><h2>GEO IP Blocking</h2><span>Global defaults for all web hosts</span></div>
+              <p class="field-hint">Web hosts inherit these settings unless they explicitly override them. Allowlist entries always take priority over block rules.</p>
+              <label class="status-check"><input id="web-protection-enabled" type="checkbox" /><span class="status-check-title">Enable GEO IP blocking defaults</span><span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span></label>
+              <label>Country access mode<select id="web-protection-country-mode"><option value="block">Block selected countries</option><option value="allow">Allow selected countries only</option></select></label>
+              <label>Selected countries <button id="web-protection-countries-button" type="button" class="secondary">Select countries</button></label>
+              <p id="web-protection-countries-summary" class="field-hint">No countries selected.</p>
+              <label>Blocked IP addresses and CIDR ranges <textarea id="web-protection-blocked-ips" rows="5" placeholder="203.0.113.10&#10;198.51.100.0/24"></textarea></label>
+              <label>Allowed IP addresses and CIDR ranges <textarea id="web-protection-allowed-ips" rows="5" placeholder="203.0.113.25"></textarea></label>
+              <div class="form-actions"><button type="submit">Save GEO IP blocking defaults</button></div>
+            </form>
+          </section>
+          <section id="external-blocklists-panel" class="panel-card editor-card" hidden>
+            <form id="external-blocklists-form"><div class="panel-heading"><div><h2>External Blocklists</h2><span id="external-blocklist-total">0 blocked IPs across all lists</span></div><button id="external-blocklist-add" type="button" class="secondary">Add blocklist</button></div><p class="field-hint">Give every list a descriptive name and a public HTTPS URL. Local and private destinations are rejected.</p>
+              <div class="blocklist-table-head" aria-hidden="true"><span>Name</span><span>URL</span><span>Entries</span><span>Last updated</span><span>Actions</span></div>
+              <div id="external-blocklist-list" class="blocklist-list"></div>
+              <p id="external-blocklist-empty" class="muted">No external blocklists configured.</p>
+              <div class="form-actions"><button type="submit">Save and refresh blocklists</button></div>
+            </form>
+          </section>
+
+        </section>
+
+        <dialog id="country-picker-dialog"><form method="dialog" class="dialog-head"><h2>Select countries</h2><button type="submit" class="secondary">Close</button></form><div class="acme-status"><input id="country-picker-search" type="search" placeholder="Search countries" /><div id="country-picker-list" class="country-picker-list"></div><div class="form-actions"><button id="country-picker-apply" type="button">Apply selection</button></div></div></dialog>
 
         <section id="view-certificates" class="view">
           <div class="certificates-grid">

@@ -1,0 +1,66 @@
+name: Check Caddy version
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for a Caddy update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_version="$(sed -nE 's/^[[:space:]]*CADDY_VERSION: \$\{CADDY_VERSION:-([^}]+)\}.*/\1/p' compose-template.yml)"
+          if [[ -z "${current_version}" ]]; then
+            echo "Unable to read the pinned Caddy version from compose-template.yml" >&2
+            exit 1
+          fi
+
+          latest_version="$(gh api repos/caddyserver/caddy/releases/latest --jq '.tag_name' | sed 's/^v//')"
+          if [[ -z "${latest_version}" || "${latest_version}" == "null" ]]; then
+            echo "Unable to read the latest Caddy release" >&2
+            exit 1
+          fi
+
+          issue_title="Caddy update available"
+          existing_issue="$(gh issue list --repo "${REPOSITORY}" --state open --search "in:title \"${issue_title}\"" --json number --jq '.[0].number')"
+
+          if [[ "${current_version}" == "${latest_version}" ]]; then
+            echo "Caddy ${current_version} is current."
+            if [[ -n "${existing_issue}" ]]; then
+              gh issue close "${existing_issue}" --repo "${REPOSITORY}" --comment "The pinned Caddy version ${current_version} is current."
+            fi
+            exit 0
+          fi
+
+          issue_body="$(cat <<EOF
+          A newer Caddy release is available.
+
+          - Pinned version: \`${current_version}\`
+          - Latest version: \`${latest_version}\`
+
+          Update \`CADDY_VERSION\`, rebuild the custom Caddy image, verify the Geo-IP module with \`caddy list-modules\`, and test the development stack before releasing.
+          EOF
+          )"
+
+          if [[ -n "${existing_issue}" ]]; then
+            gh issue edit "${existing_issue}" --repo "${REPOSITORY}" --title "${issue_title}" --body "${issue_body}"
+            echo "Updated issue #${existing_issue}."
+          else
+            gh issue create --repo "${REPOSITORY}" --title "${issue_title}" --body "${issue_body}"
+          fi

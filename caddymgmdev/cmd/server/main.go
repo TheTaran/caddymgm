@@ -68,60 +68,72 @@ var version = "dev"
 var webFS embed.FS
 
 type Site struct {
-	ID                    string   `json:"id"`
-	Address               string   `json:"address"`
-	Comment               string   `json:"comment,omitempty"`
-	Mode                  string   `json:"mode"`
-	Upstream              string   `json:"upstream,omitempty"`
-	SkipTLSVerify         bool     `json:"skipTlsVerify,omitempty"`
-	RewriteRedirects      bool     `json:"rewriteRedirects"`
-	RedirectOrigins       []string `json:"redirectOrigins,omitempty"`
-	HSTSEnabled           bool     `json:"hstsEnabled,omitempty"`
-	SecurityHeaderProfile string   `json:"securityHeaderProfile,omitempty"`
-	CompressionProfile    string   `json:"compressionProfile,omitempty"`
-	Root                  string   `json:"root,omitempty"`
-	ExtraDirectives       string   `json:"extraDirectives,omitempty"`
-	LogsEnabled           bool     `json:"logsEnabled"`
-	TLSMode               string   `json:"tlsMode"`
-	ACMEIssuerID          string   `json:"acmeIssuerId,omitempty"`
-	TLSMinVersion         string   `json:"tlsMinVersion,omitempty"`
-	TLSMaxVersion         string   `json:"tlsMaxVersion,omitempty"`
-	TLSCipherSuites       []string `json:"tlsCipherSuites,omitempty"`
-	CertificateExpiresAt  string   `json:"certificateExpiresAt,omitempty"`
-	Enabled               bool     `json:"enabled"`
-	AuthEnabled           bool     `json:"authEnabled,omitempty"`
-	AuthProviderID        string   `json:"authProviderId,omitempty"`
-	BasicAuthEnabled      bool     `json:"basicAuthEnabled,omitempty"`
-	BasicAuthUsername     string   `json:"basicAuthUsername,omitempty"`
-	BasicAuthPasswordHash string   `json:"-"`
-	BasicAuthPassword     string   `json:"-"`
+	ID                    string        `json:"id"`
+	Address               string        `json:"address"`
+	Comment               string        `json:"comment,omitempty"`
+	Mode                  string        `json:"mode"`
+	Upstream              string        `json:"upstream,omitempty"`
+	SkipTLSVerify         bool          `json:"skipTlsVerify,omitempty"`
+	RewriteRedirects      bool          `json:"rewriteRedirects"`
+	RedirectOrigins       []string      `json:"redirectOrigins,omitempty"`
+	HSTSEnabled           bool          `json:"hstsEnabled,omitempty"`
+	SecurityHeaderProfile string        `json:"securityHeaderProfile,omitempty"`
+	CompressionProfile    string        `json:"compressionProfile,omitempty"`
+	Root                  string        `json:"root,omitempty"`
+	ExtraDirectives       string        `json:"extraDirectives,omitempty"`
+	LogsEnabled           bool          `json:"logsEnabled"`
+	TLSMode               string        `json:"tlsMode"`
+	ACMEIssuerID          string        `json:"acmeIssuerId,omitempty"`
+	TLSMinVersion         string        `json:"tlsMinVersion,omitempty"`
+	TLSMaxVersion         string        `json:"tlsMaxVersion,omitempty"`
+	CertificateExpiresAt  string        `json:"certificateExpiresAt,omitempty"`
+	Enabled               bool          `json:"enabled"`
+	AuthEnabled           bool          `json:"authEnabled,omitempty"`
+	AuthProviderID        string        `json:"authProviderId,omitempty"`
+	BasicAuthEnabled      bool          `json:"basicAuthEnabled,omitempty"`
+	BasicAuthUsername     string        `json:"basicAuthUsername,omitempty"`
+	BasicAuthPasswordHash string        `json:"-"`
+	BasicAuthPassword     string        `json:"-"`
+	ProtectionOverride    bool          `json:"protectionOverride,omitempty"`
+	WebProtection         WebProtection `json:"webProtection,omitempty"`
+}
+
+// WebProtection is an ordered website access policy. Explicit IP allow entries
+// always take priority over country and IP deny entries.
+type WebProtection struct {
+	Enabled          bool     `json:"enabled,omitempty"`
+	CountryMode      string   `json:"countryMode,omitempty"`
+	BlockedCountries []string `json:"blockedCountries,omitempty"`
+	BlockedIPs       []string `json:"blockedIps,omitempty"`
+	AllowedIPs       []string `json:"allowedIps,omitempty"`
 }
 
 type sitePayload struct {
-	Address               string   `json:"address"`
-	Comment               string   `json:"comment,omitempty"`
-	Mode                  string   `json:"mode"`
-	Upstream              string   `json:"upstream,omitempty"`
-	SkipTLSVerify         bool     `json:"skipTlsVerify,omitempty"`
-	RewriteRedirects      *bool    `json:"rewriteRedirects,omitempty"`
-	RedirectOrigins       []string `json:"redirectOrigins,omitempty"`
-	HSTSEnabled           bool     `json:"hstsEnabled,omitempty"`
-	SecurityHeaderProfile string   `json:"securityHeaderProfile,omitempty"`
-	CompressionProfile    string   `json:"compressionProfile,omitempty"`
-	Root                  string   `json:"root,omitempty"`
-	ExtraDirectives       string   `json:"extraDirectives,omitempty"`
-	LogsEnabled           *bool    `json:"logsEnabled,omitempty"`
-	TLSMode               string   `json:"tlsMode,omitempty"`
-	ACMEIssuerID          string   `json:"acmeIssuerId,omitempty"`
-	TLSMinVersion         string   `json:"tlsMinVersion,omitempty"`
-	TLSMaxVersion         string   `json:"tlsMaxVersion,omitempty"`
-	TLSCipherSuites       []string `json:"tlsCipherSuites,omitempty"`
-	Enabled               bool     `json:"enabled"`
-	AuthEnabled           bool     `json:"authEnabled,omitempty"`
-	AuthProviderID        string   `json:"authProviderId,omitempty"`
-	BasicAuthEnabled      bool     `json:"basicAuthEnabled,omitempty"`
-	BasicAuthUsername     string   `json:"basicAuthUsername,omitempty"`
-	BasicAuthPassword     string   `json:"basicAuthPassword,omitempty"`
+	Address               string        `json:"address"`
+	Comment               string        `json:"comment,omitempty"`
+	Mode                  string        `json:"mode"`
+	Upstream              string        `json:"upstream,omitempty"`
+	SkipTLSVerify         bool          `json:"skipTlsVerify,omitempty"`
+	RewriteRedirects      *bool         `json:"rewriteRedirects,omitempty"`
+	RedirectOrigins       []string      `json:"redirectOrigins,omitempty"`
+	HSTSEnabled           bool          `json:"hstsEnabled,omitempty"`
+	SecurityHeaderProfile string        `json:"securityHeaderProfile,omitempty"`
+	CompressionProfile    string        `json:"compressionProfile,omitempty"`
+	Root                  string        `json:"root,omitempty"`
+	ExtraDirectives       string        `json:"extraDirectives,omitempty"`
+	LogsEnabled           *bool         `json:"logsEnabled,omitempty"`
+	TLSMode               string        `json:"tlsMode,omitempty"`
+	ACMEIssuerID          string        `json:"acmeIssuerId,omitempty"`
+	TLSMinVersion         string        `json:"tlsMinVersion,omitempty"`
+	TLSMaxVersion         string        `json:"tlsMaxVersion,omitempty"`
+	Enabled               bool          `json:"enabled"`
+	AuthEnabled           bool          `json:"authEnabled,omitempty"`
+	AuthProviderID        string        `json:"authProviderId,omitempty"`
+	BasicAuthEnabled      bool          `json:"basicAuthEnabled,omitempty"`
+	BasicAuthUsername     string        `json:"basicAuthUsername,omitempty"`
+	BasicAuthPassword     string        `json:"basicAuthPassword,omitempty"`
+	ProtectionOverride    bool          `json:"protectionOverride,omitempty"`
+	WebProtection         WebProtection `json:"webProtection,omitempty"`
 }
 
 func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
@@ -152,13 +164,14 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		ACMEIssuerID:          p.ACMEIssuerID,
 		TLSMinVersion:         p.TLSMinVersion,
 		TLSMaxVersion:         p.TLSMaxVersion,
-		TLSCipherSuites:       p.TLSCipherSuites,
 		Enabled:               p.Enabled,
 		AuthEnabled:           p.AuthEnabled,
 		AuthProviderID:        p.AuthProviderID,
 		BasicAuthEnabled:      p.BasicAuthEnabled,
 		BasicAuthUsername:     p.BasicAuthUsername,
 		BasicAuthPassword:     p.BasicAuthPassword,
+		ProtectionOverride:    p.ProtectionOverride,
+		WebProtection:         p.WebProtection,
 	}
 }
 
@@ -172,20 +185,26 @@ type ACMEIssuer struct {
 }
 
 type Settings struct {
-	AppName          string       `json:"appName"`
-	AuthEnabled      bool         `json:"authEnabled"`
-	LocalAuthEnabled bool         `json:"localAuthEnabled"`
-	OIDCAuthEnabled  bool         `json:"oidcAuthEnabled"`
-	Username         string       `json:"username"`
-	Password         string       `json:"password,omitempty"`
-	PasswordHash     string       `json:"passwordHash,omitempty"`
-	OIDC             OIDCSettings `json:"oidc"`
-	ConfigPath       string       `json:"configPath"`
-	LogRetention     int          `json:"logRetention"`
-	ACMEIssuers      []ACMEIssuer `json:"acmeIssuers,omitempty"`
-	CaddyMode        string       `json:"caddyMode"`
-	CaddyAPIURL      string       `json:"caddyApiUrl"`
-	WebInterface     WebInterface `json:"webInterface"`
+	AppName                string             `json:"appName"`
+	AuthEnabled            bool               `json:"authEnabled"`
+	LocalAuthEnabled       bool               `json:"localAuthEnabled"`
+	OIDCAuthEnabled        bool               `json:"oidcAuthEnabled"`
+	Username               string             `json:"username"`
+	Password               string             `json:"password,omitempty"`
+	PasswordHash           string             `json:"passwordHash,omitempty"`
+	OIDC                   OIDCSettings       `json:"oidc"`
+	ConfigPath             string             `json:"configPath"`
+	LogRetention           int                `json:"logRetention"`
+	ACMEIssuers            []ACMEIssuer       `json:"acmeIssuers,omitempty"`
+	CaddyMode              string             `json:"caddyMode"`
+	CaddyAPIURL            string             `json:"caddyApiUrl"`
+	WebInterface           WebInterface       `json:"webInterface"`
+	WebProtection          WebProtection      `json:"webProtection"`
+	ExternalBlocklists     ExternalBlocklists `json:"externalBlocklists,omitempty"`
+	ExternalBlockedIPs     []string           `json:"externalBlockedIps,omitempty"`
+	ExternalBlockedIPCount int                `json:"externalBlockedIpCount,omitempty"`
+	RefreshBlocklists      bool               `json:"refreshExternalBlocklists,omitempty"`
+	RefreshBlocklistURL    string             `json:"refreshExternalBlocklistUrl,omitempty"`
 }
 
 type OIDCSettings struct {
@@ -260,6 +279,9 @@ type App struct {
 	versionMu         sync.Mutex
 	latestVersions    map[string]ComponentVersion
 	versionsChecked   time.Time
+	geoCountriesMu    sync.Mutex
+	geoCountries      []geoCountry
+	geoCountriesMTime time.Time
 }
 
 type Session struct {
@@ -380,6 +402,11 @@ func main() {
 		log.Fatalf("prepare auth providers: %v", err)
 	}
 	app.startGeoIPUpdater()
+	go func() {
+		if countries, err := app.loadGeoCountries(); err == nil {
+			log.Printf("GeoLite2 country cache ready with %d entries", len(countries))
+		}
+	}()
 	if err := app.syncManagedConfig(); err != nil {
 		log.Printf("sync managed caddy config: %v", err)
 	}
@@ -403,6 +430,8 @@ func main() {
 	mux.HandleFunc("PUT /api/auth-providers", app.handleUpdateAuthProviders)
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
 	mux.HandleFunc("GET /api/geo-map", app.handleGeoMap)
+	mux.HandleFunc("GET /api/geo-countries", app.handleGeoCountries)
+	mux.HandleFunc("GET /api/geo-flag/", app.handleGeoFlag)
 	mux.HandleFunc("POST /api/certificates/root-ca", app.handleUploadRootCA)
 	mux.HandleFunc("POST /api/certificates/renew/", app.handleRenewCertificate)
 	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
@@ -825,6 +854,23 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if next.LogRetention < 25 {
 		next.LogRetention = 100
 	}
+	if err := normalizeWebProtection(&next.WebProtection); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	feeds, err := normalizeExternalBlocklists(r.Context(), next.ExternalBlocklists)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	next.ExternalBlocklists, next.ExternalBlockedIPs, err = a.prepareExternalBlocklists(r.Context(), feeds, a.settings.ExternalBlocklists, next.RefreshBlocklists, next.RefreshBlocklistURL)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	next.ExternalBlockedIPCount = len(next.ExternalBlockedIPs)
+	next.RefreshBlocklists = false
+	next.RefreshBlocklistURL = ""
 	normalizeWebInterface(&next.WebInterface, a.caddyMode)
 	if next.ACMEIssuers == nil {
 		next.ACMEIssuers = a.settings.ACMEIssuers
@@ -1325,6 +1371,17 @@ func (a *App) publicSettingsLocked() Settings {
 	settings.Password = ""
 	settings.PasswordHash = ""
 	settings.OIDC.ClientSecret = ""
+	settings.ExternalBlocklists = append(ExternalBlocklists(nil), settings.ExternalBlocklists...)
+	for index := range settings.ExternalBlocklists {
+		settings.ExternalBlocklists[index].Entries = nil
+	}
+	settings.ExternalBlockedIPCount = len(settings.ExternalBlockedIPs)
+	if len(settings.ExternalBlocklists) == 1 && settings.ExternalBlocklists[0].Count == 0 && settings.ExternalBlockedIPCount > 0 {
+		settings.ExternalBlocklists[0].Count = settings.ExternalBlockedIPCount
+	}
+	settings.ExternalBlockedIPs = nil
+	settings.RefreshBlocklists = false
+	settings.RefreshBlocklistURL = ""
 	settings.ConfigPath = a.configPath
 	settings.CaddyMode = a.caddyMode
 	settings.CaddyAPIURL = a.caddyAPIURL
@@ -1391,7 +1448,9 @@ func (a *App) save(head string, sites []Site, tail string) error {
 	if out.Len() > 0 {
 		out.WriteString("\n\n")
 	}
-	out.WriteString(renderManaged(sites, a.settings.ACMEIssuers, a.caddyLogDir, a.settings.WebInterface, a.authProviders.OIDC, a.caddyMode, a.webPort))
+	defaultProtection := a.settings.WebProtection
+	defaultProtection.BlockedIPs = append(append([]string{}, defaultProtection.BlockedIPs...), a.settings.ExternalBlockedIPs...)
+	out.WriteString(renderManagedWithProtection(sites, a.settings.ACMEIssuers, a.caddyLogDir, a.settings.WebInterface, defaultProtection, a.authProviders.OIDC, a.caddyMode, a.webPort))
 	if strings.TrimSpace(tail) != "" {
 		out.WriteString("\n")
 		out.WriteString(strings.TrimLeft(tail, "\n"))
@@ -1565,6 +1624,7 @@ func parseSite(id string, lines []string) (Site, error) {
 	inAuthDirective := false
 	inSecurityHeaderDirective := false
 	inBasicAuthDirective := false
+	inProtectionDirective := false
 	skipManagedEncode := false
 	logDepth := 0
 	reverseProxyDepth := 0
@@ -1596,7 +1656,42 @@ func parseSite(id string, lines []string) (Site, error) {
 			inBasicAuthDirective = false
 			continue
 		}
+		if line == "# caddymgm:protection-directive" {
+			inProtectionDirective = true
+			continue
+		}
+		if line == "# caddymgm:end-protection-directive" {
+			inProtectionDirective = false
+			continue
+		}
+		if strings.HasPrefix(line, "# caddymgm:protection-override ") {
+			site.ProtectionOverride = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:protection-override ")) == "true"
+			continue
+		}
+		if strings.HasPrefix(line, "# caddymgm:protection-enabled ") {
+			site.WebProtection.Enabled = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:protection-enabled ")) == "true"
+			continue
+		}
+		if strings.HasPrefix(line, "# caddymgm:protection-countries ") {
+			site.WebProtection.BlockedCountries = strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:protection-countries ")))
+			continue
+		}
+		if strings.HasPrefix(line, "# caddymgm:protection-country-mode ") {
+			site.WebProtection.CountryMode = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:protection-country-mode "))
+			continue
+		}
+		if strings.HasPrefix(line, "# caddymgm:protection-blocked-ips ") {
+			site.WebProtection.BlockedIPs = strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:protection-blocked-ips ")))
+			continue
+		}
+		if strings.HasPrefix(line, "# caddymgm:protection-allowed-ips ") {
+			site.WebProtection.AllowedIPs = strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:protection-allowed-ips ")))
+			continue
+		}
 		if inAuthDirective {
+			continue
+		}
+		if inProtectionDirective {
 			continue
 		}
 		if inSecurityHeaderDirective {
@@ -1670,7 +1765,7 @@ func parseSite(id string, lines []string) (Site, error) {
 					site.TLSMaxVersion = versions[1]
 				}
 			case strings.HasPrefix(line, "ciphers "):
-				site.TLSCipherSuites = strings.Fields(strings.TrimPrefix(line, "ciphers "))
+				// Consume legacy managed cipher settings. Caddy manages cipher suites.
 			case line == "issuer internal":
 				site.TLSMode = "internal"
 			case strings.HasPrefix(line, "dir "):
@@ -1763,8 +1858,22 @@ func parseSite(id string, lines []string) (Site, error) {
 }
 
 func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string, webInterface WebInterface, accessProvider AccessOIDCProvider, caddyMode string, webPort string) string {
+	return renderManagedWithProtection(sites, issuers, logDir, webInterface, WebProtection{}, accessProvider, caddyMode, webPort)
+}
+
+func renderManagedWithProtection(sites []Site, issuers []ACMEIssuer, logDir string, webInterface WebInterface, defaultProtection WebProtection, accessProvider AccessOIDCProvider, caddyMode string, webPort string) string {
 	var out strings.Builder
 	out.WriteString(managedStart + "\n")
+	needsGeoIP := defaultProtection.Enabled && len(defaultProtection.BlockedCountries) > 0
+	for _, site := range sites {
+		if site.ProtectionOverride && site.WebProtection.Enabled && len(site.WebProtection.BlockedCountries) > 0 {
+			needsGeoIP = true
+			break
+		}
+	}
+	if needsGeoIP {
+		out.WriteString("{\n\torder geo_ip first\n}\n")
+	}
 	out.WriteString(renderUnavailableSnippet())
 	if block := renderWebInterface(webInterface, issuers, caddyMode, webPort); block != "" {
 		out.WriteString(block)
@@ -1774,7 +1883,11 @@ func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string, webInterfa
 	}
 	for _, site := range sites {
 		out.WriteString("# caddymgm:site " + site.ID + "\n")
-		out.WriteString(renderSite(site, issuers, logDir, effectiveWebInterfaceUpstream(webInterface, caddyMode)))
+		policy := defaultProtection
+		if site.ProtectionOverride {
+			policy = site.WebProtection
+		}
+		out.WriteString(renderSiteWithProtection(site, policy, issuers, logDir, effectiveWebInterfaceUpstream(webInterface, caddyMode)))
 		out.WriteString("# caddymgm:end-site\n")
 		if !site.Enabled {
 			out.WriteString(renderUnavailableSite(site, issuers, logDir))
@@ -1814,7 +1927,7 @@ func renderUnavailableSite(site Site, issuers []ACMEIssuer, logDir string) strin
 	if site.HSTSEnabled && site.TLSMode != "" && site.TLSMode != "off" {
 		out.WriteString("\theader Strict-Transport-Security \"max-age=31536000\"\n")
 	}
-	tlsOptions := site.TLSMinVersion != "" || site.TLSMaxVersion != "" || len(site.TLSCipherSuites) > 0
+	tlsOptions := site.TLSMinVersion != "" || site.TLSMaxVersion != ""
 	switch site.TLSMode {
 	case "internal":
 		if !tlsOptions {
@@ -1965,6 +2078,10 @@ func redirectRewriteRules(site Site) [][2]string {
 }
 
 func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream string) string {
+	return renderSiteWithProtection(site, WebProtection{}, issuers, logDir, authGatewayUpstream)
+}
+
+func renderSiteWithProtection(site Site, policy WebProtection, issuers []ACMEIssuer, logDir, authGatewayUpstream string) string {
 	var out strings.Builder
 	prefix := ""
 	if !site.Enabled {
@@ -1977,6 +2094,20 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 	out.WriteString(prefix + address + " {\n")
 	if site.Comment != "" {
 		out.WriteString(prefix + "\t# caddymgm:comment " + strconv.Quote(site.Comment) + "\n")
+	}
+	out.WriteString(prefix + "\t# caddymgm:protection-override " + strconv.FormatBool(site.ProtectionOverride) + "\n")
+	if site.ProtectionOverride {
+		out.WriteString(prefix + "\t# caddymgm:protection-enabled " + strconv.FormatBool(site.WebProtection.Enabled) + "\n")
+		out.WriteString(prefix + "\t# caddymgm:protection-country-mode " + site.WebProtection.CountryMode + "\n")
+		if len(site.WebProtection.BlockedCountries) > 0 {
+			out.WriteString(prefix + "\t# caddymgm:protection-countries " + strings.Join(site.WebProtection.BlockedCountries, " ") + "\n")
+		}
+		if len(site.WebProtection.BlockedIPs) > 0 {
+			out.WriteString(prefix + "\t# caddymgm:protection-blocked-ips " + strings.Join(site.WebProtection.BlockedIPs, " ") + "\n")
+		}
+		if len(site.WebProtection.AllowedIPs) > 0 {
+			out.WriteString(prefix + "\t# caddymgm:protection-allowed-ips " + strings.Join(site.WebProtection.AllowedIPs, " ") + "\n")
+		}
 	}
 	if site.BasicAuthEnabled {
 		out.WriteString(prefix + "\t# caddymgm:basic-auth\n")
@@ -1997,6 +2128,9 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 		out.WriteString(prefix + "\treverse_proxy /.caddymgm/auth/* " + authGatewayUpstream + "\n")
 		out.WriteString(prefix + "\t# caddymgm:end-auth-directive\n")
 	}
+	out.WriteString(prefix + "\t# caddymgm:protection-directive\n")
+	writeWebProtection(&out, prefix, policy)
+	out.WriteString(prefix + "\t# caddymgm:end-protection-directive\n")
 	if site.Mode == "static" {
 		out.WriteString(prefix + "\troot * " + site.Root + "\n")
 		out.WriteString(prefix + "\tfile_server\n")
@@ -2042,7 +2176,7 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 		out.WriteString(prefix + "\t# caddymgm:end-security-header-directive\n")
 	}
 	writeCompression(&out, prefix, site)
-	tlsOptions := site.TLSMinVersion != "" || site.TLSMaxVersion != "" || len(site.TLSCipherSuites) > 0
+	tlsOptions := site.TLSMinVersion != "" || site.TLSMaxVersion != ""
 	switch site.TLSMode {
 	case "internal":
 		if !tlsOptions {
@@ -2089,6 +2223,43 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 	return out.String()
 }
 
+func writeWebProtection(out *strings.Builder, prefix string, policy WebProtection) {
+	if !policy.Enabled {
+		return
+	}
+	if len(policy.AllowedIPs) > 0 {
+		out.WriteString(prefix + "\t@caddymgmProtectionAllow remote_ip " + strings.Join(policy.AllowedIPs, " ") + "\n")
+	}
+	if len(policy.BlockedCountries) > 0 {
+		out.WriteString(prefix + "\t# caddymgm:web-protection " + policy.CountryMode + "-countries " + strings.Join(policy.BlockedCountries, ",") + "\n")
+		out.WriteString(prefix + "\tgeo_ip {\n")
+		out.WriteString(prefix + "\t\tdb_path /geoip/GeoLite2-City.mmdb\n")
+		out.WriteString(prefix + "\t\treload_frequency 24h\n")
+		out.WriteString(prefix + "\t}\n")
+		countryPattern := "^(" + strings.Join(policy.BlockedCountries, "|") + ")$"
+		out.WriteString(prefix + "\t@caddymgmProtectionCountry {\n")
+		expression := "{geoip.country_code}.matches('" + countryPattern + "')"
+		if policy.CountryMode == "allow" {
+			expression = "!" + expression
+		}
+		out.WriteString(prefix + "\t\texpression " + caddyfileQuote(expression) + "\n")
+		if len(policy.AllowedIPs) > 0 {
+			out.WriteString(prefix + "\t\tnot remote_ip " + strings.Join(policy.AllowedIPs, " ") + "\n")
+		}
+		out.WriteString(prefix + "\t}\n")
+		out.WriteString(prefix + "\trespond @caddymgmProtectionCountry 403\n")
+	}
+	if len(policy.BlockedIPs) > 0 {
+		out.WriteString(prefix + "\t@caddymgmProtectionIP {\n")
+		out.WriteString(prefix + "\t\tremote_ip " + strings.Join(policy.BlockedIPs, " ") + "\n")
+		if len(policy.AllowedIPs) > 0 {
+			out.WriteString(prefix + "\t\tnot remote_ip " + strings.Join(policy.AllowedIPs, " ") + "\n")
+		}
+		out.WriteString(prefix + "\t}\n")
+		out.WriteString(prefix + "\trespond @caddymgmProtectionIP 403\n")
+	}
+}
+
 func writeCompression(out *strings.Builder, prefix string, site Site) {
 	switch site.CompressionProfile {
 	case "gzip":
@@ -2112,18 +2283,6 @@ func writeTLSOptions(out *strings.Builder, prefix string, site Site) {
 		}
 		out.WriteString("\n")
 	}
-	if len(site.TLSCipherSuites) > 0 {
-		out.WriteString(prefix + "\t\tciphers " + strings.Join(site.TLSCipherSuites, " ") + "\n")
-	}
-}
-
-var supportedTLSCipherSuites = map[string]bool{
-	"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384":       true,
-	"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":         true,
-	"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256":       true,
-	"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256":         true,
-	"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256": true,
-	"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256":   true,
 }
 
 var addressPattern = regexp.MustCompile(`^[A-Za-z0-9*._:-]+$`)
@@ -2143,6 +2302,9 @@ func normalizeSite(site *Site) error {
 	site.BasicAuthUsername = strings.TrimSpace(site.BasicAuthUsername)
 	site.SecurityHeaderProfile = strings.ToLower(strings.TrimSpace(site.SecurityHeaderProfile))
 	site.CompressionProfile = strings.ToLower(strings.TrimSpace(site.CompressionProfile))
+	if err := normalizeWebProtection(&site.WebProtection); err != nil {
+		return err
+	}
 	redirectOrigins := make([]string, 0, len(site.RedirectOrigins))
 	seenRedirectOrigins := map[string]bool{}
 	for _, rawOrigin := range site.RedirectOrigins {
@@ -2216,7 +2378,6 @@ func normalizeSite(site *Site) error {
 		site.HSTSEnabled = false
 		site.TLSMinVersion = ""
 		site.TLSMaxVersion = ""
-		site.TLSCipherSuites = nil
 	} else {
 		for _, tlsVersion := range []string{site.TLSMinVersion, site.TLSMaxVersion} {
 			if tlsVersion != "" && tlsVersion != "tls1.2" && tlsVersion != "tls1.3" {
@@ -2226,19 +2387,6 @@ func normalizeSite(site *Site) error {
 		if site.TLSMinVersion == "tls1.3" && site.TLSMaxVersion == "tls1.2" {
 			return errors.New("minimum TLS protocol version cannot exceed maximum version")
 		}
-		cipherSuites := make([]string, 0, len(site.TLSCipherSuites))
-		seenCipherSuites := map[string]bool{}
-		for _, cipherSuite := range site.TLSCipherSuites {
-			cipherSuite = strings.ToUpper(strings.TrimSpace(cipherSuite))
-			if !supportedTLSCipherSuites[cipherSuite] {
-				return fmt.Errorf("unsupported TLS cipher suite %q", cipherSuite)
-			}
-			if !seenCipherSuites[cipherSuite] {
-				seenCipherSuites[cipherSuite] = true
-				cipherSuites = append(cipherSuites, cipherSuite)
-			}
-		}
-		site.TLSCipherSuites = cipherSuites
 	}
 	switch site.SecurityHeaderProfile {
 	case "", "standard", "strict":
@@ -2268,6 +2416,87 @@ func normalizeSite(site *Site) error {
 		site.AuthProviderID = ""
 	}
 	return nil
+}
+
+var countryCodePattern = regexp.MustCompile(`^[A-Z]{2}$`)
+
+func normalizeWebProtection(policy *WebProtection) error {
+	if !policy.Enabled {
+		policy.CountryMode = "block"
+		policy.BlockedCountries = nil
+		policy.BlockedIPs = nil
+		policy.AllowedIPs = nil
+		return nil
+	}
+	if policy.CountryMode == "" {
+		policy.CountryMode = "block"
+	}
+	if policy.CountryMode != "allow" && policy.CountryMode != "block" {
+		return errors.New("country mode must be allow or block")
+	}
+	var err error
+	if policy.BlockedCountries, err = normalizeCountryCodes(policy.BlockedCountries); err != nil {
+		return err
+	}
+	if policy.BlockedIPs, err = normalizeProtectionPrefixes(policy.BlockedIPs, false); err != nil {
+		return err
+	}
+	if policy.AllowedIPs, err = normalizeProtectionPrefixes(policy.AllowedIPs, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func normalizeCountryCodes(values []string) ([]string, error) {
+	result, seen := make([]string, 0, len(values)), map[string]bool{}
+	for _, value := range values {
+		value = strings.ToUpper(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if !countryCodePattern.MatchString(value) {
+			return nil, errors.New("country codes must use ISO 3166-1 alpha-2 codes")
+		}
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func normalizeProtectionPrefixes(values []string, allowPrivate bool) ([]string, error) {
+	if len(values) > 5000 {
+		return nil, errors.New("a protection list may contain at most 5000 entries")
+	}
+	result, seen := make([]string, 0, len(values)), map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			if addr, addrErr := netip.ParseAddr(value); addrErr == nil {
+				prefix = netip.PrefixFrom(addr, addr.BitLen())
+			} else {
+				return nil, errors.New("IP protection entries must be valid IP addresses or CIDR ranges")
+			}
+		}
+		prefix = prefix.Masked()
+		addr := prefix.Addr()
+		if !allowPrivate && (addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast() || addr.IsMulticast() || addr.IsUnspecified()) {
+			return nil, errors.New("block lists cannot contain private, loopback, link-local, multicast, or unspecified addresses")
+		}
+		key := prefix.String()
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, key)
+		}
+	}
+	sort.Strings(result)
+	return result, nil
 }
 
 var basicAuthUsernamePattern = regexp.MustCompile(`^[A-Za-z0-9._@-]{1,64}$`)

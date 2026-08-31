@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -190,10 +191,6 @@ func TestTLSControlsRenderParseAndValidate(t *testing.T) {
 		ID: "secure", Address: "secure.example.test", Mode: "proxy", Upstream: "http://app:8080",
 		TLSMode: "acme", ACMEIssuerID: issuer.ID, Enabled: true,
 		TLSMinVersion: "tls1.2", TLSMaxVersion: "tls1.3",
-		TLSCipherSuites: []string{
-			"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
-			"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
-		},
 	}
 	if err := normalizeSite(&site); err != nil {
 		t.Fatal(err)
@@ -201,7 +198,6 @@ func TestTLSControlsRenderParseAndValidate(t *testing.T) {
 	rendered := renderSite(site, []ACMEIssuer{issuer}, "/logs", "caddymgm:8080")
 	for _, want := range []string{
 		"protocols tls1.2 tls1.3",
-		"ciphers TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
 		"issuer acme {",
 	} {
 		if !strings.Contains(rendered, want) {
@@ -212,8 +208,20 @@ func TestTLSControlsRenderParseAndValidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parsed.TLSMinVersion != site.TLSMinVersion || parsed.TLSMaxVersion != site.TLSMaxVersion || strings.Join(parsed.TLSCipherSuites, ",") != strings.Join(site.TLSCipherSuites, ",") {
+	if parsed.TLSMinVersion != site.TLSMinVersion || parsed.TLSMaxVersion != site.TLSMaxVersion {
 		t.Fatalf("TLS controls did not survive render/parse: %+v", parsed)
+	}
+
+	legacyRendered := strings.Replace(rendered, "protocols tls1.2 tls1.3", "protocols tls1.2 tls1.3\n\t\tciphers TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", 1)
+	legacyParsed, err := parseSite(site.ID, strings.Split(legacyRendered, "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(legacyParsed.ExtraDirectives, "ciphers") {
+		t.Fatalf("legacy managed cipher directive leaked into extra settings: %q", legacyParsed.ExtraDirectives)
+	}
+	if migrated := renderSite(legacyParsed, []ACMEIssuer{issuer}, "/logs", "caddymgm:8080"); strings.Contains(migrated, "ciphers ") {
+		t.Fatalf("legacy cipher directive survived migration:\n%s", migrated)
 	}
 
 	invalidRange := site
@@ -221,11 +229,6 @@ func TestTLSControlsRenderParseAndValidate(t *testing.T) {
 	invalidRange.TLSMaxVersion = "tls1.2"
 	if err := normalizeSite(&invalidRange); err == nil || !strings.Contains(err.Error(), "cannot exceed") {
 		t.Fatalf("invalid TLS range error = %v", err)
-	}
-	invalidCipher := site
-	invalidCipher.TLSCipherSuites = []string{"TLS_RSA_WITH_3DES_EDE_CBC_SHA"}
-	if err := normalizeSite(&invalidCipher); err == nil || !strings.Contains(err.Error(), "unsupported TLS cipher") {
-		t.Fatalf("invalid TLS cipher error = %v", err)
 	}
 }
 
@@ -269,6 +272,54 @@ func TestCompressionProfilesRenderParseAndValidate(t *testing.T) {
 	conflict := Site{Address: "conflict.example.test", Mode: "proxy", Upstream: "http://app:8080", CompressionProfile: "gzip", ExtraDirectives: "encode zstd gzip"}
 	if err := normalizeSite(&conflict); err == nil || !strings.Contains(err.Error(), "manual encode") {
 		t.Fatalf("manual compression conflict error = %v", err)
+	}
+}
+
+func TestWebProtectionRenderAndParsePreservesHostOverride(t *testing.T) {
+	site := Site{
+		ID: "protected", Address: "protected.example.test", Mode: "proxy",
+		Upstream: "http://app:8080", TLSMode: "off", Enabled: true,
+		ProtectionOverride: true,
+		WebProtection: WebProtection{
+			Enabled: true, CountryMode: "block", BlockedCountries: []string{"CN", "RU"},
+			BlockedIPs: []string{"203.0.113.9/32"}, AllowedIPs: []string{"198.51.100.4/32"},
+		},
+	}
+	rendered := renderManagedWithProtection([]Site{site}, nil, "/logs", WebInterface{}, WebProtection{}, AccessOIDCProvider{}, "file", "8080")
+	for _, want := range []string{
+		"order geo_ip first",
+		"# caddymgm:protection-override true",
+		"# caddymgm:protection-countries CN RU",
+		"geo_ip {",
+		"@caddymgmProtectionCountry {",
+		"remote_ip 203.0.113.9/32",
+		"@caddymgmProtectionAllow remote_ip 198.51.100.4/32",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered managed config is missing %q:\n%s", want, rendered)
+		}
+	}
+
+	parsed, err := parseManaged(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 1 || !parsed[0].ProtectionOverride || !reflect.DeepEqual(parsed[0].WebProtection, site.WebProtection) {
+		t.Fatalf("protection override did not survive render/parse: %#v", parsed)
+	}
+}
+
+func TestWebProtectionAllowModeBlocksCountriesOutsideSelection(t *testing.T) {
+	policy := WebProtection{Enabled: true, CountryMode: "allow", BlockedCountries: []string{"CH", "DE"}}
+	if err := normalizeWebProtection(&policy); err != nil {
+		t.Fatal(err)
+	}
+	var rendered strings.Builder
+	writeWebProtection(&rendered, "", policy)
+	for _, want := range []string{"# caddymgm:web-protection allow-countries CH,DE", `expression "!{geoip.country_code}.matches('^(CH|DE)$')"`} {
+		if !strings.Contains(rendered.String(), want) {
+			t.Fatalf("allow-mode config is missing %q:\n%s", want, rendered.String())
+		}
 	}
 }
 

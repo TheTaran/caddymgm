@@ -9,6 +9,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to publish, for example v1.2.5
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -20,6 +25,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.release-tag.outputs.is_release }}
+      tag: ${{ steps.release-tag.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -36,18 +44,22 @@ jobs:
 
       - name: Classify tag
         id: release-tag
-        if: github.ref_type == 'tag'
         shell: bash
         run: |
-          if [[ "${GITHUB_REF_NAME}" =~ ^v?[0-9]+\.[0-9]+$ ]]; then
+          tag="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.release_tag }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if [[ "${tag}" =~ ^v[0-9]+\.[0-9]+$ ]]; then
             echo "is_release=true" >> "$GITHUB_OUTPUT"
             echo "release_kind=master" >> "$GITHUB_OUTPUT"
-            version="${GITHUB_REF_NAME#v}"
+            version="${tag#v}"
             echo "version=${version}" >> "$GITHUB_OUTPUT"
-          elif [[ "${GITHUB_REF_NAME}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          elif [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "is_release=true" >> "$GITHUB_OUTPUT"
             echo "release_kind=minor" >> "$GITHUB_OUTPUT"
-            version="${GITHUB_REF_NAME#v}"
+            version="${tag#v}"
             echo "version=${version}" >> "$GITHUB_OUTPUT"
             echo "minor_version=${version%.*}" >> "$GITHUB_OUTPUT"
           else
@@ -95,3 +107,31 @@ jobs:
           tags: ${{ steps.docker-tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    needs: build
+    if: needs.build.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${{ needs.build.outputs.tag }}"
+          notes_file=".github/release-notes/${tag}.md"
+          if [[ ! -f "${notes_file}" ]]; then
+            echo "Missing release notes: ${notes_file}" >&2
+            exit 1
+          fi
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "GitHub release ${tag} already exists"
+            exit 0
+          fi
+          gh release create "${tag}" --verify-tag --title "${tag}" --notes-file "${notes_file}"

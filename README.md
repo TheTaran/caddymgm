@@ -23,23 +23,14 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 ## Recently Added Features
 
-- OIDC Authentication for Website access — Updated: 2026-08-26
-- Security controls for managed websites — Added: 2026-08-28
-  - rewrite redirects that expose the configured internal reverse-proxy origin
-  - configurable additional internal redirect origins for upstream applications that advertise a different hostname — Added: 2026-08-28
-  - managed public Host header, automatic Caddy forwarded headers, and an effective reverse-proxy behavior overview — Added: 2026-08-28
-  - HTTP Strict Transport Security (HSTS) for TLS-enabled web hosts
-  - configurable Standard and Strict security header profiles per web host
-  - per-web-host Basic Authentication with bcrypt-hashed passwords
-- Central unavailable page for disabled web hosts — Added: 2026-08-28
-  - serves a consistent private 503 response while retaining the complete web-host configuration
-- Structured Web Host detail navigation — Added: 2026-08-28
-  - groups Basic, Forwarding Rules, Advanced, and Authentication settings under a live host summary
-- Per-web-host TLS controls — Added: 2026-08-31
-  - configurable minimum and maximum TLS protocol versions
-  - selectable TLS 1.2 cipher suites while TLS 1.3 cipher suites remain securely managed by Caddy
-- Per-web-host response compression — Added: 2026-08-31
-  - optional Gzip or recommended Zstandard with Gzip fallback
+| Date | Feature | What's included |
+| --- | --- | --- |
+| 2026-08-31 | **Response Compression** | Per-host `Off`, `Gzip`, or `Zstandard + Gzip` profiles with automatic client negotiation and Gzip fallback. |
+| 2026-08-31 | **TLS Controls** | Configurable minimum and maximum TLS versions plus selectable TLS 1.2 cipher suites. TLS 1.3 cipher suites remain managed by Caddy. |
+| 2026-08-28 | **Web Host Navigation** | Structured editor with `Basic`, `Forwarding Rules`, `Advanced`, and `Authentication` sections plus a live host summary. |
+| 2026-08-28 | **Disabled Host Page** | Managed HTTP 503 response while retaining the complete web-host configuration. |
+| 2026-08-28 | **Website Security Controls** | Redirect rewriting, additional advertised origins, managed Host and forwarded headers, HSTS, Standard/Strict security headers, and bcrypt-based Basic Authentication. |
+| 2026-08-26 | **Website OIDC Authentication** | Central OIDC authentication for protected web hosts. |
 
 ## Planned Upcoming Features
 

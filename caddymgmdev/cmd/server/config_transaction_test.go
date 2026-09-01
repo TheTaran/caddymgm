@@ -293,7 +293,8 @@ func TestWebProtectionRenderAndParsePreservesHostOverride(t *testing.T) {
 		"geo_ip {",
 		"@caddymgmProtectionCountry {",
 		"remote_ip 203.0.113.9/32",
-		"@caddymgmProtectionAllow remote_ip 198.51.100.4/32",
+		"not remote_ip 198.51.100.4/32",
+		"@caddymgmProtectionIP0 {",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered managed config is missing %q:\n%s", want, rendered)

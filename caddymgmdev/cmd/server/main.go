@@ -200,6 +200,7 @@ type Settings struct {
 	CaddyAPIURL            string             `json:"caddyApiUrl"`
 	WebInterface           WebInterface       `json:"webInterface"`
 	WebProtection          WebProtection      `json:"webProtection"`
+	ManualIPLists          ManualIPLists      `json:"manualIpLists,omitempty"`
 	ExternalBlocklists     ExternalBlocklists `json:"externalBlocklists,omitempty"`
 	ExternalBlockedIPs     []string           `json:"externalBlockedIps,omitempty"`
 	ExternalBlockedIPCount int                `json:"externalBlockedIpCount,omitempty"`
@@ -430,6 +431,7 @@ func main() {
 	mux.HandleFunc("PUT /api/auth-providers", app.handleUpdateAuthProviders)
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
 	mux.HandleFunc("GET /api/geo-map", app.handleGeoMap)
+	mux.HandleFunc("GET /api/security-overview", app.handleSecurityOverview)
 	mux.HandleFunc("GET /api/geo-countries", app.handleGeoCountries)
 	mux.HandleFunc("GET /api/geo-flag/", app.handleGeoFlag)
 	mux.HandleFunc("POST /api/certificates/root-ca", app.handleUploadRootCA)
@@ -858,6 +860,23 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if next.ManualIPLists == nil && (len(next.WebProtection.BlockedIPs) > 0 || len(next.WebProtection.AllowedIPs) > 0) {
+		next.ManualIPLists = ManualIPLists{}
+		if len(next.WebProtection.BlockedIPs) > 0 {
+			next.ManualIPLists = append(next.ManualIPLists, ManualIPList{Name: "Imported blocked IPs", Mode: "block", Entries: next.WebProtection.BlockedIPs})
+		}
+		if len(next.WebProtection.AllowedIPs) > 0 {
+			next.ManualIPLists = append(next.ManualIPLists, ManualIPList{Name: "Imported allowed IPs", Mode: "allow", Entries: next.WebProtection.AllowedIPs})
+		}
+	}
+	manualLists, err := normalizeManualIPLists(next.ManualIPLists)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	next.ManualIPLists = manualLists
+	next.WebProtection.BlockedIPs = manualIPListEntries(manualLists, "block")
+	next.WebProtection.AllowedIPs = manualIPListEntries(manualLists, "allow")
 	feeds, err := normalizeExternalBlocklists(r.Context(), next.ExternalBlocklists)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -1325,6 +1344,19 @@ func (a *App) ensureSettings() error {
 		if err := json.Unmarshal(content, &a.settings); err != nil {
 			return err
 		}
+		if a.settings.ManualIPLists == nil && (len(a.settings.WebProtection.BlockedIPs) > 0 || len(a.settings.WebProtection.AllowedIPs) > 0) {
+			if len(a.settings.WebProtection.BlockedIPs) > 0 {
+				a.settings.ManualIPLists = append(a.settings.ManualIPLists, ManualIPList{Name: "Imported blocked IPs", Mode: "block", Entries: a.settings.WebProtection.BlockedIPs})
+			}
+			if len(a.settings.WebProtection.AllowedIPs) > 0 {
+				a.settings.ManualIPLists = append(a.settings.ManualIPLists, ManualIPList{Name: "Imported allowed IPs", Mode: "allow", Entries: a.settings.WebProtection.AllowedIPs})
+			}
+			lists, normalizeErr := normalizeManualIPLists(a.settings.ManualIPLists)
+			if normalizeErr != nil {
+				return normalizeErr
+			}
+			a.settings.ManualIPLists = lists
+		}
 		a.applySettingsEnvOverridesLocked(&a.settings)
 		if strings.TrimSpace(a.settings.PasswordHash) == "" {
 			return errors.New("CADDYMGM_ADMIN_PASSWORD is required when no administrator password is configured")
@@ -1551,6 +1583,7 @@ func markerLineRange(content, marker string) (start, end int, ok bool) {
 func parseManaged(content string) ([]Site, error) {
 	sites := make([]Site, 0)
 	scanner := bufio.NewScanner(strings.NewReader(content))
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 	var block []string
 	var id string
 	inSite := false
@@ -2227,9 +2260,6 @@ func writeWebProtection(out *strings.Builder, prefix string, policy WebProtectio
 	if !policy.Enabled {
 		return
 	}
-	if len(policy.AllowedIPs) > 0 {
-		out.WriteString(prefix + "\t@caddymgmProtectionAllow remote_ip " + strings.Join(policy.AllowedIPs, " ") + "\n")
-	}
 	if len(policy.BlockedCountries) > 0 {
 		out.WriteString(prefix + "\t# caddymgm:web-protection " + policy.CountryMode + "-countries " + strings.Join(policy.BlockedCountries, ",") + "\n")
 		out.WriteString(prefix + "\tgeo_ip {\n")
@@ -2243,20 +2273,37 @@ func writeWebProtection(out *strings.Builder, prefix string, policy WebProtectio
 			expression = "!" + expression
 		}
 		out.WriteString(prefix + "\t\texpression " + caddyfileQuote(expression) + "\n")
-		if len(policy.AllowedIPs) > 0 {
-			out.WriteString(prefix + "\t\tnot remote_ip " + strings.Join(policy.AllowedIPs, " ") + "\n")
-		}
+		writeNotRemoteIPMatchers(out, prefix+"\t\t", policy.AllowedIPs)
 		out.WriteString(prefix + "\t}\n")
 		out.WriteString(prefix + "\trespond @caddymgmProtectionCountry 403\n")
 	}
-	if len(policy.BlockedIPs) > 0 {
-		out.WriteString(prefix + "\t@caddymgmProtectionIP {\n")
-		out.WriteString(prefix + "\t\tremote_ip " + strings.Join(policy.BlockedIPs, " ") + "\n")
-		if len(policy.AllowedIPs) > 0 {
-			out.WriteString(prefix + "\t\tnot remote_ip " + strings.Join(policy.AllowedIPs, " ") + "\n")
-		}
+	for index, entries := range protectionIPChunks(policy.BlockedIPs) {
+		matcher := fmt.Sprintf("caddymgmProtectionIP%d", index)
+		out.WriteString(prefix + "\t@" + matcher + " {\n")
+		out.WriteString(prefix + "\t\tremote_ip " + strings.Join(entries, " ") + "\n")
+		writeNotRemoteIPMatchers(out, prefix+"\t\t", policy.AllowedIPs)
 		out.WriteString(prefix + "\t}\n")
-		out.WriteString(prefix + "\trespond @caddymgmProtectionIP 403\n")
+		out.WriteString(prefix + "\trespond @" + matcher + " 403\n")
+	}
+}
+
+const protectionIPsPerMatcher = 200
+
+func protectionIPChunks(entries []string) [][]string {
+	chunks := make([][]string, 0, (len(entries)+protectionIPsPerMatcher-1)/protectionIPsPerMatcher)
+	for start := 0; start < len(entries); start += protectionIPsPerMatcher {
+		end := start + protectionIPsPerMatcher
+		if end > len(entries) {
+			end = len(entries)
+		}
+		chunks = append(chunks, entries[start:end])
+	}
+	return chunks
+}
+
+func writeNotRemoteIPMatchers(out *strings.Builder, prefix string, entries []string) {
+	for _, chunk := range protectionIPChunks(entries) {
+		out.WriteString(prefix + "not remote_ip " + strings.Join(chunk, " ") + "\n")
 	}
 }
 
@@ -2421,13 +2468,6 @@ func normalizeSite(site *Site) error {
 var countryCodePattern = regexp.MustCompile(`^[A-Z]{2}$`)
 
 func normalizeWebProtection(policy *WebProtection) error {
-	if !policy.Enabled {
-		policy.CountryMode = "block"
-		policy.BlockedCountries = nil
-		policy.BlockedIPs = nil
-		policy.AllowedIPs = nil
-		return nil
-	}
 	if policy.CountryMode == "" {
 		policy.CountryMode = "block"
 	}

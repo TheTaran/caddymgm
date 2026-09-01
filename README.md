@@ -25,6 +25,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 | Date | Feature | What's included |
 | --- | --- | --- |
+| 2026-09-01 | **Web Protection Operations** | Named manual allow/deny IP lists, managed external blocklists, protection-event dashboard metrics, and a filterable Web Protection log view. |
 | 2026-08-31 | **Runtime Security Hardening** | Supported Alpine 3.24 runtime with current security packages plus updated Go cryptography and OAuth dependencies. |
 | 2026-08-31 | **Web Protection** | Global Geo-IP country blocking, IP/CIDR deny and allow rules, per-host overrides, and validated external threat feeds. |
 | 2026-08-31 | **Response Compression** | Per-host `Off`, `Gzip`, or `Zstandard + Gzip` profiles with automatic client negotiation and Gzip fallback. |

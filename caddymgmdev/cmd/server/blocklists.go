@@ -26,6 +26,60 @@ type ExternalBlocklist struct {
 
 type ExternalBlocklists []ExternalBlocklist
 
+type ManualIPList struct {
+	Name      string   `json:"name"`
+	Reference string   `json:"reference,omitempty"`
+	Mode      string   `json:"mode"`
+	Entries   []string `json:"entries"`
+}
+
+type ManualIPLists []ManualIPList
+
+func normalizeManualIPLists(values ManualIPLists) (ManualIPLists, error) {
+	if len(values) > 50 {
+		return nil, errors.New("at most 50 manual IP lists are supported")
+	}
+	result, seen := make(ManualIPLists, 0, len(values)), map[string]bool{}
+	for _, value := range values {
+		name := strings.TrimSpace(value.Name)
+		if name == "" || len(name) > 80 {
+			return nil, errors.New("every manual IP list requires a name of at most 80 characters")
+		}
+		mode := strings.ToLower(strings.TrimSpace(value.Mode))
+		if mode != "allow" && mode != "block" {
+			return nil, errors.New("manual IP list mode must be allow or block")
+		}
+		key := strings.ToLower(name)
+		if seen[key] {
+			return nil, errors.New("manual IP list names must be unique")
+		}
+		entries, err := normalizeProtectionPrefixes(value.Entries, mode == "allow")
+		if err != nil {
+			return nil, err
+		}
+		seen[key] = true
+		result = append(result, ManualIPList{Name: name, Reference: strings.TrimSpace(value.Reference), Mode: mode, Entries: entries})
+	}
+	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
+	return result, nil
+}
+
+func manualIPListEntries(values ManualIPLists, mode string) []string {
+	entries, seen := make([]string, 0), map[string]bool{}
+	for _, value := range values {
+		if value.Mode != mode {
+			continue
+		}
+		for _, entry := range value.Entries {
+			if !seen[entry] {
+				seen[entry] = true
+				entries = append(entries, entry)
+			}
+		}
+	}
+	return entries
+}
+
 func (values *ExternalBlocklists) UnmarshalJSON(content []byte) error {
 	var entries []json.RawMessage
 	if err := json.Unmarshal(content, &entries); err != nil {
@@ -256,6 +310,7 @@ func isSafeExternalAddress(address netip.Addr) bool {
 
 func collectBlocklistEntries(reader io.Reader, entries map[string]bool) error {
 	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 	for scanner.Scan() {
 		value := strings.TrimSpace(strings.SplitN(scanner.Text(), "#", 2)[0])
 		if value == "" {

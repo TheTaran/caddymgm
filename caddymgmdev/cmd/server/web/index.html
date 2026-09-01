@@ -147,6 +147,14 @@
         </section>
 
         <section id="view-dashboard" class="view active">
+          <section class="panel-card security-overview-card">
+            <div class="panel-heading"><h2><span>Security Overview</span></h2><span id="security-overview-summary">Loading retained access logs...</span></div>
+            <p class="field-hint">Protection events are classified against the currently active Web Protection rules. Unclassified 403 responses require review.</p>
+            <div class="security-overview-grid">
+              <article><span>Requests</span><strong id="security-requests">—</strong></article><article><span>Managed blocks</span><strong id="security-managed-blocks">—</strong></article><article><span>GEO IP blocks</span><strong id="security-geo-blocks">—</strong></article><article><span>Manual IP blocks</span><strong id="security-manual-blocks">—</strong></article><article><span>External list blocks</span><strong id="security-external-blocks">—</strong></article><article><span>Unclassified 403</span><strong id="security-unclassified">—</strong></article><article><span>4xx responses</span><strong id="security-4xx">—</strong></article><article><span>5xx responses</span><strong id="security-5xx">—</strong></article>
+            </div>
+            <div class="security-overview-details"><section><h3>Recent protection events</h3><div id="security-events" class="security-events"><p class="muted">Loading events...</p></div></section><section><h3>Current protection rules</h3><div id="security-rule-counts" class="security-rule-counts"></div></section></div>
+          </section>
           <section class="panel-card geo-map-card">
             <div class="panel-heading">
               <h2><span class="panel-title-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" /></svg></span><span>Website Access Map</span></h2>
@@ -158,34 +166,6 @@
             </div>
           </section>
 
-            <section class="panel-card">
-              <div class="panel-heading">
-                <h2>
-                  <span class="panel-title-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none">
-                      <path d="M4 13.5 12 5l8 8.5" />
-                      <path d="M6.5 11.5V20h11V11.5" />
-                      <path d="M10 20v-5h4v5" />
-                    </svg>
-                  </span>
-                  <span>All Web Hosts</span>
-                </h2>
-                <span>Dashboard Overview</span>
-              </div>
-            <div class="table-head table-head-filtered" data-sort-table="dashboard">
-              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="protocol">Protocol</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="protocol" aria-label="Filter dashboard by protocol"><option value="all">All</option><option value="https">HTTPS</option><option value="http">HTTP</option></select></span>
-              <span role="columnheader"><button class="sort-button" type="button" data-sort="address">Address</button></span>
-              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="certificateProvider">Certificate Provider</button><input class="column-filter column-filter-text table-filter" data-filter-table="dashboard" data-filter-key="certificateProvider" type="search" placeholder="Filter" aria-label="Filter dashboard by certificate provider" /></span>
-              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="visibility">Visibility</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="visibility" aria-label="Filter dashboard by visibility"><option value="all">All</option><option value="internal">Internal</option><option value="public">Public</option></select></span>
-              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="mode">Type</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="mode" aria-label="Filter dashboard by type"><option value="all">All</option><option value="proxy">Proxy</option><option value="static">Static</option></select></span>
-              <span role="columnheader"><button class="sort-button" type="button" data-sort="target">Target</button></span>
-              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="upstreamTls" aria-label="Filter dashboard by upstream TLS"><option value="all">All</option><option value="verified">Verified</option><option value="skipped">Skipped</option><option value="not-applicable">N/A</option></select></span>
-              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="status" aria-label="Filter dashboard by status"><option value="all">All</option><option value="active">Active</option><option value="inactive">Inactive</option></select></span>
-              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="auth">Authentication</button><select class="column-filter table-filter" data-filter-table="dashboard" data-filter-key="auth" aria-label="Filter dashboard by authentication"><option value="all">All</option><option value="oidc">OIDC</option><option value="basic">Basic</option><option value="disabled">Disabled</option></select></span>
-              <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="comment">Comment</button><input class="column-filter column-filter-text table-filter" data-filter-table="dashboard" data-filter-key="comment" type="search" placeholder="Filter" aria-label="Filter dashboard by comment" /><button class="filter-reset-button" type="button" data-reset-filters="dashboard">Reset</button></span>
-            </div>
-            <div id="dashboard-site-list" class="site-list"></div>
-          </section>
         </section>
 
         <section id="view-proxy-hosts" class="view">
@@ -439,22 +419,23 @@
         </section>
 
         <section id="view-web-protection" class="view">
-          <div class="site-editor-tabs" role="tablist" aria-label="Web Protection sections"><button type="button" class="site-editor-tab active" data-protection-tab="geo">GEO IP Blocking</button><button type="button" class="site-editor-tab" data-protection-tab="blocklists">External Blocklists</button></div>
+          <div class="site-editor-tabs" role="tablist" aria-label="Web Protection sections"><button type="button" class="site-editor-tab active" data-protection-tab="geo">GEO IP Blocking</button><button type="button" class="site-editor-tab" data-protection-tab="lists">IP Lists</button></div>
           <section id="web-protection-defaults" class="panel-card editor-card">
             <form id="web-protection-form">
               <div class="panel-heading"><h2>GEO IP Blocking</h2><span>Global defaults for all web hosts</span></div>
               <p class="field-hint">Web hosts inherit these settings unless they explicitly override them. Allowlist entries always take priority over block rules.</p>
-              <label class="status-check"><input id="web-protection-enabled" type="checkbox" /><span class="status-check-title">Enable GEO IP blocking defaults</span><span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span></label>
-              <label>Country access mode<select id="web-protection-country-mode"><option value="block">Block selected countries</option><option value="allow">Allow selected countries only</option></select></label>
+              <label class="status-check"><input id="web-protection-enabled" type="checkbox" /><span class="status-check-title">Enable Web Protection defaults</span><span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span></label>
+              <label>Country access mode <select id="web-protection-country-mode" class="sr-only"><option value="block">Block selected countries</option><option value="allow">Allow selected countries only</option></select><span class="geo-mode-toggle" role="group" aria-label="Country access mode"><button id="web-protection-mode-block" type="button" class="secondary" aria-pressed="true">◯ Block</button><button id="web-protection-mode-allow" type="button" class="secondary" aria-pressed="false">✓ Allow</button></span></label>
               <label>Selected countries <button id="web-protection-countries-button" type="button" class="secondary">Select countries</button></label>
-              <p id="web-protection-countries-summary" class="field-hint">No countries selected.</p>
-              <label>Blocked IP addresses and CIDR ranges <textarea id="web-protection-blocked-ips" rows="5" placeholder="203.0.113.10&#10;198.51.100.0/24"></textarea></label>
-              <label>Allowed IP addresses and CIDR ranges <textarea id="web-protection-allowed-ips" rows="5" placeholder="203.0.113.25"></textarea></label>
+              <div id="web-protection-countries-summary" class="selected-country-list" aria-live="polite"><p class="field-hint">No countries selected.</p></div>
               <div class="form-actions"><button type="submit">Save GEO IP blocking defaults</button></div>
             </form>
           </section>
-          <section id="external-blocklists-panel" class="panel-card editor-card" hidden>
-            <form id="external-blocklists-form"><div class="panel-heading"><div><h2>External Blocklists</h2><span id="external-blocklist-total">0 blocked IPs across all lists</span></div><button id="external-blocklist-add" type="button" class="secondary">Add blocklist</button></div><p class="field-hint">Give every list a descriptive name and a public HTTPS URL. Local and private destinations are rejected.</p>
+          <section id="ip-lists-panel" class="panel-card editor-card" hidden>
+            <div class="panel-heading"><div><h2>IP Lists</h2><span id="external-blocklist-total">0 blocked IPs across all external lists</span></div><button id="manual-ip-list-add" type="button" class="secondary">Add manual IP list</button></div>
+            <p class="field-hint">Manual and external lists apply to web hosts inheriting global Web Protection. Allow lists always take priority. Enable Web Protection defaults in the GEO IP Blocking tab to enforce these rules.</p>
+            <h3 class="ip-list-section-title">Manual Allow-/Blockedlists</h3><div class="manual-list-table-head" aria-hidden="true"><span>Name</span><span>Type</span><span>Reference</span><span>Entries</span><span>Actions</span></div><div id="manual-ip-list-list" class="manual-ip-list-list"></div><p id="manual-ip-list-empty" class="muted">No manual IP lists configured.</p>
+            <form id="external-blocklists-form"><h3 class="ip-list-section-title">External Blocklists</h3><div class="panel-heading compact-heading"><span>Public HTTPS sources</span><button id="external-blocklist-add" type="button" class="secondary">Add external blocklist</button></div><p class="field-hint">Give every list a descriptive name and a public HTTPS URL. Local and private destinations are rejected.</p>
               <div class="blocklist-table-head" aria-hidden="true"><span>Name</span><span>URL</span><span>Entries</span><span>Last updated</span><span>Actions</span></div>
               <div id="external-blocklist-list" class="blocklist-list"></div>
               <p id="external-blocklist-empty" class="muted">No external blocklists configured.</p>
@@ -464,7 +445,9 @@
 
         </section>
 
-        <dialog id="country-picker-dialog"><form method="dialog" class="dialog-head"><h2>Select countries</h2><button type="submit" class="secondary">Close</button></form><div class="acme-status"><input id="country-picker-search" type="search" placeholder="Search countries" /><div id="country-picker-list" class="country-picker-list"></div><div class="form-actions"><button id="country-picker-apply" type="button">Apply selection</button></div></div></dialog>
+        <dialog id="manual-ip-list-dialog"><form method="dialog" class="dialog-head"><h2 id="manual-ip-list-dialog-title">Manual IP list</h2><button type="button" id="manual-ip-list-close" class="secondary">Close</button></form><form id="manual-ip-list-form" class="acme-status"><input id="manual-ip-list-index" type="hidden" /><label>Name <input id="manual-ip-list-name" maxlength="80" required placeholder="manual-deny-rules" /></label><label>List type <select id="manual-ip-list-mode"><option value="block">Blocked IP addresses and CIDR ranges</option><option value="allow">Allowed IP addresses and CIDR ranges</option></select></label><label>Reference <input id="manual-ip-list-reference" maxlength="240" placeholder="Optional source or change reference" /></label><label>Content <textarea id="manual-ip-list-entries" rows="10" required placeholder="203.0.113.10&#10;198.51.100.0/24"></textarea></label><div class="form-actions"><button type="button" id="manual-ip-list-cancel" class="secondary">Cancel</button><button type="submit">Save list</button></div></form></dialog>
+
+        <dialog id="country-picker-dialog"><form method="dialog" class="dialog-head"><h2>Select countries</h2><button type="submit" class="secondary">Close</button></form><div class="acme-status"><p id="country-picker-mode-hint" class="field-hint"></p><input id="country-picker-search" type="search" placeholder="Search countries" /><div id="country-picker-list" class="country-picker-list"></div><div class="form-actions"><button id="country-picker-apply" type="button">Apply selection</button></div></div></dialog>
 
         <section id="view-certificates" class="view">
           <div class="certificates-grid">
@@ -542,6 +525,7 @@
           <div class="logs-tabs settings-tabs" role="tablist" aria-label="Log sections" aria-orientation="horizontal">
             <button type="button" class="logs-tab settings-tab active" role="tab" id="logs-tab-service" aria-controls="logs-panel-service" aria-selected="true" data-logs-tab="service">Service Logs</button>
             <button type="button" class="logs-tab settings-tab" role="tab" id="logs-tab-websites" aria-controls="logs-panel-websites" aria-selected="false" tabindex="-1" data-logs-tab="websites">Website Logs</button>
+            <button type="button" class="logs-tab settings-tab" role="tab" id="logs-tab-web-protection" aria-controls="logs-panel-web-protection" aria-selected="false" tabindex="-1" data-logs-tab="web-protection">Web Protection</button>
             <button type="button" class="logs-tab settings-tab" role="tab" id="logs-tab-oidc" aria-controls="logs-panel-oidc" aria-selected="false" tabindex="-1" data-logs-tab="oidc">OIDC Logs</button>
           </div>
           <div class="logs-tab-content settings-tab-content">
@@ -568,6 +552,13 @@
                 <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="type">Event</button><input class="column-filter column-filter-text table-filter" data-filter-table="oidc-logs" data-filter-key="type" type="search" placeholder="Filter" aria-label="Filter OIDC logs by event" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="user">User</button><input class="column-filter column-filter-text table-filter" data-filter-table="oidc-logs" data-filter-key="user" type="search" placeholder="Filter" aria-label="Filter OIDC logs by user" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="ip">IP Address</button><input class="column-filter column-filter-text table-filter" data-filter-table="oidc-logs" data-filter-key="ip" type="search" placeholder="Filter" aria-label="Filter OIDC logs by IP address" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="site">Web Host</button><input class="column-filter column-filter-text table-filter" data-filter-table="oidc-logs" data-filter-key="site" type="search" placeholder="Filter" aria-label="Filter OIDC logs by web host" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><input class="column-filter column-filter-text table-filter" data-filter-table="oidc-logs" data-filter-key="status" type="search" placeholder="Filter" aria-label="Filter OIDC logs by status" /><button class="filter-reset-button" type="button" data-reset-filters="oidc-logs">Reset</button></span>
               </div>
               <div id="oidc-log-list" class="log-list"></div><div class="log-actions"><button id="oidc-log-toggle" type="button" class="secondary" hidden>Show more</button></div>
+            </section>
+            <section id="logs-panel-web-protection" class="panel-card logs-panel" role="tabpanel" aria-labelledby="logs-tab-web-protection" data-logs-panel="web-protection" hidden>
+              <div class="panel-heading"><h2><span>Web Protection Events</span></h2><span>Classified protection blocks from retained website access logs</span></div>
+              <div class="log-head protection-log-head table-head-filtered" data-sort-table="protection-events">
+                <span role="columnheader"><button class="sort-button" type="button" data-sort="time">Time</button></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="type">Rule</button><input class="column-filter column-filter-text table-filter" data-filter-table="protection-events" data-filter-key="type" type="search" placeholder="Filter" aria-label="Filter protection events by rule" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="site">Web Host</button><input class="column-filter column-filter-text table-filter" data-filter-table="protection-events" data-filter-key="site" type="search" placeholder="Filter" aria-label="Filter protection events by web host" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="ip">IP Address</button><input class="column-filter column-filter-text table-filter" data-filter-table="protection-events" data-filter-key="ip" type="search" placeholder="Filter" aria-label="Filter protection events by IP address" /></span><span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="message">Country</button><input class="column-filter column-filter-text table-filter" data-filter-table="protection-events" data-filter-key="message" type="search" placeholder="Filter" aria-label="Filter protection events by country" /><button class="filter-reset-button" type="button" data-reset-filters="protection-events">Reset</button></span>
+              </div>
+              <div id="protection-event-list" class="log-list"></div><div class="log-actions"><button id="protection-event-toggle" type="button" class="secondary" hidden>Show more</button></div>
             </section>
           </div>
         </section>

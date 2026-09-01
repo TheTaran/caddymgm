@@ -11,7 +11,17 @@ const els = {
   profileProvider: document.querySelector("#profile-provider"),
   navItems: document.querySelectorAll(".nav-item[data-view]"),
   views: document.querySelectorAll(".view"),
-  dashboardSiteList: document.querySelector("#dashboard-site-list"),
+  securityOverviewSummary: document.querySelector("#security-overview-summary"),
+  securityRequests: document.querySelector("#security-requests"),
+  securityManagedBlocks: document.querySelector("#security-managed-blocks"),
+  securityGeoBlocks: document.querySelector("#security-geo-blocks"),
+  securityManualBlocks: document.querySelector("#security-manual-blocks"),
+  securityExternalBlocks: document.querySelector("#security-external-blocks"),
+  securityUnclassified: document.querySelector("#security-unclassified"),
+  security4xx: document.querySelector("#security-4xx"),
+  security5xx: document.querySelector("#security-5xx"),
+  securityEvents: document.querySelector("#security-events"),
+  securityRuleCounts: document.querySelector("#security-rule-counts"),
   geoMap: document.querySelector("#geo-map"),
   geoMapSummary: document.querySelector("#geo-map-summary"),
   geoTopIPList: document.querySelector("#geo-top-ip-list"),
@@ -35,15 +45,28 @@ const els = {
   webProtectionForm: document.querySelector("#web-protection-form"),
   webProtectionEnabled: document.querySelector("#web-protection-enabled"),
   webProtectionCountryMode: document.querySelector("#web-protection-country-mode"),
+  webProtectionModeBlock: document.querySelector("#web-protection-mode-block"),
+  webProtectionModeAllow: document.querySelector("#web-protection-mode-allow"),
   webProtectionCountriesButton: document.querySelector("#web-protection-countries-button"),
   webProtectionCountriesSummary: document.querySelector("#web-protection-countries-summary"),
   countryPickerDialog: document.querySelector("#country-picker-dialog"),
   countryPickerSearch: document.querySelector("#country-picker-search"),
   countryPickerList: document.querySelector("#country-picker-list"),
   countryPickerApply: document.querySelector("#country-picker-apply"),
-  webProtectionBlockedIPs: document.querySelector("#web-protection-blocked-ips"),
-  webProtectionAllowedIPs: document.querySelector("#web-protection-allowed-ips"),
-  externalBlocklistsPanel: document.querySelector("#external-blocklists-panel"),
+  countryPickerModeHint: document.querySelector("#country-picker-mode-hint"),
+  ipListsPanel: document.querySelector("#ip-lists-panel"),
+  manualIPListList: document.querySelector("#manual-ip-list-list"),
+  manualIPListEmpty: document.querySelector("#manual-ip-list-empty"),
+  manualIPListAdd: document.querySelector("#manual-ip-list-add"),
+  manualIPListDialog: document.querySelector("#manual-ip-list-dialog"),
+  manualIPListForm: document.querySelector("#manual-ip-list-form"),
+  manualIPListIndex: document.querySelector("#manual-ip-list-index"),
+  manualIPListName: document.querySelector("#manual-ip-list-name"),
+  manualIPListMode: document.querySelector("#manual-ip-list-mode"),
+  manualIPListReference: document.querySelector("#manual-ip-list-reference"),
+  manualIPListEntries: document.querySelector("#manual-ip-list-entries"),
+  manualIPListClose: document.querySelector("#manual-ip-list-close"),
+  manualIPListCancel: document.querySelector("#manual-ip-list-cancel"),
   externalBlocklistsForm: document.querySelector("#external-blocklists-form"),
   externalBlocklistList: document.querySelector("#external-blocklist-list"),
   externalBlocklistEmpty: document.querySelector("#external-blocklist-empty"),
@@ -124,6 +147,8 @@ const els = {
   siteLogToggle: document.querySelector("#site-log-toggle"),
   oidcLogList: document.querySelector("#oidc-log-list"),
   oidcLogToggle: document.querySelector("#oidc-log-toggle"),
+  protectionEventList: document.querySelector("#protection-event-list"),
+  protectionEventToggle: document.querySelector("#protection-event-toggle"),
   settingsForm: document.querySelector("#settings-form"),
   settingsUsername: document.querySelector("#settings-username"),
   settingsPassword: document.querySelector("#settings-password"),
@@ -240,6 +265,7 @@ const auxiliarySort = {
   "service-logs": { key: "time", direction: "desc" },
   "site-logs": { key: "time", direction: "desc" },
   "oidc-logs": { key: "time", direction: "desc" },
+  "protection-events": { key: "time", direction: "desc" },
 };
 const tableFilters = {
   dashboard: { protocol: "all", certificateProvider: "", visibility: "all", mode: "all", upstreamTls: "all", status: "all", auth: "all", comment: "" },
@@ -247,6 +273,7 @@ const tableFilters = {
   "service-logs": { type: "", message: "", status: "" },
   "site-logs": { method: "all", path: "", status: "" },
   "oidc-logs": { type: "", user: "", ip: "", site: "", status: "" },
+  "protection-events": { type: "", site: "", ip: "", message: "" },
 };
 const hostCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 let settings = null;
@@ -256,10 +283,12 @@ let acmeDialogContext = null;
 let serviceLogsExpanded = false;
 let siteLogsExpanded = false;
 let oidcLogsExpanded = false;
+let protectionEventsExpanded = false;
 let editingSite = null;
 let latestSiteLogs = [];
 let latestServiceLogs = [];
 let latestOIDCLogs = [];
+let latestProtectionEvents = [];
 let latestGeoTopIPs = [];
 let latestServiceLogsAvailable = true;
 const LOG_PREVIEW_LIMIT = 10;
@@ -285,6 +314,7 @@ els.logSiteFilter.addEventListener("change", () => {
 els.serviceLogToggle.addEventListener("click", toggleServiceLogsExpanded);
 els.siteLogToggle.addEventListener("click", toggleSiteLogsExpanded);
 els.oidcLogToggle.addEventListener("click", toggleOIDCLogsExpanded);
+els.protectionEventToggle.addEventListener("click", toggleProtectionEventsExpanded);
 els.geoIPScope.addEventListener("change", renderTopIPs);
 els.geoIPHost.addEventListener("change", renderTopIPs);
 els.geoIPLimit.addEventListener("change", renderTopIPs);
@@ -300,6 +330,19 @@ document.querySelectorAll("[data-reset-filters]").forEach((button) => {
 });
 els.settingsForm.addEventListener("submit", saveSettings);
 els.webProtectionForm.addEventListener("submit", saveWebProtection);
+els.webProtectionModeBlock.addEventListener("click", () => setWebProtectionCountryMode("block"));
+els.webProtectionModeAllow.addEventListener("click", () => setWebProtectionCountryMode("allow"));
+els.manualIPListForm.addEventListener("submit", saveManualIPList);
+els.manualIPListAdd.addEventListener("click", () => openManualIPListDialog());
+els.manualIPListClose.addEventListener("click", () => els.manualIPListDialog.close());
+els.manualIPListCancel.addEventListener("click", () => els.manualIPListDialog.close());
+els.manualIPListList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-manual-list-action]");
+  if (!button) return;
+  const index = Number(button.closest("[data-manual-list-index]")?.dataset.manualListIndex);
+  if (button.dataset.manualListAction === "edit") openManualIPListDialog(index);
+  if (button.dataset.manualListAction === "remove") removeManualIPList(index);
+});
 els.externalBlocklistsForm.addEventListener("submit", saveExternalBlocklists);
 els.externalBlocklistAdd.addEventListener("click", addExternalBlocklist);
 els.externalBlocklistList.addEventListener("click", (event) => {
@@ -395,10 +438,11 @@ document.querySelectorAll("input[name='mode']").forEach((input) => {
 init();
 
 async function init() {
-  await Promise.all([loadSites(), loadSettings(), loadProfile(), loadVersions(), loadGeoMap()]);
+  await Promise.all([loadSites(), loadSettings(), loadProfile(), loadVersions(), loadGeoMap(), loadSecurityOverview()]);
   renderLogs([]);
   renderServiceLogs([]);
   renderOIDCLogs([]);
+  renderProtectionEvents([]);
 }
 
 async function loadVersions() {
@@ -449,6 +493,7 @@ function showLogsTab(name, focus = false) {
   if (name === "service") loadServiceLogs();
   if (name === "websites") loadLogs();
   if (name === "oidc") loadOIDCLogs();
+  if (name === "web-protection") loadProtectionEvents();
 }
 
 function handleLogsTabKeydown(event) {
@@ -552,11 +597,15 @@ function showView(view) {
     loadServiceLogs();
     loadLogs();
     loadOIDCLogs();
+    loadProtectionEvents();
     syncLogPolling();
   } else {
     stopLogPolling();
   }
-  if (view === "dashboard") loadGeoMap();
+  if (view === "dashboard") {
+    loadGeoMap();
+    loadSecurityOverview();
+  }
   if (view === "settings") loadSettings();
   if (view === "certificates") renderCertificatesView();
 }
@@ -565,14 +614,49 @@ function protectionValues(value) {
   return String(value || "").split(/[\n,]+/).map((item) => item.trim()).filter(Boolean);
 }
 
+function setWebProtectionCountryMode(mode) {
+  els.webProtectionCountryMode.value = mode;
+  const block = mode === "block";
+  els.webProtectionModeBlock.classList.toggle("active", block);
+  els.webProtectionModeAllow.classList.toggle("active", !block);
+  els.webProtectionModeBlock.setAttribute("aria-pressed", String(block));
+  els.webProtectionModeAllow.setAttribute("aria-pressed", String(!block));
+}
+
+async function loadSecurityOverview() {
+  try {
+    renderSecurityOverview(await request("/api/security-overview"));
+  } catch (err) {
+    els.securityOverviewSummary.textContent = "Security overview unavailable";
+    els.securityEvents.innerHTML = `<p class="error-text">${escapeHTML(err.message)}</p>`;
+  }
+}
+
+function renderSecurityOverview(data) {
+  const format = (value) => Number(value || 0).toLocaleString();
+  els.securityRequests.textContent = format(data.requests);
+  els.securityManagedBlocks.textContent = format(data.managedBlocks);
+  els.securityGeoBlocks.textContent = format(data.geoBlocks);
+  els.securityManualBlocks.textContent = format(data.manualIPBlocks);
+  els.securityExternalBlocks.textContent = format(data.externalBlocks);
+  els.securityUnclassified.textContent = format(data.unclassified403);
+  els.security4xx.textContent = format(data.clientErrors);
+  els.security5xx.textContent = format(data.serverErrors);
+  els.securityOverviewSummary.textContent = `${format(data.requests)} retained request${Number(data.requests) === 1 ? "" : "s"}`;
+  const rules = data.ruleCounts || {};
+  els.securityRuleCounts.innerHTML = `<div><span>Countries selected</span><strong>${format(rules.selectedCountries)}</strong></div><div><span>Manual blocked IPs</span><strong>${format(rules.manualBlockedIPs)}</strong></div><div><span>Allowed IPs</span><strong>${format(rules.allowedIPs)}</strong></div><div><span>External blocked IPs</span><strong>${format(rules.externalBlockedIPs)}</strong></div>`;
+  const events = data.events || [];
+  els.securityEvents.classList.toggle("has-multiple-events", events.length > 1);
+  els.securityEvents.innerHTML = events.length ? events.map((event) => `<article class="security-event"><div><strong>${escapeHTML(event.reason)}</strong><span>${escapeHTML(event.site)} · ${escapeHTML(event.address)}${event.country ? ` · ${escapeHTML(event.country)}` : ""}</span></div><time>${event.time ? new Date(event.time).toLocaleString() : ""}</time></article>`).join("") : '<p class="muted">No managed protection events in retained access logs.</p>';
+}
+
 function escapeHTML(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
 }
 
 function showProtectionTab(tab) {
-  const blocklists = tab === "blocklists";
-  els.webProtectionForm.closest("section").hidden = blocklists;
-  els.externalBlocklistsPanel.hidden = !blocklists;
+  els.webProtectionForm.closest("section").hidden = tab !== "geo";
+  els.ipListsPanel.hidden = tab !== "lists";
   document.querySelectorAll("[data-protection-tab]").forEach((button) => button.classList.toggle("active", button.dataset.protectionTab === tab));
 }
 
@@ -595,6 +679,7 @@ async function persistExternalBlocklists(refreshURL = "", refreshAll = false) {
     renderExternalBlocklists(settings.externalBlocklists || []);
     setStatus(`${feeds.length} external blocklist${feeds.length === 1 ? "" : "s"} active`);
     showConfirmation(refreshURL ? "External blocklist updated" : "External blocklists refreshed", "success");
+    loadSecurityOverview();
   } catch (err) { setStatus(err.message); }
 }
 
@@ -614,21 +699,35 @@ function addExternalBlocklist() {
 
 let protectionCountries = [];
 let selectedProtectionCountries = [];
+async function loadProtectionCountries() {
+  if (protectionCountries.length) return;
+  const data = await request("/api/geo-countries");
+  protectionCountries = data.countries || [];
+}
+function renderSelectedProtectionCountries() {
+  const byCode = new Map(protectionCountries.map((country) => [country.code, country]));
+  const selected = selectedProtectionCountries.map((code) => byCode.get(code)).filter(Boolean);
+  if (!selected.length) {
+    els.webProtectionCountriesSummary.innerHTML = '<p class="field-hint">No countries selected.</p>';
+    return;
+  }
+  els.webProtectionCountriesSummary.innerHTML = selected.map((country) => `<span class="selected-country"><img src="/api/geo-flag/${country.code}" width="20" height="15" alt="" /><span>${escapeHTML(country.name)}</span></span>`).join("");
+}
 async function openCountryPicker() {
   selectedProtectionCountries = [...(settings?.webProtection?.blockedCountries || [])];
   els.countryPickerSearch.value = "";
+  els.countryPickerModeHint.textContent = els.webProtectionCountryMode.value === "allow" ? "Only the selected countries will be allowed." : "The selected countries will be blocked.";
   els.countryPickerList.innerHTML = '<p class="muted">Loading countries from GeoLite2...</p>';
   els.countryPickerDialog.showModal();
   try {
-    const data = await request("/api/geo-countries");
-    protectionCountries = data.countries || [];
+    await loadProtectionCountries();
     renderCountryPicker();
   } catch (err) {
     els.countryPickerList.innerHTML = `<p class="error-text">${escapeHTML(err.message)}</p>`;
   }
 }
 function renderCountryPicker() { const query = els.countryPickerSearch.value.trim().toLowerCase(); const matches = protectionCountries.filter((country) => !query || country.name.toLowerCase().includes(query) || country.code.toLowerCase().includes(query)); els.countryPickerList.innerHTML = matches.length ? matches.map((country) => `<label class="country-picker-row"><input type="checkbox" value="${country.code}" ${selectedProtectionCountries.includes(country.code) ? "checked" : ""} /><img src="/api/geo-flag/${country.code}" width="24" height="18" alt="" loading="lazy" /><strong>${escapeHTML(country.name)}</strong><code>${country.code}</code></label>`).join("") : '<p class="muted">No countries match this search.</p>'; }
-function applyCountryPicker() { settings.webProtection = { ...(settings.webProtection || {}), blockedCountries: selectedProtectionCountries }; els.webProtectionCountriesSummary.textContent = selectedProtectionCountries.length ? `${selectedProtectionCountries.length} countries selected: ${selectedProtectionCountries.join(", ")}` : "No countries selected."; els.countryPickerDialog.close(); }
+function applyCountryPicker() { settings.webProtection = { ...(settings.webProtection || {}), blockedCountries: selectedProtectionCountries }; renderSelectedProtectionCountries(); els.countryPickerDialog.close(); }
 
 async function saveWebProtection(event) {
   event.preventDefault();
@@ -636,13 +735,62 @@ async function saveWebProtection(event) {
     enabled: els.webProtectionEnabled.checked,
     countryMode: els.webProtectionCountryMode.value,
     blockedCountries: selectedProtectionCountries,
-    blockedIps: protectionValues(els.webProtectionBlockedIPs.value),
-    allowedIps: protectionValues(els.webProtectionAllowedIPs.value),
+    blockedIps: settings?.webProtection?.blockedIps || [],
+    allowedIps: settings?.webProtection?.allowedIps || [],
   }};
   try {
     settings = await request("/api/settings", { method: "PUT", body: JSON.stringify(next) });
     setStatus("GEO IP blocking defaults saved");
     showConfirmation("GEO IP blocking defaults saved", "success");
+    loadSecurityOverview();
+  } catch (err) { setStatus(err.message); }
+}
+
+function renderManualIPLists(lists) {
+  els.manualIPListList.innerHTML = lists.map((list, index) => {
+    const entries = list.entries || [];
+    const preview = entries.map((entry) => escapeHTML(entry)).join("<br>");
+    return `<div class="manual-list-row" data-manual-list-index="${index}"><strong>${escapeHTML(list.name)}</strong><span class="manual-list-mode ${escapeHTML(list.mode)}">${list.mode === "allow" ? "Allow" : "Block"}</span><span>${escapeHTML(list.reference || "—")}</span><span class="ip-entry-preview" tabindex="0"><span>${Number(entries.length).toLocaleString()} IPs</span><span class="ip-entry-tooltip" role="tooltip">${preview || "No entries"}</span></span><span class="blocklist-actions"><button type="button" class="secondary" data-manual-list-action="edit">Edit</button><button type="button" class="danger" data-manual-list-action="remove">Remove</button></span></div>`;
+  }).join("");
+  els.manualIPListEmpty.hidden = lists.length > 0;
+}
+
+function openManualIPListDialog(index = -1) {
+  const list = index >= 0 ? (settings?.manualIpLists || [])[index] : null;
+  els.manualIPListIndex.value = list ? String(index) : "";
+  els.manualIPListName.value = list?.name || "";
+  els.manualIPListMode.value = list?.mode || "block";
+  els.manualIPListReference.value = list?.reference || "";
+  els.manualIPListEntries.value = (list?.entries || []).join("\n");
+  els.manualIPListDialog.showModal();
+  els.manualIPListName.focus();
+}
+
+async function saveManualIPList(event) {
+  event.preventDefault();
+  const lists = [...(settings?.manualIpLists || [])];
+  const list = { name: els.manualIPListName.value.trim(), mode: els.manualIPListMode.value, reference: els.manualIPListReference.value.trim(), entries: protectionValues(els.manualIPListEntries.value) };
+  const indexValue = els.manualIPListIndex.value;
+  const index = indexValue === "" ? -1 : Number(indexValue);
+  if (Number.isInteger(index) && index >= 0) lists[index] = list; else lists.push(list);
+  const next = { ...settings, manualIpLists: lists };
+  try {
+    settings = await request("/api/settings", { method: "PUT", body: JSON.stringify(next) });
+    renderManualIPLists(settings.manualIpLists || []);
+    els.manualIPListDialog.close();
+    setStatus("Manual IP list saved");
+    showConfirmation("Manual IP list saved", "success");
+    loadSecurityOverview();
+  } catch (err) { setStatus(err.message); }
+}
+
+async function removeManualIPList(index) {
+  const lists = [...(settings?.manualIpLists || [])];
+  lists.splice(index, 1);
+  try {
+    settings = await request("/api/settings", { method: "PUT", body: JSON.stringify({ ...settings, manualIpLists: lists }) });
+    renderManualIPLists(settings.manualIpLists || []);
+    loadSecurityOverview();
   } catch (err) { setStatus(err.message); }
 }
 
@@ -667,12 +815,13 @@ async function loadSettings() {
     settings = loadedSettings;
     const protection = settings.webProtection || {};
     renderExternalBlocklists(settings.externalBlocklists || []);
+    renderManualIPLists(settings.manualIpLists || []);
     els.webProtectionEnabled.checked = !!protection.enabled;
     els.webProtectionCountryMode.value = protection.countryMode || "block";
+    setWebProtectionCountryMode(els.webProtectionCountryMode.value);
     selectedProtectionCountries = protection.blockedCountries || [];
-    els.webProtectionCountriesSummary.textContent = selectedProtectionCountries.length ? `${selectedProtectionCountries.length} countries selected: ${selectedProtectionCountries.join(", ")}` : "No countries selected.";
-    els.webProtectionBlockedIPs.value = (protection.blockedIps || []).join("\n");
-    els.webProtectionAllowedIPs.value = (protection.allowedIps || []).join("\n");
+    try { await loadProtectionCountries(); } catch (_) { protectionCountries = []; }
+    renderSelectedProtectionCountries();
     els.settingsUsername.value = settings.username || "admin";
     els.settingsPassword.value = "";
     els.settingsPasswordConfirm.value = "";
@@ -1047,7 +1196,6 @@ function renderMetrics() {
 function renderHostLists() {
   renderHostFilterOptions();
   updateSortHeaders();
-  renderSiteList(els.dashboardSiteList, false, "dashboard");
   renderSiteList(els.siteList, true, "web-hosts");
 }
 
@@ -1076,6 +1224,8 @@ function renderSortedTable(table) {
     renderLogs(latestSiteLogs);
   } else if (table === "oidc-logs") {
     renderOIDCLogs(latestOIDCLogs);
+  } else if (table === "protection-events") {
+    renderProtectionEvents(latestProtectionEvents);
   }
 }
 
@@ -1591,6 +1741,60 @@ function toggleOIDCLogsExpanded() {
   loadOIDCLogs();
 }
 
+async function loadProtectionEvents() {
+  try {
+    const data = await request("/api/security-overview?events=all");
+    renderProtectionEvents((data.events || []).map((event) => ({
+      time: event.time,
+      action: event.reason,
+      site: event.site,
+      ip: event.address,
+      message: event.country || "Unknown",
+    })));
+  } catch (err) { setStatus(err.message); }
+}
+
+function renderProtectionEvents(events) {
+  latestProtectionEvents = events;
+  els.protectionEventList.innerHTML = "";
+  els.protectionEventToggle.hidden = true;
+  updateSortHeaders();
+  if (!events.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No managed Web Protection events in retained access logs.";
+    els.protectionEventList.append(empty);
+    return;
+  }
+  const sorted = sortedLogs(events, "protection-events");
+  if (!sorted.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No Web Protection events match the selected filters.";
+    els.protectionEventList.append(empty);
+    return;
+  }
+  const visibleEvents = protectionEventsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
+  for (const entry of visibleEvents) {
+    const row = document.createElement("div");
+    row.className = "log-row protection-log-row";
+    for (let index = 0; index < 5; index += 1) row.append(document.createElement(index === 0 ? "time" : "span"));
+    row.children[0].textContent = new Date(entry.time).toLocaleTimeString();
+    row.children[0].title = new Date(entry.time).toLocaleString();
+    row.children[1].textContent = entry.action || "Protection rule";
+    row.children[2].textContent = entry.site || "-";
+    row.children[3].textContent = entry.ip || "unknown";
+    row.children[4].textContent = entry.message || "Unknown";
+    els.protectionEventList.append(row);
+  }
+  syncLogToggle(els.protectionEventToggle, sorted.length, protectionEventsExpanded);
+}
+
+function toggleProtectionEventsExpanded() {
+  protectionEventsExpanded = !protectionEventsExpanded;
+  loadProtectionEvents();
+}
+
 function syncLogPolling() {
   stopLogPolling();
   const logsViewActive = document.querySelector("#view-logs").classList.contains("active");
@@ -1598,6 +1802,7 @@ function syncLogPolling() {
   logPollTimer = window.setInterval(() => {
     loadServiceLogs();
     loadOIDCLogs();
+    loadProtectionEvents();
     if (els.logSiteFilter.value) {
       loadLogs();
     }

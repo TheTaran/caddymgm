@@ -20,6 +20,7 @@ const els = {
   securityUnclassified: document.querySelector("#security-unclassified"),
   security4xx: document.querySelector("#security-4xx"),
   security5xx: document.querySelector("#security-5xx"),
+  securityOverviewPeriod: document.querySelector("#security-overview-period"),
   securityEvents: document.querySelector("#security-events"),
   securityRuleCounts: document.querySelector("#security-rule-counts"),
   geoMap: document.querySelector("#geo-map"),
@@ -67,6 +68,13 @@ const els = {
   manualIPListEntries: document.querySelector("#manual-ip-list-entries"),
   manualIPListClose: document.querySelector("#manual-ip-list-close"),
   manualIPListCancel: document.querySelector("#manual-ip-list-cancel"),
+  assignIPDialog: document.querySelector("#assign-ip-dialog"),
+  assignIPAddress: document.querySelector("#assign-ip-address"),
+  assignIPValue: document.querySelector("#assign-ip-value"),
+  assignIPList: document.querySelector("#assign-ip-list"),
+  assignIPForm: document.querySelector("#assign-ip-form"),
+  assignIPClose: document.querySelector("#assign-ip-close"),
+  assignIPCancel: document.querySelector("#assign-ip-cancel"),
   externalBlocklistsForm: document.querySelector("#external-blocklists-form"),
   externalBlocklistList: document.querySelector("#external-blocklist-list"),
   externalBlocklistEmpty: document.querySelector("#external-blocklist-empty"),
@@ -315,6 +323,7 @@ els.serviceLogToggle.addEventListener("click", toggleServiceLogsExpanded);
 els.siteLogToggle.addEventListener("click", toggleSiteLogsExpanded);
 els.oidcLogToggle.addEventListener("click", toggleOIDCLogsExpanded);
 els.protectionEventToggle.addEventListener("click", toggleProtectionEventsExpanded);
+els.securityOverviewPeriod.addEventListener("change", loadSecurityOverview);
 els.geoIPScope.addEventListener("change", renderTopIPs);
 els.geoIPHost.addEventListener("change", renderTopIPs);
 els.geoIPLimit.addEventListener("change", renderTopIPs);
@@ -336,6 +345,9 @@ els.manualIPListForm.addEventListener("submit", saveManualIPList);
 els.manualIPListAdd.addEventListener("click", () => openManualIPListDialog());
 els.manualIPListClose.addEventListener("click", () => els.manualIPListDialog.close());
 els.manualIPListCancel.addEventListener("click", () => els.manualIPListDialog.close());
+els.assignIPForm.addEventListener("submit", assignIPToManualList);
+els.assignIPClose.addEventListener("click", () => els.assignIPDialog.close());
+els.assignIPCancel.addEventListener("click", () => els.assignIPDialog.close());
 els.manualIPListList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-manual-list-action]");
   if (!button) return;
@@ -625,7 +637,7 @@ function setWebProtectionCountryMode(mode) {
 
 async function loadSecurityOverview() {
   try {
-    renderSecurityOverview(await request("/api/security-overview"));
+    renderSecurityOverview(await request(`/api/security-overview?period=${encodeURIComponent(els.securityOverviewPeriod.value || "1d")}`));
   } catch (err) {
     els.securityOverviewSummary.textContent = "Security overview unavailable";
     els.securityEvents.innerHTML = `<p class="error-text">${escapeHTML(err.message)}</p>`;
@@ -642,7 +654,8 @@ function renderSecurityOverview(data) {
   els.securityUnclassified.textContent = format(data.unclassified403);
   els.security4xx.textContent = format(data.clientErrors);
   els.security5xx.textContent = format(data.serverErrors);
-  els.securityOverviewSummary.textContent = `${format(data.requests)} retained request${Number(data.requests) === 1 ? "" : "s"}`;
+  const periodLabel = els.securityOverviewPeriod.options[els.securityOverviewPeriod.selectedIndex]?.text || "24 hours";
+  els.securityOverviewSummary.textContent = `${format(data.requests)} retained request${Number(data.requests) === 1 ? "" : "s"} · ${periodLabel}`;
   const rules = data.ruleCounts || {};
   els.securityRuleCounts.innerHTML = `<div><span>Countries selected</span><strong>${format(rules.selectedCountries)}</strong></div><div><span>Manual blocked IPs</span><strong>${format(rules.manualBlockedIPs)}</strong></div><div><span>Allowed IPs</span><strong>${format(rules.allowedIPs)}</strong></div><div><span>External blocked IPs</span><strong>${format(rules.externalBlockedIPs)}</strong></div>`;
   const events = data.events || [];
@@ -790,6 +803,42 @@ async function removeManualIPList(index) {
   try {
     settings = await request("/api/settings", { method: "PUT", body: JSON.stringify({ ...settings, manualIpLists: lists }) });
     renderManualIPLists(settings.manualIpLists || []);
+    loadSecurityOverview();
+  } catch (err) { setStatus(err.message); }
+}
+
+function openAssignIPDialog(address) {
+  const lists = settings?.manualIpLists || [];
+  if (!lists.length) {
+    setStatus("Create a manual IP list before assigning an IP address");
+    return;
+  }
+  els.assignIPValue.value = address;
+  els.assignIPAddress.textContent = address;
+  els.assignIPList.replaceChildren();
+  lists.forEach((list, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `${list.name} (${list.mode === "allow" ? "Allow" : "Block"})`;
+    els.assignIPList.append(option);
+  });
+  els.assignIPDialog.showModal();
+  els.assignIPList.focus();
+}
+
+async function assignIPToManualList(event) {
+  event.preventDefault();
+  const address = els.assignIPValue.value.trim();
+  const index = Number(els.assignIPList.value);
+  const lists = [...(settings?.manualIpLists || [])].map((list) => ({ ...list, entries: [...(list.entries || [])] }));
+  if (!address || !Number.isInteger(index) || !lists[index]) return;
+  if (!lists[index].entries.includes(address)) lists[index].entries.push(address);
+  try {
+    settings = await request("/api/settings", { method: "PUT", body: JSON.stringify({ ...settings, manualIpLists: lists }) });
+    renderManualIPLists(settings.manualIpLists || []);
+    els.assignIPDialog.close();
+    setStatus(`IP address added to ${lists[index].name}`);
+    showConfirmation("IP address added to manual list", "success");
     loadSecurityOverview();
   } catch (err) { setStatus(err.message); }
 }
@@ -1778,13 +1827,19 @@ function renderProtectionEvents(events) {
   for (const entry of visibleEvents) {
     const row = document.createElement("div");
     row.className = "log-row protection-log-row";
-    for (let index = 0; index < 5; index += 1) row.append(document.createElement(index === 0 ? "time" : "span"));
+    for (let index = 0; index < 6; index += 1) row.append(document.createElement(index === 0 ? "time" : "span"));
     row.children[0].textContent = new Date(entry.time).toLocaleTimeString();
     row.children[0].title = new Date(entry.time).toLocaleString();
     row.children[1].textContent = entry.action || "Protection rule";
     row.children[2].textContent = entry.site || "-";
     row.children[3].textContent = entry.ip || "unknown";
     row.children[4].textContent = entry.message || "Unknown";
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "secondary assign-ip-button";
+    addButton.textContent = "Add to list";
+    addButton.addEventListener("click", () => openAssignIPDialog(entry.ip));
+    row.children[5].append(addButton);
     els.protectionEventList.append(row);
   }
   syncLogToggle(els.protectionEventToggle, sorted.length, protectionEventsExpanded);
@@ -2633,7 +2688,12 @@ function renderTopIPs() {
     const badge = document.createElement("span");
     badge.className = `geo-scope-badge ${ip.scope === "internal" ? "internal" : "external"}`;
     badge.textContent = ip.scope === "internal" ? "Internal" : "External";
-    primary.append(country, address, requests, badge);
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "secondary assign-ip-button";
+    addButton.textContent = "Add to list";
+    addButton.addEventListener("click", () => openAssignIPDialog(ip.address || ""));
+    primary.append(country, address, requests, badge, addButton);
     const meta = document.createElement("span");
     meta.textContent = host === "all" ? ((ip.sites || []).join(", ") || "Unknown website") : host;
     content.append(primary, meta);

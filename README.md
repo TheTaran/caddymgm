@@ -25,6 +25,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 | Date | Feature | What's included |
 | --- | --- | --- |
+| 2026-09-01 | **Security Operations & Distribution** | Period-filtered security statistics, direct assignment of observed IPs to manual lists, a published Caddy Geo-IP image, and unified Caddy, Geo-IP module, and Go update checks. |
 | 2026-09-01 | **Web Protection Operations** | Named manual allow/deny IP lists, managed external blocklists, protection-event dashboard metrics, and a filterable Web Protection log view. |
 | 2026-08-31 | **Runtime Security Hardening** | Supported Alpine 3.24 runtime with current security packages plus updated Go cryptography and OAuth dependencies. |
 | 2026-08-31 | **Web Protection** | Global Geo-IP country blocking, IP/CIDR deny and allow rules, per-host overrides, and validated external threat feeds. |
@@ -128,9 +129,9 @@ If you also want Docker Compose to run Caddy, enable the profile:
 COMPOSE_PROFILES=docker-caddy docker compose up -d --build
 ```
 
-The Compose-managed Caddy service is built locally from the official, version-pinned Caddy image. It includes the Geo-IP module required for country-based access controls. The Caddy image and module versions are fixed through `CADDY_VERSION` and `CADDY_GEOIP_MODULE_VERSION`; both can be reviewed and updated explicitly. The GeoLite2 database remains a read-only runtime mount at `/geoip/GeoLite2-City.mmdb`, so database refreshes do not rebuild the Caddy image.
+The Compose-managed Caddy service is built from the official, version-pinned Caddy image and includes the Geo-IP module required for country-based access controls. Release workflows publish the resulting custom image under `ghcr.io/thetaran/caddymgm-caddy` with an immutable Caddy/module tag and a `latest` tag. The Caddy image and module versions are fixed through `CADDY_VERSION` and `CADDY_GEOIP_MODULE_VERSION`; the scheduled component check opens one GitHub issue whenever Caddy, the Geo-IP module, or Go has an update available. The GeoLite2 database remains a read-only runtime mount at `/geoip/GeoLite2-City.mmdb`, so database refreshes do not rebuild the Caddy image.
 
-The scheduled GitHub workflow `Check Caddy version` compares the pinned version with the latest official Caddy release every Monday. When an update is available, it creates or refreshes one GitHub issue; it never updates the image or publishes a release automatically.
+The scheduled GitHub workflow `Check component versions` compares the pinned Caddy, Geo-IP module, and Go versions with their latest upstream versions every Monday. When an update is available, it creates or refreshes one GitHub issue; it never updates images or publishes a release automatically.
 
 This publishes:
 

@@ -21,6 +21,7 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/thetaran/caddymgm
+  CADDY_IMAGE_NAME: ghcr.io/thetaran/caddymgm-caddy
 
 jobs:
   build:
@@ -96,6 +97,24 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Prepare Caddy image tag
+        id: caddy-image
+        if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          caddy_version="$(sed -nE 's/^[[:space:]]*CADDY_VERSION: \$\{CADDY_VERSION:-([^}]+)\}.*/\1/p' compose-template.yml)"
+          geoip_version="$(sed -nE 's/^[[:space:]]*CADDY_GEOIP_MODULE_VERSION: \$\{CADDY_GEOIP_MODULE_VERSION:-([^}]+)\}.*/\1/p' compose-template.yml)"
+          if [[ -z "${caddy_version}" || -z "${geoip_version}" ]]; then
+            echo "Unable to read the pinned Caddy or Geo-IP module version" >&2
+            exit 1
+          fi
+          {
+            echo "caddy_version=${caddy_version}"
+            echo "geoip_version=${geoip_version}"
+            echo "tag=${caddy_version}-geoip-${geoip_version}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
         uses: docker/build-push-action@v6
@@ -105,6 +124,21 @@ jobs:
             VERSION=${{ steps.release-tag.outputs.version }}
           push: true
           tags: ${{ steps.docker-tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Caddy with Geo-IP
+        if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./caddy
+          build-args: |
+            CADDY_VERSION=${{ steps.caddy-image.outputs.caddy_version }}
+            CADDY_GEOIP_MODULE_VERSION=${{ steps.caddy-image.outputs.geoip_version }}
+          push: true
+          tags: |
+            ${{ env.CADDY_IMAGE_NAME }}:${{ steps.caddy-image.outputs.tag }}
+            ${{ env.CADDY_IMAGE_NAME }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

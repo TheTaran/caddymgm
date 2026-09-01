@@ -40,10 +40,10 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
+  min-height: 30px;
   border: 1px solid rgba(91, 184, 255, 0.38);
   border-radius: 999px;
-  padding: 0 16px;
+  padding: 0 12px;
   background: linear-gradient(180deg, #7bc8ff, #369ce8);
   color: #031421;
   cursor: pointer;
@@ -88,9 +88,59 @@ button.danger {
 .security-overview-card .panel-heading { min-height: 32px; }
 .security-overview-card .field-hint { display: none; }
 
+.security-overview-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.security-period select {
+  height: 28px;
+  min-width: 112px;
+  padding: 0 28px 0 9px;
+  font-size: 12px;
+}
+
 .ip-list-section-title {
   margin: 22px 0 10px;
   font-size: 14px;
+}
+
+.ip-list-groups {
+  display: grid;
+  gap: 14px;
+  padding: 0 16px 16px;
+}
+
+.ip-list-group {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(7, 8, 11, .24);
+}
+
+.ip-list-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.ip-list-group-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.ip-list-group .manual-list-table-head,
+.ip-list-group .blocklist-table-head {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.ip-list-group .form-actions {
+  padding: 12px 0 0;
 }
 
 .compact-heading {
@@ -295,8 +345,8 @@ button.danger {
 }
 
 .geo-mode-toggle button {
-  min-height: 32px;
-  padding: 0 13px;
+  min-height: 28px;
+  padding: 0 10px;
 }
 
 .geo-mode-toggle button.active {
@@ -895,7 +945,7 @@ h2 {
 
 #view-proxy-hosts .table-head,
 .site-row-editable {
-  grid-template-columns: 105px minmax(180px, 1fr) 205px 120px 100px minmax(200px, 1.1fr) 155px 115px 140px minmax(160px, 0.7fr) 180px;
+  grid-template-columns: minmax(90px, .8fr) minmax(120px, 1fr) minmax(120px, .9fr) 80px 75px minmax(160px, 1.2fr) 105px 90px 105px minmax(80px, .7fr) 145px;
 }
 
 #view-proxy-hosts .site-table-scroll {
@@ -1027,7 +1077,7 @@ h2 {
 
 #view-proxy-hosts .table-head,
 #view-proxy-hosts .site-list {
-  min-width: 1820px;
+  min-width: 100%;
 }
 
 #view-proxy-hosts .table-head {
@@ -1517,7 +1567,7 @@ legend {
 
 .protection-log-head,
 .log-row.protection-log-row {
-  grid-template-columns: 150px 170px minmax(210px, 1fr) 170px 170px;
+  grid-template-columns: 130px 155px minmax(180px, 1fr) 150px 140px 110px;
 }
 
 .logs-tab-content { display: grid; }
@@ -1542,7 +1592,7 @@ legend {
 
 .protection-log-head,
 #protection-event-list {
-  min-width: 980px;
+  min-width: 960px;
 }
 
 .log-row {
@@ -1673,8 +1723,8 @@ legend {
 }
 
 .site-editor-tab {
-  min-height: 34px;
-  padding: 7px 15px;
+  min-height: 30px;
+  padding: 5px 11px;
   border-radius: 6px;
   font-size: 12px;
 }
@@ -2631,7 +2681,7 @@ pre {
 
 .geo-ip-primary {
   display: grid;
-  grid-template-columns: minmax(82px, auto) minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(82px, auto) minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 8px;
 }
@@ -2657,6 +2707,13 @@ pre {
   color: var(--text);
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.assign-ip-button {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 10px;
   white-space: nowrap;
 }
 

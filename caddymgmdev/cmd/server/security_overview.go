@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/netip"
 	"sort"
@@ -89,6 +90,20 @@ func (set protectionPrefixSet) contains(address netip.Addr) bool {
 
 func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 	includeAllEvents := r.URL.Query().Get("events") == "all"
+	period := r.URL.Query().Get("period")
+	window := 24 * time.Hour
+	switch period {
+	case "7d":
+		window = 7 * 24 * time.Hour
+	case "30d":
+		window = 30 * 24 * time.Hour
+	case "", "1d":
+		period = "1d"
+	default:
+		writeError(w, http.StatusBadRequest, errors.New("period must be 1d, 7d, or 30d"))
+		return
+	}
+	cutoff := time.Now().Add(-window).Unix()
 	a.mu.Lock()
 	sites, _, _, err := a.load()
 	defaults := a.settings.WebProtection
@@ -125,6 +140,9 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 		for _, line := range lines {
 			var record securityLogRecord
 			if json.Unmarshal([]byte(line), &record) != nil || record.Status == 0 {
+				continue
+			}
+			if int64(record.Timestamp) < cutoff {
 				continue
 			}
 			overview.Requests++

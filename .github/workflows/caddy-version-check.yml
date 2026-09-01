@@ -1,4 +1,4 @@
-name: Check Caddy version
+name: Check component versions
 
 on:
   schedule:
@@ -17,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check for a Caddy update
+      - name: Check pinned component versions
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -25,36 +25,59 @@ jobs:
         run: |
           set -euo pipefail
 
-          current_version="$(sed -nE 's/^[[:space:]]*CADDY_VERSION: \$\{CADDY_VERSION:-([^}]+)\}.*/\1/p' compose-template.yml)"
-          if [[ -z "${current_version}" ]]; then
-            echo "Unable to read the pinned Caddy version from compose-template.yml" >&2
+          caddy_current="$(sed -nE 's/^[[:space:]]*CADDY_VERSION: \$\{CADDY_VERSION:-([^}]+)\}.*/\1/p' compose-template.yml)"
+          geoip_current="$(sed -nE 's/^ARG CADDY_GEOIP_MODULE_VERSION=([^[:space:]]+).*/\1/p' caddy/Dockerfile)"
+          go_current="$(sed -nE 's/^go[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' caddymgmdev/go.mod)"
+          if [[ -z "${caddy_current}" || -z "${geoip_current}" || -z "${go_current}" ]]; then
+            echo "Unable to read all pinned component versions" >&2
             exit 1
           fi
 
-          latest_version="$(gh api repos/caddyserver/caddy/releases/latest --jq '.tag_name' | sed 's/^v//')"
-          if [[ -z "${latest_version}" || "${latest_version}" == "null" ]]; then
-            echo "Unable to read the latest Caddy release" >&2
+          caddy_latest="$(gh api repos/caddyserver/caddy/releases/latest --jq '.tag_name' | sed 's/^v//')"
+          geoip_latest="$(gh api 'repos/shift72/caddy-geo-ip/tags?per_page=1' --jq '.[0].name')"
+          go_latest="$(curl --fail --silent --show-error --location 'https://go.dev/dl/?mode=json' | jq -r '.[0].version' | sed 's/^go//')"
+          if [[ -z "${caddy_latest}" || "${caddy_latest}" == "null" || -z "${geoip_latest}" || "${geoip_latest}" == "null" || -z "${go_latest}" || "${go_latest}" == "null" ]]; then
+            echo "Unable to read the latest component versions" >&2
             exit 1
           fi
 
-          issue_title="Caddy update available"
+          updates=()
+          rows=()
+          check_component() {
+            local name="$1" current="$2" latest="$3"
+            local status="Current"
+            if [[ "${current}" != "${latest}" ]]; then
+              status="Update available"
+              updates+=("${name}")
+            fi
+            rows+=("| ${name} | \`${current}\` | \`${latest}\` | ${status} |")
+          }
+          check_component "Caddy" "${caddy_current}" "${caddy_latest}"
+          check_component "Geo-IP Caddy module" "${geoip_current}" "${geoip_latest}"
+          check_component "Go" "${go_current}" "${go_latest}"
+
+          issue_title="Component updates available"
           existing_issue="$(gh issue list --repo "${REPOSITORY}" --state open --search "in:title \"${issue_title}\"" --json number --jq '.[0].number')"
+          if [[ -z "${existing_issue}" ]]; then
+            existing_issue="$(gh issue list --repo "${REPOSITORY}" --state open --search 'in:title "Caddy update available"' --json number --jq '.[0].number')"
+          fi
 
-          if [[ "${current_version}" == "${latest_version}" ]]; then
-            echo "Caddy ${current_version} is current."
+          if [[ "${#updates[@]}" -eq 0 ]]; then
+            echo "All pinned components are current."
             if [[ -n "${existing_issue}" ]]; then
-              gh issue close "${existing_issue}" --repo "${REPOSITORY}" --comment "The pinned Caddy version ${current_version} is current."
+              gh issue close "${existing_issue}" --repo "${REPOSITORY}" --comment "Caddy, the Geo-IP Caddy module, and Go are current."
             fi
             exit 0
           fi
 
           issue_body="$(cat <<EOF
-          A newer Caddy release is available.
+          One or more pinned build components have updates available.
 
-          - Pinned version: \`${current_version}\`
-          - Latest version: \`${latest_version}\`
+          | Component | Pinned | Latest | Status |
+          | --- | --- | --- | --- |
+          $(printf '%s\n' "${rows[@]}")
 
-          Update \`CADDY_VERSION\`, rebuild the custom Caddy image, verify the Geo-IP module with \`caddy list-modules\`, and test the development stack before releasing.
+          Update the affected pinned versions, rebuild the custom Caddy image, verify \`http.handlers.geoip\` with \`caddy list-modules\`, run the development tests, and publish a release.
           EOF
           )"
 

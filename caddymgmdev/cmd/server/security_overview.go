@@ -109,6 +109,7 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 	defaults := a.settings.WebProtection
 	external := append([]string(nil), a.settings.ExternalBlockedIPs...)
 	retention := a.settings.LogRetention
+	hideLocalIPs := a.settings.HideLocalDashboardIPs
 	a.mu.Unlock()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -145,6 +146,10 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 			if int64(record.Timestamp) < cutoff {
 				continue
 			}
+			address, hasAddress := securityRecordAddress(record)
+			if hideLocalIPs && hasAddress && isLocalDashboardAddress(address) {
+				continue
+			}
 			overview.Requests++
 			if record.Status >= 400 && record.Status < 500 {
 				overview.ClientErrors++
@@ -155,8 +160,7 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 			if record.Status != http.StatusForbidden {
 				continue
 			}
-			address, ok := securityRecordAddress(record)
-			if !ok {
+			if !hasAddress {
 				overview.Unclassified403++
 				continue
 			}

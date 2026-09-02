@@ -24,6 +24,20 @@ func TestNormalizeExternalBlocklistsAcceptsCustomPublicHTTPSURLs(t *testing.T) {
 	}
 }
 
+func TestNormalizeExternalBlocklistsConvertsGitHubBlobURLs(t *testing.T) {
+	got, err := normalizeExternalBlocklists(context.Background(), ExternalBlocklists{{
+		Name: "FireHOL Level 1",
+		URL:  "https://github.com/firehol/blocklist-ipsets/blob/master/firehol_level1.netset",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset"
+	if len(got) != 1 || got[0].URL != want {
+		t.Fatalf("normalized GitHub URL = %#v, want %q", got, want)
+	}
+}
+
 func TestExternalBlocklistsMigratesLegacyURLValues(t *testing.T) {
 	var values ExternalBlocklists
 	if err := json.Unmarshal([]byte(`["https://example.com/list.txt"]`), &values); err != nil {

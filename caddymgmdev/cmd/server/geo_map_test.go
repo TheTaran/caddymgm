@@ -138,6 +138,17 @@ func TestGeoIPScope(t *testing.T) {
 	}
 }
 
+func TestIsLocalDashboardAddress(t *testing.T) {
+	for value, want := range map[string]bool{
+		"10.0.0.1": true, "192.168.1.1": true, "127.0.0.1": true,
+		"fe80::1": true, "8.8.8.8": false,
+	} {
+		if got := isLocalDashboardAddress(netip.MustParseAddr(value)); got != want {
+			t.Errorf("isLocalDashboardAddress(%q) = %v, want %v", value, got, want)
+		}
+	}
+}
+
 func TestGeoIPSiteCounts(t *testing.T) {
 	aggregates := make(map[string]*geoIPAggregate)
 	addGeoIPAggregate(aggregates, "192.168.1.10", "one.example")

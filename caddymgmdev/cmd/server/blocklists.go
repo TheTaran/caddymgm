@@ -7,13 +7,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
+)
+
+const (
+	externalBlocklistUpdateInterval = 24 * time.Hour
+	externalBlocklistUpdateTimeout  = 10 * time.Minute
 )
 
 type ExternalBlocklist struct {
@@ -119,7 +126,7 @@ func normalizeExternalBlocklists(ctx context.Context, values ExternalBlocklists)
 		if name == "" || len(name) > 80 {
 			return nil, errors.New("every external blocklist requires a name of at most 80 characters")
 		}
-		normalized, err := validateExternalBlocklistURL(ctx, strings.TrimSpace(value.URL))
+		normalized, err := validateExternalBlocklistURL(ctx, normalizeGitHubBlobURL(strings.TrimSpace(value.URL)))
 		if err != nil {
 			return nil, err
 		}
@@ -136,6 +143,23 @@ func normalizeExternalBlocklists(ctx context.Context, values ExternalBlocklists)
 	}
 	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
 	return result, nil
+}
+
+// normalizeGitHubBlobURL converts GitHub's HTML file view into its raw text endpoint.
+// This keeps pasted GitHub links usable while the stored URL remains a direct feed URL.
+func normalizeGitHubBlobURL(value string) string {
+	parsed, err := url.Parse(value)
+	if err != nil || !strings.EqualFold(parsed.Hostname(), "github.com") {
+		return value
+	}
+	parts := strings.Split(strings.Trim(parsed.EscapedPath(), "/"), "/")
+	if len(parts) < 5 || parts[2] != "blob" || parts[0] == "" || parts[1] == "" || parts[3] == "" {
+		return value
+	}
+	parsed.Host = "raw.githubusercontent.com"
+	parsed.Path = "/" + strings.Join(append(parts[:2], parts[3:]...), "/")
+	parsed.RawPath = ""
+	return parsed.String()
 }
 
 func externalBlocklistsEqual(left, right ExternalBlocklists) bool {
@@ -190,6 +214,72 @@ func (a *App) prepareExternalBlocklists(ctx context.Context, feeds, previous Ext
 	}
 	sort.Strings(blocked)
 	return feeds, blocked, nil
+}
+
+// startExternalBlocklistUpdater refreshes every configured public list on
+// startup and then every 24 hours. The refresh uses the same settings and
+// Caddy configuration transaction as a manual update, so a failed Caddy load
+// leaves the active configuration untouched.
+func (a *App) startExternalBlocklistUpdater() {
+	go func() {
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), externalBlocklistUpdateTimeout)
+			count, err := a.refreshExternalBlocklists(ctx)
+			cancel()
+			if err != nil {
+				log.Printf("external blocklist refresh failed; retrying in %s: %v", externalBlocklistUpdateInterval, err)
+			} else if count > 0 {
+				log.Printf("external blocklists refreshed: %d blocked IPs; next refresh in %s", count, externalBlocklistUpdateInterval)
+			}
+			time.Sleep(externalBlocklistUpdateInterval)
+		}
+	}()
+}
+
+func (a *App) refreshExternalBlocklists(ctx context.Context) (int, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if len(a.settings.ExternalBlocklists) == 0 {
+		return 0, nil
+	}
+	feeds, err := normalizeExternalBlocklists(ctx, a.settings.ExternalBlocklists)
+	if err != nil {
+		return 0, err
+	}
+	feeds, blocked, err := a.prepareExternalBlocklists(ctx, feeds, a.settings.ExternalBlocklists, true, "")
+	if err != nil {
+		return 0, err
+	}
+
+	sites, head, tail, err := a.load()
+	if err != nil {
+		return 0, err
+	}
+	previousSettings := a.settings
+	previousSettingsFile, err := os.ReadFile(a.settingsPath)
+	if err != nil {
+		return 0, err
+	}
+	next := a.settings
+	next.ExternalBlocklists = feeds
+	next.ExternalBlockedIPs = blocked
+	next.ExternalBlockedIPCount = len(blocked)
+	next.RefreshBlocklists = false
+	next.RefreshBlocklistURL = ""
+	a.settings = next
+	if err := a.saveSettingsLocked(); err != nil {
+		a.settings = previousSettings
+		return 0, err
+	}
+	if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
+		a.settings = previousSettings
+		if restoreErr := writeFileAtomically(a.settingsPath, previousSettingsFile, 0o600); restoreErr != nil {
+			err = fmt.Errorf("%w; restoring previous settings failed: %v", err, restoreErr)
+		}
+		return 0, fmt.Errorf("caddy rejected the external blocklist refresh; previous config restored: %w", err)
+	}
+	return len(blocked), nil
 }
 
 func validateExternalBlocklistURL(ctx context.Context, value string) (string, error) {

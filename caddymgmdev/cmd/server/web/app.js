@@ -183,6 +183,7 @@ const els = {
   settingsWebACMERow: document.querySelector("#settings-web-acme-row"),
   settingsWebACME: document.querySelector("#settings-web-acme"),
   settingsLogRetention: document.querySelector("#settings-log-retention"),
+  settingsHideLocalDashboardIPs: document.querySelector("#settings-hide-local-dashboard-ips"),
   settingsCaddyMode: document.querySelector("#settings-caddy-mode"),
   settingsCaddyAPIURL: document.querySelector("#settings-caddy-api-url"),
   certificateForm: document.querySelector("#certificate-form"),
@@ -371,8 +372,10 @@ els.externalBlocklistList.addEventListener("click", (event) => {
   }
   const updateButton = event.target.closest("[data-update-blocklist]");
   if (!updateButton) return;
-  const url = updateButton.closest(".blocklist-row")?.querySelector('[data-blocklist-field="url"]')?.value.trim();
-  if (url) persistExternalBlocklists(url, false);
+  const row = updateButton.closest(".blocklist-row");
+  const url = row?.querySelector('[data-blocklist-field="url"]')?.value.trim();
+  const name = row?.querySelector('[data-blocklist-field="name"]')?.value.trim();
+  if (url) persistExternalBlocklists(url, false, updateButton, name);
 });
 document.querySelectorAll("[data-protection-tab]").forEach((tab) => tab.addEventListener("click", () => showProtectionTab(tab.dataset.protectionTab)));
 els.webProtectionCountriesButton.addEventListener("click", () => openCountryPicker("global"));
@@ -676,7 +679,7 @@ function renderSecurityOverview(data) {
   els.securityRuleCounts.innerHTML = `<div><span>Countries selected</span><strong>${format(rules.selectedCountries)}</strong></div><div><span>Manual blocked IPs</span><strong>${format(rules.manualBlockedIPs)}</strong></div><div><span>Allowed IPs</span><strong>${format(rules.allowedIPs)}</strong></div><div><span>External blocked IPs</span><strong>${format(rules.externalBlockedIPs)}</strong></div>`;
   const events = data.events || [];
   els.securityEvents.classList.toggle("has-multiple-events", events.length > 1);
-  els.securityEvents.innerHTML = events.length ? events.map((event) => `<article class="security-event"><div><strong>${escapeHTML(event.reason)}</strong><span>${escapeHTML(event.site)} · ${escapeHTML(event.address)}${event.country ? ` · ${escapeHTML(event.country)}` : ""}</span></div><time>${event.time ? new Date(event.time).toLocaleString() : ""}</time></article>`).join("") : '<p class="muted">No managed protection events in retained access logs.</p>';
+  els.securityEvents.innerHTML = events.length ? events.map((event) => `<article class="security-event"><strong>${escapeHTML(event.reason)}</strong><span>– ${escapeHTML(event.site)} – ${escapeHTML(event.address)}${event.country ? ` – ${escapeHTML(event.country)}` : ""}</span><time>– ${event.time ? new Date(event.time).toLocaleString() : ""}</time></article>`).join("") : '<p class="muted">No managed protection events in retained access logs.</p>';
 }
 
 function escapeHTML(value) {
@@ -691,25 +694,48 @@ function showProtectionTab(tab) {
 
 async function saveExternalBlocklists(event) {
   event.preventDefault();
-  await persistExternalBlocklists("", true);
+  await persistExternalBlocklists("", true, event.submitter || els.externalBlocklistsForm.querySelector('button[type="submit"]'));
 }
 
 function collectExternalBlocklists() {
-  return [...els.externalBlocklistList.querySelectorAll(".blocklist-row")].map((row) => ({
-    name: row.querySelector('[data-blocklist-field="name"]').value.trim(),
-    url: row.querySelector('[data-blocklist-field="url"]').value.trim(),
-  }));
+  const existing = settings?.externalBlocklists || [];
+  return [...els.externalBlocklistList.querySelectorAll(".blocklist-row")].map((row) => {
+    const name = row.querySelector('[data-blocklist-field="name"]').value.trim();
+    const url = row.querySelector('[data-blocklist-field="url"]').value.trim();
+    const previous = existing.find((feed) => feed.url === url) || existing.find((feed) => feed.name === name);
+    return { ...(previous || {}), name, url };
+  });
 }
 
-async function persistExternalBlocklists(refreshURL = "", refreshAll = false) {
+async function persistExternalBlocklists(refreshURL = "", refreshAll = false, trigger = null, listName = "") {
   const feeds = collectExternalBlocklists();
+  const refreshedCount = refreshAll ? feeds.length : 1;
+  const action = refreshAll ? `Saving and refreshing ${refreshedCount} external blocklist${refreshedCount === 1 ? "" : "s"}…` : `Updating ${listName || "external blocklist"}…`;
+  const controls = [...els.externalBlocklistsForm.querySelectorAll("button")];
+  controls.forEach((button) => { button.disabled = true; });
+  els.externalBlocklistsForm.setAttribute("aria-busy", "true");
+  setStatus(action);
+  showConfirmation(action, "pending");
   try {
     settings = await request("/api/settings", { method: "PUT", body: JSON.stringify({ ...settings, externalBlocklists: feeds, refreshExternalBlocklists: refreshAll, refreshExternalBlocklistUrl: refreshURL }) });
     renderExternalBlocklists(settings.externalBlocklists || []);
-    setStatus(`${feeds.length} external blocklist${feeds.length === 1 ? "" : "s"} active`);
-    showConfirmation(refreshURL ? "External blocklist updated" : "External blocklists refreshed", "success");
+    const total = Number(settings.externalBlockedIpCount || 0).toLocaleString();
+    const refreshed = (settings.externalBlocklists || []).find((feed) => feed.url === refreshURL);
+    const result = refreshURL
+      ? `${refreshed?.name || listName || "External blocklist"} updated · ${Number(refreshed?.count || 0).toLocaleString()} IPs`
+      : `${feeds.length} external blocklist${feeds.length === 1 ? "" : "s"} refreshed · ${total} blocked IPs total`;
+    setStatus(result);
+    showConfirmation(result, "success");
     loadSecurityOverview();
-  } catch (err) { setStatus(err.message); }
+  } catch (err) {
+    const result = `Blocklist update failed: ${err.message}`;
+    setStatus(result);
+    showConfirmation(result, "error");
+  } finally {
+    controls.forEach((button) => { button.disabled = false; });
+    els.externalBlocklistsForm.removeAttribute("aria-busy");
+    trigger?.blur();
+  }
 }
 
 function renderExternalBlocklists(feeds) {
@@ -916,6 +942,7 @@ async function loadSettings() {
     els.settingsWebHost.value = settings.webInterface?.host || "";
     els.settingsWebTLSEnabled.checked = !!settings.webInterface?.tlsEnabled;
     els.settingsLogRetention.value = settings.logRetention || 100;
+    els.settingsHideLocalDashboardIPs.checked = !!settings.hideLocalDashboardIps;
     els.settingsCaddyMode.value = settings.caddyMode || "file";
     els.settingsCaddyAPIURL.value = settings.caddyApiUrl || "";
     renderCertificatesView();
@@ -956,6 +983,7 @@ async function saveSettings(event) {
       acmeIssuerId: els.settingsWebTLSEnabled.checked ? els.settingsWebACME.value : "",
     },
     logRetention: Number(els.settingsLogRetention.value || 100),
+    hideLocalDashboardIps: els.settingsHideLocalDashboardIPs.checked,
     acmeIssuers: settings?.acmeIssuers || [],
     webProtection: settings?.webProtection || {},
     externalBlocklists: settings?.externalBlocklists || [],
@@ -1055,6 +1083,7 @@ async function saveIssuers(issuers, message) {
     oidc: settings?.oidc || {},
     webInterface: settings?.webInterface || {},
     logRetention: settings?.logRetention || Number(els.settingsLogRetention.value || 100),
+    hideLocalDashboardIps: !!settings?.hideLocalDashboardIps,
     acmeIssuers: issuers,
   };
   try {
@@ -2526,6 +2555,7 @@ function showConfirmation(message, kind = "success") {
   els.saveConfirmation.classList.add(kind);
   els.saveConfirmation.hidden = false;
   requestAnimationFrame(() => els.saveConfirmation.classList.add("visible"));
+  if (kind === "pending") return;
   confirmationTimer = window.setTimeout(() => {
     els.saveConfirmation.classList.remove("visible");
     window.setTimeout(() => { els.saveConfirmation.hidden = true; }, 180);
@@ -2575,7 +2605,7 @@ function renderGeoMap(data = {}) {
     const marker = document.createElementNS(svg.namespaceURI, "circle");
     marker.setAttribute("cx", String(x));
     marker.setAttribute("cy", String(y));
-    marker.setAttribute("r", "8");
+    marker.setAttribute("r", "4");
     marker.setAttribute("class", "geo-marker");
     marker.setAttribute("tabindex", "0");
     marker.setAttribute("role", "button");
@@ -2594,7 +2624,7 @@ function renderGeoMap(data = {}) {
 }
 
 function addGeoMapZoomControls(svg) {
-  const minZoom = 1, maxZoom = 4, zoomStep = 0.25;
+  const minZoom = 1.5, maxZoom = 4, zoomStep = 0.25;
   let zoom = minZoom, centerX = 500, centerY = 250, dragStart = null;
   const controls = document.createElement("div");
   controls.className = "geo-zoom-controls";
@@ -2618,7 +2648,7 @@ function addGeoMapZoomControls(svg) {
     clampCenter();
     const width = 1000 / zoom, height = 500 / zoom;
     svg.setAttribute("viewBox", `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`);
-    svg.querySelectorAll(".geo-marker").forEach((marker) => marker.setAttribute("r", String(8 / zoom)));
+    svg.querySelectorAll(".geo-marker").forEach((marker) => marker.setAttribute("r", String(4 / zoom)));
     slider.value = String(zoom);
     slider.setAttribute("aria-valuetext", `${Math.round(zoom * 100)} percent`);
     zoomOut.disabled = zoom <= minZoom; zoomIn.disabled = zoom >= maxZoom;

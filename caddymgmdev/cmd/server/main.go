@@ -195,6 +195,7 @@ type Settings struct {
 	OIDC                   OIDCSettings       `json:"oidc"`
 	ConfigPath             string             `json:"configPath"`
 	LogRetention           int                `json:"logRetention"`
+	HideLocalDashboardIPs  bool               `json:"hideLocalDashboardIps,omitempty"`
 	ACMEIssuers            []ACMEIssuer       `json:"acmeIssuers,omitempty"`
 	CaddyMode              string             `json:"caddyMode"`
 	CaddyAPIURL            string             `json:"caddyApiUrl"`
@@ -403,6 +404,7 @@ func main() {
 		log.Fatalf("prepare auth providers: %v", err)
 	}
 	app.startGeoIPUpdater()
+	app.startExternalBlocklistUpdater()
 	go func() {
 		if countries, err := app.loadGeoCountries(); err == nil {
 			log.Printf("GeoLite2 country cache ready with %d entries", len(countries))

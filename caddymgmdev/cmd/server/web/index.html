@@ -743,6 +743,12 @@
                 Log Retention
                 <input id="settings-log-retention" type="number" min="25" step="25" />
               </label>
+              <label class="status-check">
+                <input id="settings-hide-local-dashboard-ips" type="checkbox" />
+                <span class="status-check-title">Hide local network IPs from Dashboard</span>
+                <span class="status-check-state" data-enabled="Hidden" data-disabled="Shown"></span>
+              </label>
+              <p class="field-hint">Local and private addresses stay in access logs but are excluded from Dashboard statistics, the map, and Top IPs.</p>
             </section>
 
             </div>

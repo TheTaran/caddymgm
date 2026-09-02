@@ -200,6 +200,7 @@ func (a *App) handleGeoMap(w http.ResponseWriter, _ *http.Request) {
 	a.mu.Lock()
 	sites, _, _, err := a.load()
 	retention := a.settings.LogRetention
+	hideLocalIPs := a.settings.HideLocalDashboardIPs
 	a.mu.Unlock()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -226,6 +227,9 @@ func (a *App) handleGeoMap(w http.ResponseWriter, _ *http.Request) {
 		for _, line := range lines {
 			address, ok := accessLogClientAddress(line)
 			if !ok || !address.IsValid() {
+				continue
+			}
+			if hideLocalIPs && isLocalDashboardAddress(address) {
 				continue
 			}
 			topIP := addGeoIPAggregate(topByAddress, address.String(), site.Address)
@@ -320,10 +324,15 @@ func geoIPScope(value string) string {
 		return "external"
 	}
 	address = address.Unmap()
-	if address.IsPrivate() || address.IsLoopback() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() {
+	if isLocalDashboardAddress(address) {
 		return "internal"
 	}
 	return "external"
+}
+
+func isLocalDashboardAddress(address netip.Addr) bool {
+	address = address.Unmap()
+	return address.IsPrivate() || address.IsLoopback() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast()
 }
 
 func accessLogClientAddress(line string) (netip.Addr, bool) {

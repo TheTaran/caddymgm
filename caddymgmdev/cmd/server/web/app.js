@@ -28,6 +28,7 @@ const els = {
   geoTopIPSummary: document.querySelector("#geo-top-ip-summary"),
   geoIPScope: document.querySelector("#geo-ip-scope"),
   geoIPHost: document.querySelector("#geo-ip-host"),
+  geoIPFilter: document.querySelector("#geo-ip-filter"),
   geoIPLimit: document.querySelector("#geo-ip-limit"),
   geoMapDetails: document.querySelector("#geo-map-details"),
   siteList: document.querySelector("#site-list"),
@@ -330,6 +331,7 @@ els.protectionEventToggle.addEventListener("click", toggleProtectionEventsExpand
 els.securityOverviewPeriod.addEventListener("change", loadSecurityOverview);
 els.geoIPScope.addEventListener("change", renderTopIPs);
 els.geoIPHost.addEventListener("change", renderTopIPs);
+els.geoIPFilter.addEventListener("input", renderTopIPs);
 els.geoIPLimit.addEventListener("change", renderTopIPs);
 [els.hostFilterProtocol, els.hostFilterCertificateProvider, els.hostFilterVisibility, els.hostFilterMode, els.hostFilterUpstreamTLS, els.hostFilterStatus, els.hostFilterAuth, els.hostFilterComment].forEach((filter) => {
   filter.addEventListener(filter.tagName === "INPUT" ? "input" : "change", applyHostFilters);
@@ -2642,7 +2644,7 @@ function renderGeoMap(data = {}) {
 }
 
 function addGeoMapZoomControls(svg) {
-  const minZoom = 1.5, maxZoom = 4, zoomStep = 0.25;
+  const minZoom = 1, maxZoom = 8, zoomStep = 0.25;
   let zoom = minZoom, centerX = 500, centerY = 250, dragStart = null;
   const controls = document.createElement("div");
   controls.className = "geo-zoom-controls";
@@ -2721,11 +2723,13 @@ function renderTopIPs() {
   els.geoTopIPList.innerHTML = "";
   const scope = els.geoIPScope.value || "all";
   const host = els.geoIPHost.value || "all";
+  const addressFilter = els.geoIPFilter.value.trim().toLowerCase();
   const limit = Number(els.geoIPLimit.value || 10);
   const filtered = latestGeoTopIPs.filter((ip) => {
     const scopeMatches = scope === "all" || ip.scope === scope;
     const hostMatches = host === "all" || (ip.sites || []).includes(host);
-    return scopeMatches && hostMatches;
+    const addressMatches = !addressFilter || String(ip.address || "").toLowerCase().includes(addressFilter);
+    return scopeMatches && hostMatches && addressMatches;
   });
   filtered.sort((left, right) => {
     const leftCount = host === "all" ? Number(left.count || 0) : Number(left.siteCounts?.[host] || 0);

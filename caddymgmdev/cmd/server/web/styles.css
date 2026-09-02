@@ -180,14 +180,24 @@ button.danger {
 
 .manual-list-mode {
   width: fit-content;
+  border: 1px solid transparent;
   border-radius: 999px;
-  padding: 3px 8px;
+  padding: 3px 9px;
   font-size: 11px;
   font-weight: 700;
 }
 
-.manual-list-mode.allow { background: rgba(84, 214, 144, .13); color: var(--ok); }
-.manual-list-mode.block { background: rgba(255, 45, 99, .12); color: #ff98b2; }
+.manual-list-mode.allow {
+  border-color: rgba(84, 214, 144, .52);
+  background: rgba(38, 170, 102, .28);
+  color: #87f3b7;
+}
+
+.manual-list-mode.block {
+  border-color: rgba(255, 86, 128, .58);
+  background: rgba(190, 38, 78, .30);
+  color: #ffadc2;
+}
 
 .ip-entry-preview {
   position: relative;
@@ -2668,7 +2678,7 @@ pre {
 
 .geo-top-controls {
   display: grid;
-  grid-template-columns: minmax(90px, 0.8fr) minmax(130px, 1.5fr) minmax(78px, 0.65fr);
+  grid-template-columns: minmax(90px, 0.75fr) minmax(130px, 1.35fr) minmax(110px, 1fr) minmax(78px, 0.55fr);
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--line);
@@ -2689,7 +2699,8 @@ pre {
   text-transform: uppercase;
 }
 
-.geo-top-controls select {
+.geo-top-controls select,
+.geo-top-controls input {
   width: 100%;
   min-width: 0;
   height: 32px;

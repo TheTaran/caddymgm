@@ -123,7 +123,6 @@
           <div class="section-title">
             <span id="section-title-icon" class="title-icon section-icon" aria-hidden="true"></span>
             <h2 id="section-title">Web Hosts Overview</h2>
-            <span id="status" class="status-pill">Loading websites...</span>
           </div>
         </section>
 
@@ -420,7 +419,7 @@
         </section>
 
         <section id="view-web-protection" class="view">
-          <div class="site-editor-tabs" role="tablist" aria-label="Web Protection sections"><button type="button" class="site-editor-tab active" data-protection-tab="geo">GEO IP Blocking</button><button type="button" class="site-editor-tab" data-protection-tab="lists">IP Lists</button></div>
+          <div class="site-editor-tabs" role="tablist" aria-label="Web Protection sections"><button type="button" class="site-editor-tab active" data-protection-tab="geo">GEO IP Blocking</button><button type="button" class="site-editor-tab" data-protection-tab="lists">Blocked / Allow IP Lists</button></div>
           <section id="web-protection-defaults" class="panel-card editor-card">
             <form id="web-protection-form">
               <div class="panel-heading"><h2>GEO IP Blocking</h2><span>Global defaults for all web hosts</span></div>
@@ -433,7 +432,7 @@
             </form>
           </section>
           <section id="ip-lists-panel" class="panel-card editor-card" hidden>
-            <div class="panel-heading"><div><h2>IP Lists</h2><span id="external-blocklist-total">0 blocked IPs across all external lists</span></div></div>
+            <div class="panel-heading"><div><h2>Blocked / Allow IP Lists</h2><span id="external-blocklist-total">0 blocked IPs across all external lists</span></div></div>
             <div class="ip-list-groups">
               <section class="ip-list-group"><div class="ip-list-group-heading"><h3>Manual Allow-/Blockedlists</h3><button id="manual-ip-list-add" type="button" class="secondary">Add manual IP list</button></div><div class="manual-list-table-head" aria-hidden="true"><span>Name</span><span>Type</span><span>Reference</span><span>Entries</span><span>Actions</span></div><div id="manual-ip-list-list" class="manual-ip-list-list"></div><p id="manual-ip-list-empty" class="muted">No manual IP lists configured.</p></section>
             <form id="external-blocklists-form" class="ip-list-group"><div class="ip-list-group-heading"><h3>External Blocklists</h3><button id="external-blocklist-add" type="button" class="secondary">Add external blocklist</button></div>

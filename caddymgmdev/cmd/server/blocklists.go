@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -60,7 +61,7 @@ func normalizeManualIPLists(values ManualIPLists) (ManualIPLists, error) {
 		if seen[key] {
 			return nil, errors.New("manual IP list names must be unique")
 		}
-		entries, err := normalizeProtectionPrefixes(value.Entries, mode == "allow")
+		entries, err := normalizeManualIPListEntries(value.Entries, mode == "allow")
 		if err != nil {
 			return nil, err
 		}
@@ -68,6 +69,39 @@ func normalizeManualIPLists(values ManualIPLists) (ManualIPLists, error) {
 		result = append(result, ManualIPList{Name: name, Reference: strings.TrimSpace(value.Reference), Mode: mode, Entries: entries})
 	}
 	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
+	return result, nil
+}
+
+// normalizeManualIPListEntries validates manual values without changing their
+// notation. Named manual lists are administrator-managed records, so a host
+// address remains a host address and an entered CIDR remains exactly that CIDR.
+func normalizeManualIPListEntries(values []string, allowPrivate bool) ([]string, error) {
+	if len(values) > 5000 {
+		return nil, errors.New("a protection list may contain at most 5000 entries")
+	}
+	result, seen := make([]string, 0, len(values)), map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		address, err := netip.ParseAddr(value)
+		if err != nil {
+			prefix, prefixErr := netip.ParsePrefix(value)
+			if prefixErr != nil {
+				return nil, errors.New("IP protection entries must be valid IP addresses or CIDR ranges")
+			}
+			address = prefix.Addr()
+		}
+		address = address.Unmap()
+		if !allowPrivate && (address.IsPrivate() || address.IsLoopback() || address.IsLinkLocalUnicast() || address.IsMulticast() || address.IsUnspecified()) {
+			return nil, errors.New("block lists cannot contain private, loopback, link-local, multicast, or unspecified addresses")
+		}
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
 	return result, nil
 }
 
@@ -399,6 +433,59 @@ func isSafeExternalAddress(address netip.Addr) bool {
 }
 
 func collectBlocklistEntries(reader io.Reader, entries map[string]bool) error {
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+	trimmed := bytes.TrimSpace(content)
+	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
+		return collectJSONBlocklistEntries(trimmed, entries)
+	}
+	return collectTextBlocklistEntries(bytes.NewReader(content), entries)
+}
+
+// collectJSONBlocklistEntries accepts both regular JSON documents and newline-
+// delimited JSON feeds. Every string value is validated as an IP or CIDR, so
+// feeds may use fields such as cidr, ip, address, network, or prefix without
+// requiring source-specific parsers.
+func collectJSONBlocklistEntries(content []byte, entries map[string]bool) error {
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	for {
+		var value any
+		err := decoder.Decode(&value)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("parse JSON blocklist: %w", err)
+		}
+		if err := collectJSONBlocklistValue(value, entries); err != nil {
+			return err
+		}
+	}
+}
+
+func collectJSONBlocklistValue(value any, entries map[string]bool) error {
+	switch item := value.(type) {
+	case string:
+		return collectBlocklistEntry(item, entries)
+	case []any:
+		for _, value := range item {
+			if err := collectJSONBlocklistValue(value, entries); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		for _, value := range item {
+			if err := collectJSONBlocklistValue(value, entries); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func collectTextBlocklistEntries(reader io.Reader, entries map[string]bool) error {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 	for scanner.Scan() {
@@ -406,21 +493,34 @@ func collectBlocklistEntries(reader io.Reader, entries map[string]bool) error {
 		if value == "" {
 			continue
 		}
-		prefix, err := netip.ParsePrefix(value)
-		if err != nil {
-			if addr, addrErr := netip.ParseAddr(value); addrErr == nil {
-				prefix = netip.PrefixFrom(addr, addr.BitLen())
-			} else {
-				continue
-			}
+		// Threat feeds commonly append a classification after whitespace or a
+		// semicolon (for example: "1.2.3.0/24 ; SBL123"). Only the first token
+		// is the address/CIDR and must be passed to the IP parser.
+		if fields := strings.Fields(value); len(fields) > 0 {
+			value = fields[0]
 		}
-		if !isPublicAddress(prefix.Addr()) {
-			continue
-		}
-		entries[prefix.Masked().String()] = true
-		if len(entries) > 50000 {
-			return errors.New("external blocklists exceed 50000 entries")
+		if err := collectBlocklistEntry(value, entries); err != nil {
+			return err
 		}
 	}
 	return scanner.Err()
+}
+
+func collectBlocklistEntry(value string, entries map[string]bool) error {
+	prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
+	if err != nil {
+		address, addressErr := netip.ParseAddr(strings.TrimSpace(value))
+		if addressErr != nil {
+			return nil
+		}
+		prefix = netip.PrefixFrom(address, address.BitLen())
+	}
+	if !isPublicAddress(prefix.Addr()) {
+		return nil
+	}
+	entries[prefix.Masked().String()] = true
+	if len(entries) > 50000 {
+		return errors.New("external blocklists exceed 50000 entries")
+	}
+	return nil
 }

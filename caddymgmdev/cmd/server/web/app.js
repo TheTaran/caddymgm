@@ -1,5 +1,4 @@
 const els = {
-  status: document.querySelector("#status"),
   saveConfirmation: document.querySelector("#save-confirmation"),
   pageTitle: document.querySelector("#page-title"),
   pageTitleIcon: document.querySelector("#page-title-icon"),
@@ -292,10 +291,10 @@ let settings = null;
 let logPollTimer = null;
 let acmeDialogTimer = null;
 let acmeDialogContext = null;
-let serviceLogsExpanded = false;
-let siteLogsExpanded = false;
-let oidcLogsExpanded = false;
-let protectionEventsExpanded = false;
+let serviceLogVisibleLimit = 10;
+let siteLogVisibleLimit = 10;
+let oidcLogVisibleLimit = 10;
+let protectionEventVisibleLimit = 10;
 let editingSite = null;
 let latestSiteLogs = [];
 let latestServiceLogs = [];
@@ -304,6 +303,7 @@ let latestProtectionEvents = [];
 let latestGeoTopIPs = [];
 let latestServiceLogsAvailable = true;
 const LOG_PREVIEW_LIMIT = 10;
+const LOG_LOAD_MORE_LIMIT = 100;
 
 document.querySelector("#logout").addEventListener("click", logout);
 document.querySelector("#new-site").addEventListener("click", () => {
@@ -319,7 +319,7 @@ els.form.addEventListener("invalid", (event) => {
 }, true);
 els.delete.addEventListener("click", deleteSite);
 els.logSiteFilter.addEventListener("change", () => {
-  siteLogsExpanded = false;
+  siteLogVisibleLimit = LOG_PREVIEW_LIMIT;
   loadLogs();
   syncLogPolling();
 });
@@ -501,6 +501,13 @@ function renderVersionStatus(name, info = {}) {
   }
 }
 
+function resetLogVisibleLimit(table) {
+  if (table === "service-logs") serviceLogVisibleLimit = LOG_PREVIEW_LIMIT;
+  if (table === "site-logs") siteLogVisibleLimit = LOG_PREVIEW_LIMIT;
+  if (table === "oidc-logs") oidcLogVisibleLimit = LOG_PREVIEW_LIMIT;
+  if (table === "protection-events") protectionEventVisibleLimit = LOG_PREVIEW_LIMIT;
+}
+
 function showLogsTab(name, focus = false) {
   document.querySelectorAll("[data-logs-tab]").forEach((tab) => {
     const active = tab.dataset.logsTab === name;
@@ -512,6 +519,13 @@ function showLogsTab(name, focus = false) {
   document.querySelectorAll("[data-logs-panel]").forEach((panel) => {
     panel.hidden = panel.dataset.logsPanel !== name;
   });
+  const logTables = {
+    service: "service-logs",
+    websites: "site-logs",
+    oidc: "oidc-logs",
+    "web-protection": "protection-events",
+  };
+  resetLogVisibleLimit(logTables[name]);
   if (name === "service") loadServiceLogs();
   if (name === "websites") loadLogs();
   if (name === "oidc") loadOIDCLogs();
@@ -674,12 +688,12 @@ function renderSecurityOverview(data) {
   els.security4xx.textContent = format(data.clientErrors);
   els.security5xx.textContent = format(data.serverErrors);
   const periodLabel = els.securityOverviewPeriod.options[els.securityOverviewPeriod.selectedIndex]?.text || "24 hours";
-  els.securityOverviewSummary.textContent = `${format(data.requests)} retained request${Number(data.requests) === 1 ? "" : "s"} · ${periodLabel}`;
+  els.securityOverviewSummary.textContent = `${format(data.requests)} retained request${Number(data.requests) === 1 ? "" : "s"} - ${periodLabel}`;
   const rules = data.ruleCounts || {};
   els.securityRuleCounts.innerHTML = `<div><span>Countries selected</span><strong>${format(rules.selectedCountries)}</strong></div><div><span>Manual blocked IPs</span><strong>${format(rules.manualBlockedIPs)}</strong></div><div><span>Allowed IPs</span><strong>${format(rules.allowedIPs)}</strong></div><div><span>External blocked IPs</span><strong>${format(rules.externalBlockedIPs)}</strong></div>`;
   const events = data.events || [];
   els.securityEvents.classList.toggle("has-multiple-events", events.length > 1);
-  els.securityEvents.innerHTML = events.length ? events.map((event) => `<article class="security-event"><strong>${escapeHTML(event.reason)}</strong><span>– ${escapeHTML(event.site)} – ${escapeHTML(event.address)}${event.country ? ` – ${escapeHTML(event.country)}` : ""}</span><time>– ${event.time ? new Date(event.time).toLocaleString() : ""}</time></article>`).join("") : '<p class="muted">No managed protection events in retained access logs.</p>';
+  els.securityEvents.innerHTML = events.length ? events.map((event) => `<article class="security-event"><strong>${escapeHTML(event.reason)}</strong><span> - ${escapeHTML(event.site)} - ${escapeHTML(event.address)}${event.country ? ` - ${escapeHTML(event.country)}` : ""}</span><time> - ${event.time ? new Date(event.time).toLocaleString() : ""}</time></article>`).join("") : '<p class="muted">No managed protection events in retained access logs.</p>';
 }
 
 function escapeHTML(value) {
@@ -722,8 +736,8 @@ async function persistExternalBlocklists(refreshURL = "", refreshAll = false, tr
     const total = Number(settings.externalBlockedIpCount || 0).toLocaleString();
     const refreshed = (settings.externalBlocklists || []).find((feed) => feed.url === refreshURL);
     const result = refreshURL
-      ? `${refreshed?.name || listName || "External blocklist"} updated · ${Number(refreshed?.count || 0).toLocaleString()} IPs`
-      : `${feeds.length} external blocklist${feeds.length === 1 ? "" : "s"} refreshed · ${total} blocked IPs total`;
+      ? `${refreshed?.name || listName || "External blocklist"} updated - ${Number(refreshed?.count || 0).toLocaleString()} IPs`
+      : `${feeds.length} external blocklist${feeds.length === 1 ? "" : "s"} refreshed - ${total} blocked IPs total`;
     setStatus(result);
     showConfirmation(result, "success");
     loadSecurityOverview();
@@ -984,6 +998,7 @@ async function saveSettings(event) {
     },
     logRetention: Number(els.settingsLogRetention.value || 100),
     hideLocalDashboardIps: els.settingsHideLocalDashboardIPs.checked,
+    manualIpLists: settings?.manualIpLists || [],
     acmeIssuers: settings?.acmeIssuers || [],
     webProtection: settings?.webProtection || {},
     externalBlocklists: settings?.externalBlocklists || [],
@@ -1084,6 +1099,7 @@ async function saveIssuers(issuers, message) {
     webInterface: settings?.webInterface || {},
     logRetention: settings?.logRetention || Number(els.settingsLogRetention.value || 100),
     hideLocalDashboardIps: !!settings?.hideLocalDashboardIps,
+    manualIpLists: settings?.manualIpLists || [],
     acmeIssuers: issuers,
   };
   try {
@@ -1473,6 +1489,7 @@ function applyTableFilter(event) {
   const filters = tableFilters[input.dataset.filterTable];
   if (!filters) return;
   filters[input.dataset.filterKey] = input.value.trim().toLowerCase();
+  resetLogVisibleLimit(input.dataset.filterTable);
   renderSortedTable(input.dataset.filterTable);
 }
 
@@ -1487,6 +1504,7 @@ function resetTableFilters(event) {
   if (table === "dashboard") Object.assign(filters, { protocol: "all", visibility: "all", mode: "all", upstreamTls: "all", status: "all", auth: "all" });
   if (table === "certificates") Object.assign(filters, { expires: "all", status: "all" });
   if (table === "site-logs") filters.method = "all";
+  resetLogVisibleLimit(table);
   renderSortedTable(table);
 }
 
@@ -1700,7 +1718,7 @@ function renderLogs(logs) {
     els.logList.append(empty);
     return;
   }
-  const visibleLogs = siteLogsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
+  const visibleLogs = sorted.slice(0, siteLogVisibleLimit);
   for (const entry of visibleLogs) {
     const row = document.createElement("div");
     row.className = "log-row";
@@ -1719,7 +1737,7 @@ function renderLogs(logs) {
     row.children[3].classList.toggle("off", !String(entry.status || "").startsWith("2"));
     els.logList.append(row);
   }
-  syncLogToggle(els.siteLogToggle, sorted.length, siteLogsExpanded);
+  syncLogToggle(els.siteLogToggle, sorted.length, siteLogVisibleLimit);
 }
 
 function renderServiceLogs(logs, available = true) {
@@ -1751,7 +1769,7 @@ function renderServiceLogs(logs, available = true) {
     els.serviceLogList.append(empty);
     return;
   }
-  const visibleLogs = serviceLogsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
+  const visibleLogs = sorted.slice(0, serviceLogVisibleLimit);
   for (const entry of visibleLogs) {
     const row = document.createElement("div");
     row.className = "log-row service-log-row";
@@ -1770,7 +1788,7 @@ function renderServiceLogs(logs, available = true) {
     row.children[3].classList.toggle("off", String(entry.status || "").toUpperCase() === "ERROR");
     els.serviceLogList.append(row);
   }
-  syncLogToggle(els.serviceLogToggle, sorted.length, serviceLogsExpanded);
+  syncLogToggle(els.serviceLogToggle, sorted.length, serviceLogVisibleLimit);
 }
 
 async function loadOIDCLogs() {
@@ -1800,7 +1818,7 @@ function renderOIDCLogs(logs) {
     els.oidcLogList.append(empty);
     return;
   }
-  const visibleLogs = oidcLogsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
+  const visibleLogs = sorted.slice(0, oidcLogVisibleLimit);
   for (const entry of visibleLogs) {
     const row = document.createElement("div");
     row.className = "log-row oidc-log-row";
@@ -1818,30 +1836,31 @@ function renderOIDCLogs(logs) {
     row.children[5].classList.toggle("off", !["success", "pending"].includes(String(entry.status || "").toLowerCase()));
     els.oidcLogList.append(row);
   }
-  syncLogToggle(els.oidcLogToggle, sorted.length, oidcLogsExpanded);
+  syncLogToggle(els.oidcLogToggle, sorted.length, oidcLogVisibleLimit);
 }
 
-function syncLogToggle(button, total, expanded) {
-  if (total <= LOG_PREVIEW_LIMIT) {
+function syncLogToggle(button, total, visibleLimit) {
+  const remaining = Math.max(0, total - visibleLimit);
+  if (!remaining) {
     button.hidden = true;
     return;
   }
   button.hidden = false;
-  button.textContent = expanded ? "Show less" : `Show ${total - LOG_PREVIEW_LIMIT} more`;
+  button.textContent = `Show next ${Math.min(LOG_LOAD_MORE_LIMIT, remaining)}`;
 }
 
 function toggleServiceLogsExpanded() {
-  serviceLogsExpanded = !serviceLogsExpanded;
+  serviceLogVisibleLimit += LOG_LOAD_MORE_LIMIT;
   loadServiceLogs();
 }
 
 function toggleSiteLogsExpanded() {
-  siteLogsExpanded = !siteLogsExpanded;
+  siteLogVisibleLimit += LOG_LOAD_MORE_LIMIT;
   loadLogs();
 }
 
 function toggleOIDCLogsExpanded() {
-  oidcLogsExpanded = !oidcLogsExpanded;
+  oidcLogVisibleLimit += LOG_LOAD_MORE_LIMIT;
   loadOIDCLogs();
 }
 
@@ -1878,7 +1897,7 @@ function renderProtectionEvents(events) {
     els.protectionEventList.append(empty);
     return;
   }
-  const visibleEvents = protectionEventsExpanded ? sorted : sorted.slice(0, LOG_PREVIEW_LIMIT);
+  const visibleEvents = sorted.slice(0, protectionEventVisibleLimit);
   for (const entry of visibleEvents) {
     const row = document.createElement("div");
     row.className = "log-row protection-log-row";
@@ -1897,11 +1916,11 @@ function renderProtectionEvents(events) {
     row.children[5].append(addButton);
     els.protectionEventList.append(row);
   }
-  syncLogToggle(els.protectionEventToggle, sorted.length, protectionEventsExpanded);
+  syncLogToggle(els.protectionEventToggle, sorted.length, protectionEventVisibleLimit);
 }
 
 function toggleProtectionEventsExpanded() {
-  protectionEventsExpanded = !protectionEventsExpanded;
+  protectionEventVisibleLimit += LOG_LOAD_MORE_LIMIT;
   loadProtectionEvents();
 }
 
@@ -2044,7 +2063,7 @@ function syncProxyBehaviorOverview() {
   const publicScheme = els.tlsEnabled.checked ? "https" : "http";
   const publicOrigin = `${publicScheme}://${publicHost}`;
   els.proxyOverviewHost.textContent = publicHost;
-  els.proxyOverviewForwarded.textContent = `${publicHost} · ${publicScheme}`;
+  els.proxyOverviewForwarded.textContent = `${publicHost} - ${publicScheme}`;
 
   const origins = [];
   let upstreamOrigin = "";
@@ -2215,13 +2234,13 @@ async function saveSite(event) {
     els.formTitle.textContent = "Edit Website";
     els.delete.hidden = !els.id.value;
     if (payload.tlsMode !== "acme") {
-      setStatus("Website saved · TLS disabled");
-      showConfirmation("Website saved · TLS disabled", "success");
+      setStatus("Website saved - TLS disabled");
+      showConfirmation("Website saved - TLS disabled", "success");
       return;
     }
     if (!payload.enabled) {
-      setStatus("Website saved · TLS configured, website inactive");
-      showConfirmation("TLS configured · Website inactive", "pending");
+      setStatus("Website saved - TLS configured, website inactive");
+      showConfirmation("TLS configured - Website inactive", "pending");
       return;
     }
     if (refreshedSite.certificateExpiresAt) {
@@ -2233,11 +2252,11 @@ async function saveSite(event) {
 
     if (shouldOpenACMEStatus(previousSite, payload, refreshedSite)) showACMEStatus(refreshedSite);
     setStatus(`Checking TLS certificate for ${refreshedSite.address}...`);
-    showConfirmation("Website saved · Checking TLS certificate…", "pending");
+    showConfirmation("Website saved - Checking TLS certificate…", "pending");
     const verifiedSite = await waitForCertificate(refreshedSite.id, refreshedSite.address);
     if (verifiedSite) {
       editingSite = { ...verifiedSite };
-      setACMEResult("success", `Certificate issued · Valid until ${formatCertificateExpiry(verifiedSite.certificateExpiresAt)}`);
+      setACMEResult("success", `Certificate issued - Valid until ${formatCertificateExpiry(verifiedSite.certificateExpiresAt)}`);
       await loadSites();
       const message = `TLS certificate issued successfully for ${verifiedSite.address}`;
       setStatus(message);
@@ -2251,7 +2270,7 @@ async function saveSite(event) {
   } catch (err) {
     setStatus(err.message);
     setACMEResult("error", err.message);
-    showConfirmation(`Save failed · ${err.message}`, "error");
+    showConfirmation(`Save failed - ${err.message}`, "error");
   }
 }
 
@@ -2540,10 +2559,9 @@ function isInternalIPAddress(host) {
     || /^fe[89ab]/.test(ipv6);
 }
 
-function setStatus(message) {
-  const text = String(message || "");
-  els.status.textContent = text.length > 96 ? `${text.slice(0, 93)}...` : text;
-  els.status.title = text;
+function setStatus(_message) {
+  // Persistent page-header status was intentionally removed. User-facing action
+  // feedback is shown through the transient confirmation popup instead.
 }
 
 let confirmationTimer = null;
@@ -2588,7 +2606,7 @@ function renderGeoMap(data = {}) {
     return;
   }
   const requestCount = Number(data.requests || 0);
-  els.geoMapSummary.textContent = `${requestCount} public request${requestCount === 1 ? "" : "s"} · ${locations.length} location${locations.length === 1 ? "" : "s"}`;
+  els.geoMapSummary.textContent = `${requestCount} public request${requestCount === 1 ? "" : "s"} - ${locations.length} location${locations.length === 1 ? "" : "s"}`;
   if (!locations.length) {
     appendGeoMapEmpty("No public website accesses found in the retained logs.");
     return;

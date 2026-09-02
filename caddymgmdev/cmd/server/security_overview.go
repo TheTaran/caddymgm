@@ -205,22 +205,28 @@ func classifyProtectionBlock(address netip.Addr, policy WebProtection, usesGloba
 	if !policy.Enabled || newProtectionPrefixSet(policy.AllowedIPs).contains(address) {
 		return "", ""
 	}
-	if usesGlobal && external.contains(address) {
-		return "External blocklist", ""
-	}
-	if newProtectionPrefixSet(policy.BlockedIPs).contains(address) {
-		return "Manual blocked IP", ""
-	}
-	if len(policy.BlockedCountries) == 0 {
-		return "", ""
-	}
 	countryCode, country := "", ""
 	if database != nil && isPublicAddress(address) {
 		var record geoCityRecord
 		if database.Lookup(address).Decode(&record) == nil {
-			countryCode = strings.ToUpper(record.Country.ISOCode)
-			country = geoFirstNonEmpty(record.Country.Names["en"], record.Country.Names["de"])
+			countryCode = strings.ToUpper(geoFirstNonEmpty(record.Country.ISOCode, record.RegisteredCountry.ISOCode))
+			country = geoFirstNonEmpty(
+				record.Country.Names["en"],
+				record.Country.Names["de"],
+				record.RegisteredCountry.Names["en"],
+				record.RegisteredCountry.Names["de"],
+				countryCode,
+			)
 		}
+	}
+	if usesGlobal && external.contains(address) {
+		return "External blocklist", country
+	}
+	if newProtectionPrefixSet(policy.BlockedIPs).contains(address) {
+		return "Manual blocked IP", country
+	}
+	if len(policy.BlockedCountries) == 0 {
+		return "", ""
 	}
 	selected := false
 	for _, code := range policy.BlockedCountries {

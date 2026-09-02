@@ -862,13 +862,17 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if next.ManualIPLists == nil && (len(next.WebProtection.BlockedIPs) > 0 || len(next.WebProtection.AllowedIPs) > 0) {
-		next.ManualIPLists = ManualIPLists{}
-		if len(next.WebProtection.BlockedIPs) > 0 {
-			next.ManualIPLists = append(next.ManualIPLists, ManualIPList{Name: "Imported blocked IPs", Mode: "block", Entries: next.WebProtection.BlockedIPs})
-		}
-		if len(next.WebProtection.AllowedIPs) > 0 {
-			next.ManualIPLists = append(next.ManualIPLists, ManualIPList{Name: "Imported allowed IPs", Mode: "allow", Entries: next.WebProtection.AllowedIPs})
+	if next.ManualIPLists == nil {
+		if a.settings.ManualIPLists != nil {
+			next.ManualIPLists = append(ManualIPLists(nil), a.settings.ManualIPLists...)
+		} else if len(next.WebProtection.BlockedIPs) > 0 || len(next.WebProtection.AllowedIPs) > 0 {
+			next.ManualIPLists = ManualIPLists{}
+			if len(next.WebProtection.BlockedIPs) > 0 {
+				next.ManualIPLists = append(next.ManualIPLists, ManualIPList{Name: "Imported blocked IPs", Mode: "block", Entries: next.WebProtection.BlockedIPs})
+			}
+			if len(next.WebProtection.AllowedIPs) > 0 {
+				next.ManualIPLists = append(next.ManualIPLists, ManualIPList{Name: "Imported allowed IPs", Mode: "allow", Entries: next.WebProtection.AllowedIPs})
+			}
 		}
 	}
 	manualLists, err := normalizeManualIPLists(next.ManualIPLists)

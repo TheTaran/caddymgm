@@ -126,7 +126,10 @@ const els = {
   protectionOverrideFields: document.querySelector("#protection-override-fields"),
   siteProtectionEnabled: document.querySelector("#site-protection-enabled"),
   siteProtectionCountryMode: document.querySelector("#site-protection-country-mode"),
-  siteProtectionCountries: document.querySelector("#site-protection-countries"),
+  siteProtectionModeBlock: document.querySelector("#site-protection-mode-block"),
+  siteProtectionModeAllow: document.querySelector("#site-protection-mode-allow"),
+  siteProtectionCountriesButton: document.querySelector("#site-protection-countries-button"),
+  siteProtectionCountriesSummary: document.querySelector("#site-protection-countries-summary"),
   siteProtectionBlockedIPs: document.querySelector("#site-protection-blocked-ips"),
   siteProtectionAllowedIPs: document.querySelector("#site-protection-allowed-ips"),
   siteAuthEnabled: document.querySelector("#site-auth-enabled"),
@@ -341,6 +344,8 @@ els.settingsForm.addEventListener("submit", saveSettings);
 els.webProtectionForm.addEventListener("submit", saveWebProtection);
 els.webProtectionModeBlock.addEventListener("click", () => setWebProtectionCountryMode("block"));
 els.webProtectionModeAllow.addEventListener("click", () => setWebProtectionCountryMode("allow"));
+els.siteProtectionModeBlock.addEventListener("click", () => setSiteProtectionCountryMode("block"));
+els.siteProtectionModeAllow.addEventListener("click", () => setSiteProtectionCountryMode("allow"));
 els.manualIPListForm.addEventListener("submit", saveManualIPList);
 els.manualIPListAdd.addEventListener("click", () => openManualIPListDialog());
 els.manualIPListClose.addEventListener("click", () => els.manualIPListDialog.close());
@@ -370,13 +375,15 @@ els.externalBlocklistList.addEventListener("click", (event) => {
   if (url) persistExternalBlocklists(url, false);
 });
 document.querySelectorAll("[data-protection-tab]").forEach((tab) => tab.addEventListener("click", () => showProtectionTab(tab.dataset.protectionTab)));
-els.webProtectionCountriesButton.addEventListener("click", openCountryPicker);
+els.webProtectionCountriesButton.addEventListener("click", () => openCountryPicker("global"));
+els.siteProtectionCountriesButton.addEventListener("click", () => openCountryPicker("site"));
 els.countryPickerSearch.addEventListener("input", renderCountryPicker);
 els.countryPickerList.addEventListener("change", (event) => {
   if (!(event.target instanceof HTMLInputElement) || event.target.type !== "checkbox") return;
-  const selected = new Set(selectedProtectionCountries);
+  const selected = new Set(countryPickerTarget === "site" ? selectedSiteProtectionCountries : selectedProtectionCountries);
   if (event.target.checked) selected.add(event.target.value); else selected.delete(event.target.value);
-  selectedProtectionCountries = [...selected].sort();
+  if (countryPickerTarget === "site") selectedSiteProtectionCountries = [...selected].sort();
+  else selectedProtectionCountries = [...selected].sort();
 });
 els.countryPickerApply.addEventListener("click", applyCountryPicker);
 els.settingsPassword.addEventListener("input", syncSettingsPasswordConfirmation);
@@ -635,6 +642,15 @@ function setWebProtectionCountryMode(mode) {
   els.webProtectionModeAllow.setAttribute("aria-pressed", String(!block));
 }
 
+function setSiteProtectionCountryMode(mode) {
+  els.siteProtectionCountryMode.value = mode;
+  const block = mode === "block";
+  els.siteProtectionModeBlock.classList.toggle("active", block);
+  els.siteProtectionModeAllow.classList.toggle("active", !block);
+  els.siteProtectionModeBlock.setAttribute("aria-pressed", String(block));
+  els.siteProtectionModeAllow.setAttribute("aria-pressed", String(!block));
+}
+
 async function loadSecurityOverview() {
   try {
     renderSecurityOverview(await request(`/api/security-overview?period=${encodeURIComponent(els.securityOverviewPeriod.value || "1d")}`));
@@ -712,24 +728,34 @@ function addExternalBlocklist() {
 
 let protectionCountries = [];
 let selectedProtectionCountries = [];
+let selectedSiteProtectionCountries = [];
+let countryPickerTarget = "global";
 async function loadProtectionCountries() {
   if (protectionCountries.length) return;
   const data = await request("/api/geo-countries");
   protectionCountries = data.countries || [];
 }
 function renderSelectedProtectionCountries() {
+  renderSelectedCountries(els.webProtectionCountriesSummary, selectedProtectionCountries);
+}
+function renderSelectedSiteProtectionCountries() {
+  renderSelectedCountries(els.siteProtectionCountriesSummary, selectedSiteProtectionCountries);
+}
+function renderSelectedCountries(container, codes) {
   const byCode = new Map(protectionCountries.map((country) => [country.code, country]));
-  const selected = selectedProtectionCountries.map((code) => byCode.get(code)).filter(Boolean);
+  const selected = codes.map((code) => byCode.get(code)).filter(Boolean);
   if (!selected.length) {
-    els.webProtectionCountriesSummary.innerHTML = '<p class="field-hint">No countries selected.</p>';
+    container.innerHTML = '<p class="field-hint">No countries selected.</p>';
     return;
   }
-  els.webProtectionCountriesSummary.innerHTML = selected.map((country) => `<span class="selected-country"><img src="/api/geo-flag/${country.code}" width="20" height="15" alt="" /><span>${escapeHTML(country.name)}</span></span>`).join("");
+  container.innerHTML = selected.map((country) => `<span class="selected-country"><img src="/api/geo-flag/${country.code}" width="20" height="15" alt="" /><span>${escapeHTML(country.name)}</span></span>`).join("");
 }
-async function openCountryPicker() {
-  selectedProtectionCountries = [...(settings?.webProtection?.blockedCountries || [])];
+async function openCountryPicker(target) {
+  countryPickerTarget = target;
+  if (target === "global") selectedProtectionCountries = [...(settings?.webProtection?.blockedCountries || [])];
   els.countryPickerSearch.value = "";
-  els.countryPickerModeHint.textContent = els.webProtectionCountryMode.value === "allow" ? "Only the selected countries will be allowed." : "The selected countries will be blocked.";
+  const mode = target === "site" ? els.siteProtectionCountryMode.value : els.webProtectionCountryMode.value;
+  els.countryPickerModeHint.textContent = mode === "allow" ? "Only the selected countries will be allowed." : "The selected countries will be blocked.";
   els.countryPickerList.innerHTML = '<p class="muted">Loading countries from GeoLite2...</p>';
   els.countryPickerDialog.showModal();
   try {
@@ -739,8 +765,8 @@ async function openCountryPicker() {
     els.countryPickerList.innerHTML = `<p class="error-text">${escapeHTML(err.message)}</p>`;
   }
 }
-function renderCountryPicker() { const query = els.countryPickerSearch.value.trim().toLowerCase(); const matches = protectionCountries.filter((country) => !query || country.name.toLowerCase().includes(query) || country.code.toLowerCase().includes(query)); els.countryPickerList.innerHTML = matches.length ? matches.map((country) => `<label class="country-picker-row"><input type="checkbox" value="${country.code}" ${selectedProtectionCountries.includes(country.code) ? "checked" : ""} /><img src="/api/geo-flag/${country.code}" width="24" height="18" alt="" loading="lazy" /><strong>${escapeHTML(country.name)}</strong><code>${country.code}</code></label>`).join("") : '<p class="muted">No countries match this search.</p>'; }
-function applyCountryPicker() { settings.webProtection = { ...(settings.webProtection || {}), blockedCountries: selectedProtectionCountries }; renderSelectedProtectionCountries(); els.countryPickerDialog.close(); }
+function renderCountryPicker() { const query = els.countryPickerSearch.value.trim().toLowerCase(); const selected = countryPickerTarget === "site" ? selectedSiteProtectionCountries : selectedProtectionCountries; const matches = protectionCountries.filter((country) => !query || country.name.toLowerCase().includes(query) || country.code.toLowerCase().includes(query)); els.countryPickerList.innerHTML = matches.length ? matches.map((country) => `<label class="country-picker-row"><input type="checkbox" value="${country.code}" ${selected.includes(country.code) ? "checked" : ""} /><img src="/api/geo-flag/${country.code}" width="24" height="18" alt="" loading="lazy" /><strong>${escapeHTML(country.name)}</strong><code>${country.code}</code></label>`).join("") : '<p class="muted">No countries match this search.</p>'; }
+function applyCountryPicker() { if (countryPickerTarget === "site") renderSelectedSiteProtectionCountries(); else { settings.webProtection = { ...(settings.webProtection || {}), blockedCountries: selectedProtectionCountries }; renderSelectedProtectionCountries(); } els.countryPickerDialog.close(); }
 
 async function saveWebProtection(event) {
   event.preventDefault();
@@ -1901,7 +1927,9 @@ function editSite(site = null) {
   els.protectionOverride.checked = !!site?.protectionOverride;
   els.siteProtectionEnabled.checked = !!site?.webProtection?.enabled;
   els.siteProtectionCountryMode.value = site?.webProtection?.countryMode || "block";
-  els.siteProtectionCountries.value = (site?.webProtection?.blockedCountries || []).join(", ");
+  setSiteProtectionCountryMode(els.siteProtectionCountryMode.value);
+  selectedSiteProtectionCountries = site?.webProtection?.blockedCountries || [];
+  renderSelectedSiteProtectionCountries();
   els.siteProtectionBlockedIPs.value = (site?.webProtection?.blockedIps || []).join("\n");
   els.siteProtectionAllowedIPs.value = (site?.webProtection?.allowedIps || []).join("\n");
   syncProtectionOverride();
@@ -2137,7 +2165,7 @@ async function saveSite(event) {
     webProtection: els.protectionOverride.checked ? {
       enabled: els.siteProtectionEnabled.checked,
       countryMode: els.siteProtectionCountryMode.value,
-      blockedCountries: protectionValues(els.siteProtectionCountries.value),
+      blockedCountries: selectedSiteProtectionCountries,
       blockedIps: protectionValues(els.siteProtectionBlockedIPs.value),
       allowedIps: protectionValues(els.siteProtectionAllowedIPs.value),
     } : {},

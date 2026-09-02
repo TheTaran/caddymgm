@@ -1998,8 +1998,9 @@ dialog {
 .country-picker-row img { width: 20px; height: 15px; object-fit: cover; border-radius: 2px; }
 @media (max-width: 760px) { .country-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .blocklist-table-head,.blocklist-row{display:grid;grid-template-columns:minmax(150px,.7fr) minmax(280px,1.7fr) minmax(70px,.3fr) minmax(150px,.6fr) auto;gap:12px;align-items:center}.blocklist-table-head{padding:0 10px 8px;color:var(--muted);font-size:12px;text-transform:uppercase}.blocklist-list{display:grid;gap:10px}.blocklist-row{padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel-soft)}.blocklist-row input{margin:0}.blocklist-meta{color:var(--muted);font-size:13px}.blocklist-actions{display:flex;gap:8px;justify-content:flex-end}.blocklist-actions button{white-space:nowrap}@media(max-width:900px){.blocklist-table-head{display:none}.blocklist-row{grid-template-columns:1fr}.blocklist-row input::placeholder{opacity:1}.blocklist-actions{justify-content:flex-start}}
-.protection-override-card { margin-top: 18px; }
-.protection-override-card > div { display: grid; gap: 12px; margin-top: 12px; }
+.protection-override-card { display: grid; gap: 12px; width: 100%; margin-top: 18px; }
+.protection-override-card > div { display: grid; gap: 12px; width: 100%; margin-top: 0; }
+.protection-override-card .selected-country-list { margin-top: -4px; }
 
 .dialog-head {
   justify-content: space-between;

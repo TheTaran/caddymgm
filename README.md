@@ -25,6 +25,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 | Date | Feature | What's included |
 | --- | --- | --- |
+| 2026-09-02 | **Web Protection Host Overrides** | Compact per-host Geo-IP protection controls with country selection by flag and name instead of manual country-code entry. |
 | 2026-09-01 | **Security Operations & Distribution** | Period-filtered security statistics, direct assignment of observed IPs to manual lists, a published Caddy Geo-IP image, and unified Caddy, Geo-IP module, and Go update checks. |
 | 2026-09-01 | **Web Protection Operations** | Named manual allow/deny IP lists, managed external blocklists, protection-event dashboard metrics, and a filterable Web Protection log view. |
 | 2026-08-31 | **Runtime Security Hardening** | Supported Alpine 3.24 runtime with current security packages plus updated Go cryptography and OAuth dependencies. |

@@ -373,8 +373,9 @@
                     <label class="status-check"><input id="protection-override" type="checkbox" /><span class="status-check-title">Override global Web Protection defaults</span><span class="status-check-state" data-disabled="Inherited" data-enabled="Custom" aria-hidden="true"></span></label>
                     <div id="protection-override-fields" hidden>
                       <label class="status-check"><input id="site-protection-enabled" type="checkbox" /><span class="status-check-title">Enable protection for this host</span><span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span></label>
-                      <label>Country access mode<select id="site-protection-country-mode"><option value="block">Block selected countries</option><option value="allow">Allow selected countries only</option></select></label>
-                      <label>Selected country codes<textarea id="site-protection-countries" rows="2" placeholder="RU, CN"></textarea></label>
+                      <label>Country access mode <select id="site-protection-country-mode" class="sr-only"><option value="block">Block selected countries</option><option value="allow">Allow selected countries only</option></select><span class="geo-mode-toggle" role="group" aria-label="Country access mode"><button id="site-protection-mode-block" type="button" class="secondary" aria-pressed="true">◯ Block</button><button id="site-protection-mode-allow" type="button" class="secondary" aria-pressed="false">✓ Allow</button></span></label>
+                      <label>Selected countries <button id="site-protection-countries-button" type="button" class="secondary">Select countries</button></label>
+                      <div id="site-protection-countries-summary" class="selected-country-list" aria-live="polite"><p class="field-hint">No countries selected.</p></div>
                       <label>Blocked IP addresses and CIDR ranges<textarea id="site-protection-blocked-ips" rows="3"></textarea></label>
                       <label>Allowed IP addresses and CIDR ranges<textarea id="site-protection-allowed-ips" rows="3"></textarea></label>
                     </div>

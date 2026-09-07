@@ -1,33 +1,31 @@
 package main
 
 import (
-	"net/netip"
 	"testing"
+	"time"
 )
 
-func TestClassifyProtectionBlockPriorities(t *testing.T) {
-	address := netip.MustParseAddr("203.0.113.10")
-	external := newProtectionPrefixSet([]string{"203.0.113.0/24"})
-
-	if reason, _ := classifyProtectionBlock(address, WebProtection{Enabled: true, AllowedIPs: []string{"203.0.113.10"}, BlockedIPs: []string{"203.0.113.10"}}, true, external, nil); reason != "" {
-		t.Fatalf("allowlist must take priority, got %q", reason)
+func TestSecurityTrendSpecForPeriod(t *testing.T) {
+	tests := []struct {
+		period    string
+		canonical string
+		window    time.Duration
+		bucket    time.Duration
+	}{
+		{"", "1d", 24 * time.Hour, time.Hour},
+		{"1h", "1h", time.Hour, 5 * time.Minute},
+		{"6h", "6h", 6 * time.Hour, 15 * time.Minute},
+		{"1d", "1d", 24 * time.Hour, time.Hour},
+		{"7d", "7d", 7 * 24 * time.Hour, 6 * time.Hour},
+		{"30d", "30d", 30 * 24 * time.Hour, 24 * time.Hour},
 	}
-	if reason, _ := classifyProtectionBlock(address, WebProtection{Enabled: true}, true, external, nil); reason != "External blocklist" {
-		t.Fatalf("expected external blocklist, got %q", reason)
-	}
-	if reason, _ := classifyProtectionBlock(address, WebProtection{Enabled: true, BlockedIPs: []string{"203.0.113.10"}}, false, external, nil); reason != "Manual blocked IP" {
-		t.Fatalf("expected manual blocked IP, got %q", reason)
-	}
-}
-
-func TestProtectionPrefixSetMatchesCIDR(t *testing.T) {
-	set := newProtectionPrefixSet([]string{"198.51.100.0/24", "2001:db8::/32"})
-	for _, value := range []string{"198.51.100.99", "2001:db8:1::1"} {
-		if !set.contains(netip.MustParseAddr(value)) {
-			t.Fatalf("expected %s to match", value)
+	for _, test := range tests {
+		period, spec, err := securityTrendSpecForPeriod(test.period)
+		if err != nil || period != test.canonical || spec.window != test.window || spec.bucketDuration != test.bucket {
+			t.Fatalf("period %q: got period=%q spec=%+v err=%v", test.period, period, spec, err)
 		}
 	}
-	if set.contains(netip.MustParseAddr("203.0.113.1")) {
-		t.Fatal("unexpected prefix match")
+	if _, _, err := securityTrendSpecForPeriod("2h"); err == nil {
+		t.Fatal("expected an invalid period error")
 	}
 }

@@ -25,6 +25,7 @@ type securityOverview struct {
 	ServerErrors    int                        `json:"serverErrors"`
 	Events          []securityOverviewEvent    `json:"events"`
 	Trends          []securityTrendPoint       `json:"trends"`
+	TrendInterval   string                     `json:"trendInterval"`
 	TopIPs          []securityTopIP            `json:"topIPs"`
 	RuleCounts      securityOverviewRuleCounts `json:"ruleCounts"`
 }
@@ -46,8 +47,34 @@ type securityOverviewRuleCounts struct {
 
 type securityTrendPoint struct {
 	Label    string `json:"label"`
+	Start    string `json:"start"`
+	End      string `json:"end"`
 	Requests int    `json:"requests"`
 	Blocks   int    `json:"blocks"`
+}
+
+type securityTrendSpec struct {
+	window         time.Duration
+	bucketDuration time.Duration
+	labelFormat    string
+	intervalLabel  string
+}
+
+func securityTrendSpecForPeriod(period string) (string, securityTrendSpec, error) {
+	switch period {
+	case "1h":
+		return period, securityTrendSpec{time.Hour, 5 * time.Minute, "15:04", "5 minutes"}, nil
+	case "6h":
+		return period, securityTrendSpec{6 * time.Hour, 15 * time.Minute, "15:04", "15 minutes"}, nil
+	case "", "1d":
+		return "1d", securityTrendSpec{24 * time.Hour, time.Hour, "15:00", "1 hour"}, nil
+	case "7d":
+		return period, securityTrendSpec{7 * 24 * time.Hour, 6 * time.Hour, "Mon 15:00", "6 hours"}, nil
+	case "30d":
+		return period, securityTrendSpec{30 * 24 * time.Hour, 24 * time.Hour, "02 Jan", "1 day"}, nil
+	default:
+		return "", securityTrendSpec{}, errors.New("period must be 1h, 6h, 1d, 7d, or 30d")
+	}
 }
 
 type securityTopIP struct {
@@ -104,20 +131,13 @@ func (set protectionPrefixSet) contains(address netip.Addr) bool {
 
 func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 	includeAllEvents := r.URL.Query().Get("events") == "all"
-	period := r.URL.Query().Get("period")
-	window := 24 * time.Hour
-	switch period {
-	case "7d":
-		window = 7 * 24 * time.Hour
-	case "30d":
-		window = 30 * 24 * time.Hour
-	case "", "1d":
-		period = "1d"
-	default:
-		writeError(w, http.StatusBadRequest, errors.New("period must be 1d, 7d, or 30d"))
+	_, trendSpec, periodErr := securityTrendSpecForPeriod(r.URL.Query().Get("period"))
+	if periodErr != nil {
+		writeError(w, http.StatusBadRequest, periodErr)
 		return
 	}
-	cutoff := time.Now().Add(-window).Unix()
+	now := time.Now()
+	cutoff := now.Add(-trendSpec.window).Unix()
 	selectedSiteID := strings.TrimSpace(r.URL.Query().Get("site"))
 	a.mu.Lock()
 	sites, _, _, err := a.load()
@@ -145,16 +165,14 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 	overview := securityOverview{RuleCounts: securityOverviewRuleCounts{
 		SelectedCountries: len(defaults.BlockedCountries), ManualBlockedIPs: len(defaults.BlockedIPs), AllowedIPs: len(defaults.AllowedIPs), ExternalBlockedIPs: len(external),
 	}}
-	bucketDuration, bucketCount, labelFormat := time.Hour, 24, "15:00"
-	if period == "7d" {
-		bucketDuration, bucketCount, labelFormat = 24*time.Hour, 7, "Mon"
-	} else if period == "30d" {
-		bucketDuration, bucketCount, labelFormat = 24*time.Hour, 30, "02 Jan"
-	}
-	bucketStart := time.Now().Add(-window).Truncate(bucketDuration)
+	bucketStart := now.Add(-trendSpec.window).Truncate(trendSpec.bucketDuration)
+	bucketCount := int(now.Sub(bucketStart)/trendSpec.bucketDuration) + 1
+	overview.TrendInterval = trendSpec.intervalLabel
 	overview.Trends = make([]securityTrendPoint, bucketCount)
 	for index := range overview.Trends {
-		overview.Trends[index].Label = bucketStart.Add(time.Duration(index) * bucketDuration).Format(labelFormat)
+		start := bucketStart.Add(time.Duration(index) * trendSpec.bucketDuration)
+		end := start.Add(trendSpec.bucketDuration)
+		overview.Trends[index] = securityTrendPoint{Label: start.Format(trendSpec.labelFormat), Start: start.Format(time.RFC3339), End: end.Format(time.RFC3339)}
 	}
 	topIPs := map[string]securityTopIP{}
 	for _, site := range sites {
@@ -176,7 +194,7 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 			if int64(record.Timestamp) < cutoff {
 				continue
 			}
-			bucket := int(time.Unix(int64(record.Timestamp), 0).Sub(bucketStart) / bucketDuration)
+			bucket := int(time.Unix(int64(record.Timestamp), 0).Sub(bucketStart) / trendSpec.bucketDuration)
 			if bucket >= 0 && bucket < len(overview.Trends) {
 				overview.Trends[bucket].Requests++
 			}

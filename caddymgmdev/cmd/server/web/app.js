@@ -35,6 +35,8 @@ const els = {
   statistics5xx: document.querySelector("#statistics-5xx"),
   statisticsRequestTrend: document.querySelector("#statistics-request-trend"),
   statisticsBlockTrend: document.querySelector("#statistics-block-trend"),
+  statisticsRequestTrendMeta: document.querySelector("#statistics-request-trend-meta"),
+  statisticsBlockTrendMeta: document.querySelector("#statistics-block-trend-meta"),
   statisticsTopIPs: document.querySelector("#statistics-top-ips"),
   statisticsTopIPSummary: document.querySelector("#statistics-top-ip-summary"),
   statisticsEvents: document.querySelector("#statistics-events"),
@@ -781,6 +783,9 @@ function renderSecurityStatistics(data) {
   els.statistics5xx.textContent = format(data.serverErrors);
   const periodLabel = els.securityStatisticsPeriod.options[els.securityStatisticsPeriod.selectedIndex]?.text || "24 hours";
   els.securityStatisticsSummary.textContent = `${format(data.requests)} retained requests - ${periodLabel}`;
+  const intervalLabel = data.trendInterval ? `${data.trendInterval} buckets` : "Retained access logs";
+  els.statisticsRequestTrendMeta.textContent = intervalLabel;
+  els.statisticsBlockTrendMeta.textContent = data.trendInterval ? `${data.trendInterval} managed blocks` : "Managed blocks";
   renderSecurityTrend(els.statisticsRequestTrend, data.trends || [], "requests", "Requests", "request-trend");
   renderSecurityTrend(els.statisticsBlockTrend, data.trends || [], "blocks", "Blocks", "block-trend");
   const topIPs = data.topIPs || [];
@@ -806,7 +811,11 @@ function renderSecurityTrend(container, points, key, label, className) {
   svg.setAttribute("preserveAspectRatio", "none");
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", `${label} trend chart`);
-  svg.innerHTML = `<path class="security-trend-grid" d="M${padding} ${padding}H${width - padding} M${padding} ${height / 2}H${width - padding} M${padding} ${height - padding}H${width - padding}"/><polyline class="${className}" points="${coordinates.join(" ")}"/>`;
+  const dots = points.map((point, index) => {
+    const date = point.start ? new Date(point.start).toLocaleString() : point.label;
+    return `<circle class="security-trend-point ${className}" cx="${padding + index * step}" cy="${height - padding - (values[index] / max) * (height - padding * 2)}" r="3"><title>${escapeHTML(`${date}: ${values[index]} ${label.toLowerCase()}`)}</title></circle>`;
+  }).join("");
+  svg.innerHTML = `<path class="security-trend-grid" d="M${padding} ${padding}H${width - padding} M${padding} ${height / 2}H${width - padding} M${padding} ${height - padding}H${width - padding}"/><polyline class="${className}" points="${coordinates.join(" ")}"/>${dots}`;
   container.append(svg);
   const labels = document.createElement("div");
   labels.className = "security-trend-labels";

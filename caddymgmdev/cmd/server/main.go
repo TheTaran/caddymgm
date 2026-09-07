@@ -101,6 +101,17 @@ type Site struct {
 	IPv6Bind              string        `json:"ipv6Bind,omitempty"`
 	UpstreamDialTimeout   string        `json:"upstreamDialTimeout,omitempty"`
 	UpstreamReadTimeout   string        `json:"upstreamReadTimeout,omitempty"`
+	RequestHeaders        []HeaderRule  `json:"requestHeaders,omitempty"`
+	ResponseHeaders       []HeaderRule  `json:"responseHeaders,omitempty"`
+	MaxRequestBody        string        `json:"maxRequestBody,omitempty"`
+	AllowedMethods        []string      `json:"allowedMethods,omitempty"`
+	BlockedPaths          []string      `json:"blockedPaths,omitempty"`
+}
+
+type HeaderRule struct {
+	Name   string `json:"name"`
+	Value  string `json:"value,omitempty"`
+	Remove bool   `json:"remove,omitempty"`
 }
 
 // WebProtection is an ordered website access policy. Explicit IP allow entries
@@ -144,6 +155,11 @@ type sitePayload struct {
 	IPv6Bind              string        `json:"ipv6Bind,omitempty"`
 	UpstreamDialTimeout   string        `json:"upstreamDialTimeout,omitempty"`
 	UpstreamReadTimeout   string        `json:"upstreamReadTimeout,omitempty"`
+	RequestHeaders        []HeaderRule  `json:"requestHeaders,omitempty"`
+	ResponseHeaders       []HeaderRule  `json:"responseHeaders,omitempty"`
+	MaxRequestBody        string        `json:"maxRequestBody,omitempty"`
+	AllowedMethods        []string      `json:"allowedMethods,omitempty"`
+	BlockedPaths          []string      `json:"blockedPaths,omitempty"`
 }
 
 func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
@@ -187,6 +203,11 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		IPv6Bind:              p.IPv6Bind,
 		UpstreamDialTimeout:   p.UpstreamDialTimeout,
 		UpstreamReadTimeout:   p.UpstreamReadTimeout,
+		RequestHeaders:        p.RequestHeaders,
+		ResponseHeaders:       p.ResponseHeaders,
+		MaxRequestBody:        p.MaxRequestBody,
+		AllowedMethods:        p.AllowedMethods,
+		BlockedPaths:          p.BlockedPaths,
 	}
 }
 
@@ -1740,6 +1761,8 @@ func parseSite(id string, lines []string) (Site, error) {
 	inSecurityHeaderDirective := false
 	inBasicAuthDirective := false
 	inProtectionDirective := false
+	inRequestHeaderDirective := false
+	inAccessSecurityDirective := false
 	skipManagedEncode := false
 	logDepth := 0
 	reverseProxyDepth := 0
@@ -1773,6 +1796,22 @@ func parseSite(id string, lines []string) (Site, error) {
 		}
 		if line == "# caddymgm:protection-directive" {
 			inProtectionDirective = true
+			continue
+		}
+		if line == "# caddymgm:request-header-directive" {
+			inRequestHeaderDirective = true
+			continue
+		}
+		if line == "# caddymgm:end-request-header-directive" {
+			inRequestHeaderDirective = false
+			continue
+		}
+		if line == "# caddymgm:access-security-directive" {
+			inAccessSecurityDirective = true
+			continue
+		}
+		if line == "# caddymgm:end-access-security-directive" {
+			inAccessSecurityDirective = false
 			continue
 		}
 		if line == "# caddymgm:end-protection-directive" {
@@ -1812,10 +1851,42 @@ func parseSite(id string, lines []string) (Site, error) {
 			site.IPv6Bind = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:ipv6-bind "))
 			continue
 		}
+		if strings.HasPrefix(line, "# caddymgm:max-request-body ") {
+			site.MaxRequestBody = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:max-request-body "))
+			continue
+		}
+		if strings.HasPrefix(line, "# caddymgm:allowed-methods ") {
+			site.AllowedMethods = strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:allowed-methods ")))
+			continue
+		}
+		if strings.HasPrefix(line, "# caddymgm:blocked-paths ") {
+			site.BlockedPaths = strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:blocked-paths ")))
+			continue
+		}
+		if strings.HasPrefix(line, "# caddymgm:request-header ") || strings.HasPrefix(line, "# caddymgm:response-header ") {
+			isRequest := strings.HasPrefix(line, "# caddymgm:request-header ")
+			value := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(line, "# caddymgm:request-header "), "# caddymgm:response-header "))
+			var rule HeaderRule
+			if err := json.Unmarshal([]byte(value), &rule); err != nil {
+				return Site{}, fmt.Errorf("invalid managed header rule: %w", err)
+			}
+			if isRequest {
+				site.RequestHeaders = append(site.RequestHeaders, rule)
+			} else {
+				site.ResponseHeaders = append(site.ResponseHeaders, rule)
+			}
+			continue
+		}
 		if inAuthDirective {
 			continue
 		}
 		if inProtectionDirective {
+			continue
+		}
+		if inRequestHeaderDirective {
+			continue
+		}
+		if inAccessSecurityDirective {
 			continue
 		}
 		if inSecurityHeaderDirective {
@@ -2262,6 +2333,23 @@ func renderSiteWithProtectionAndClientIP(site Site, policy WebProtection, client
 	if site.Comment != "" {
 		out.WriteString(prefix + "\t# caddymgm:comment " + strconv.Quote(site.Comment) + "\n")
 	}
+	if site.MaxRequestBody != "" {
+		out.WriteString(prefix + "\t# caddymgm:max-request-body " + site.MaxRequestBody + "\n")
+	}
+	if len(site.AllowedMethods) > 0 {
+		out.WriteString(prefix + "\t# caddymgm:allowed-methods " + strings.Join(site.AllowedMethods, " ") + "\n")
+	}
+	if len(site.BlockedPaths) > 0 {
+		out.WriteString(prefix + "\t# caddymgm:blocked-paths " + strings.Join(site.BlockedPaths, " ") + "\n")
+	}
+	for _, rule := range site.RequestHeaders {
+		encoded, _ := json.Marshal(rule)
+		out.WriteString(prefix + "\t# caddymgm:request-header " + string(encoded) + "\n")
+	}
+	for _, rule := range site.ResponseHeaders {
+		encoded, _ := json.Marshal(rule)
+		out.WriteString(prefix + "\t# caddymgm:response-header " + string(encoded) + "\n")
+	}
 	out.WriteString(prefix + "\t# caddymgm:protection-override " + strconv.FormatBool(site.ProtectionOverride) + "\n")
 	if site.ProtectionOverride {
 		out.WriteString(prefix + "\t# caddymgm:protection-enabled " + strconv.FormatBool(site.WebProtection.Enabled) + "\n")
@@ -2298,6 +2386,25 @@ func renderSiteWithProtectionAndClientIP(site Site, policy WebProtection, client
 	out.WriteString(prefix + "\t# caddymgm:protection-directive\n")
 	writeWebProtection(&out, prefix, policy)
 	out.WriteString(prefix + "\t# caddymgm:end-protection-directive\n")
+	if len(site.AllowedMethods) > 0 || len(site.BlockedPaths) > 0 || site.MaxRequestBody != "" {
+		out.WriteString(prefix + "\t# caddymgm:access-security-directive\n")
+	}
+	if len(site.AllowedMethods) > 0 {
+		out.WriteString(prefix + "\t@caddymgmBlockedMethod not method " + strings.Join(site.AllowedMethods, " ") + "\n")
+		out.WriteString(prefix + "\trespond @caddymgmBlockedMethod 405\n")
+	}
+	if len(site.BlockedPaths) > 0 {
+		out.WriteString(prefix + "\t@caddymgmBlockedPath path " + strings.Join(site.BlockedPaths, " ") + "\n")
+		out.WriteString(prefix + "\trespond @caddymgmBlockedPath 403\n")
+	}
+	if site.MaxRequestBody != "" {
+		out.WriteString(prefix + "\trequest_body {\n")
+		out.WriteString(prefix + "\t\tmax_size " + site.MaxRequestBody + "\n")
+		out.WriteString(prefix + "\t}\n")
+	}
+	if len(site.AllowedMethods) > 0 || len(site.BlockedPaths) > 0 || site.MaxRequestBody != "" {
+		out.WriteString(prefix + "\t# caddymgm:end-access-security-directive\n")
+	}
 	if site.Mode == "static" {
 		out.WriteString(prefix + "\troot * " + site.Root + "\n")
 		out.WriteString(prefix + "\tfile_server\n")
@@ -2315,6 +2422,17 @@ func renderSiteWithProtectionAndClientIP(site Site, policy WebProtection, client
 		skipTLSVerify := site.SkipTLSVerify && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(site.Upstream)), "http://")
 		out.WriteString(prefix + "\treverse_proxy " + site.Upstream + " {\n")
 		out.WriteString(prefix + "\t\theader_up Host {host}\n")
+		if len(site.RequestHeaders) > 0 {
+			out.WriteString(prefix + "\t\t# caddymgm:request-header-directive\n")
+			for _, rule := range site.RequestHeaders {
+				if rule.Remove {
+					out.WriteString(prefix + "\t\theader_up -" + rule.Name + "\n")
+				} else {
+					out.WriteString(prefix + "\t\theader_up " + rule.Name + " " + caddyfileQuote(rule.Value) + "\n")
+				}
+			}
+			out.WriteString(prefix + "\t\t# caddymgm:end-request-header-directive\n")
+		}
 		switch clientIP.ForwardedForHandling {
 		case "replace":
 			out.WriteString(prefix + "\t\theader_up -X-Forwarded-For\n")
@@ -2349,12 +2467,21 @@ func renderSiteWithProtectionAndClientIP(site Site, policy WebProtection, client
 		out.WriteString(prefix + "\t# caddymgm:hsts\n")
 		out.WriteString(prefix + "\theader Strict-Transport-Security \"max-age=31536000\"\n")
 	}
-	if headers := securityHeaderProfileDirectives(site.SecurityHeaderProfile); len(headers) > 0 {
-		out.WriteString(prefix + "\t# caddymgm:security-header-profile " + site.SecurityHeaderProfile + "\n")
+	if headers := securityHeaderProfileDirectives(site.SecurityHeaderProfile); len(headers) > 0 || len(site.ResponseHeaders) > 0 {
+		if site.SecurityHeaderProfile != "" {
+			out.WriteString(prefix + "\t# caddymgm:security-header-profile " + site.SecurityHeaderProfile + "\n")
+		}
 		out.WriteString(prefix + "\t# caddymgm:security-header-directive\n")
 		out.WriteString(prefix + "\theader {\n")
 		for _, header := range headers {
 			out.WriteString(prefix + "\t\t" + header + "\n")
+		}
+		for _, rule := range site.ResponseHeaders {
+			if rule.Remove {
+				out.WriteString(prefix + "\t\t-" + rule.Name + "\n")
+			} else {
+				out.WriteString(prefix + "\t\t" + rule.Name + " " + caddyfileQuote(rule.Value) + "\n")
+			}
 		}
 		out.WriteString(prefix + "\t}\n")
 		out.WriteString(prefix + "\t# caddymgm:end-security-header-directive\n")
@@ -2504,6 +2631,7 @@ func normalizeSite(site *Site) error {
 	site.IPv6Bind = strings.TrimSpace(site.IPv6Bind)
 	site.UpstreamDialTimeout = strings.TrimSpace(site.UpstreamDialTimeout)
 	site.UpstreamReadTimeout = strings.TrimSpace(site.UpstreamReadTimeout)
+	site.MaxRequestBody = strings.TrimSpace(site.MaxRequestBody)
 	if site.IPv4Bind == "" {
 		site.IPv4Bind = "0.0.0.0"
 	}
@@ -2531,6 +2659,22 @@ func normalizeSite(site *Site) error {
 		if err != nil || duration <= 0 {
 			return fmt.Errorf("%s must be a positive Go duration such as 5s or 1m", label)
 		}
+	}
+	var err error
+	if site.RequestHeaders, err = normalizeHeaderRules(site.RequestHeaders); err != nil {
+		return fmt.Errorf("request headers: %w", err)
+	}
+	if site.ResponseHeaders, err = normalizeHeaderRules(site.ResponseHeaders); err != nil {
+		return fmt.Errorf("response headers: %w", err)
+	}
+	if site.MaxRequestBody != "" && !regexp.MustCompile(`^[1-9][0-9]*(B|KB|MB|GB|KiB|MiB|GiB)$`).MatchString(site.MaxRequestBody) {
+		return errors.New("maximum request body must use a size such as 10MB or 1GiB")
+	}
+	if site.AllowedMethods, err = normalizeHTTPMethods(site.AllowedMethods); err != nil {
+		return err
+	}
+	if site.BlockedPaths, err = normalizeBlockedPaths(site.BlockedPaths); err != nil {
+		return err
 	}
 	if err := normalizeWebProtection(&site.WebProtection); err != nil {
 		return err
@@ -2668,6 +2812,74 @@ func normalizeWebProtection(policy *WebProtection) error {
 		return err
 	}
 	return nil
+}
+
+var headerNamePattern = regexp.MustCompile(`^[!#$%&'*+.^_|~0-9A-Za-z-]+$`)
+var httpMethodPattern = regexp.MustCompile(`^[A-Z]+$`)
+
+func normalizeHeaderRules(rules []HeaderRule) ([]HeaderRule, error) {
+	result := make([]HeaderRule, 0, len(rules))
+	seen := make(map[string]bool)
+	for _, rule := range rules {
+		rule.Name = strings.TrimSpace(rule.Name)
+		rule.Value = strings.TrimSpace(rule.Value)
+		if !headerNamePattern.MatchString(rule.Name) {
+			return nil, fmt.Errorf("invalid header name %q", rule.Name)
+		}
+		if strings.ContainsAny(rule.Value, "\r\n") {
+			return nil, fmt.Errorf("header %s contains an invalid line break", rule.Name)
+		}
+		if !rule.Remove && rule.Value == "" {
+			return nil, fmt.Errorf("header %s needs a value or removal action", rule.Name)
+		}
+		if rule.Remove {
+			rule.Value = ""
+		}
+		key := strings.ToLower(rule.Name) + "|" + strconv.FormatBool(rule.Remove) + "|" + rule.Value
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, rule)
+		}
+	}
+	return result, nil
+}
+
+func normalizeHTTPMethods(values []string) ([]string, error) {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]bool)
+	for _, value := range values {
+		value = strings.ToUpper(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if !httpMethodPattern.MatchString(value) {
+			return nil, fmt.Errorf("invalid HTTP method %q", value)
+		}
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
+func normalizeBlockedPaths(values []string) ([]string, error) {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]bool)
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if !strings.HasPrefix(value, "/") || strings.ContainsAny(value, "\r\n ") {
+			return nil, fmt.Errorf("blocked path %q must start with / and contain no spaces", value)
+		}
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result, nil
 }
 
 func normalizeCountryCodes(values []string) ([]string, error) {

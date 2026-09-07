@@ -391,6 +391,19 @@
                   </label>
                   <p class="field-hint">Compresses suitable text responses at the proxy. Zstandard is preferred when supported and Gzip remains available as a compatible fallback.</p>
                   <fieldset class="protection-override-card">
+                    <legend>HTTP access rules</legend>
+                    <label>Maximum request body<input id="max-request-body" placeholder="10MB" autocomplete="off" /></label>
+                    <label>Allowed HTTP methods<textarea id="allowed-methods" rows="2" placeholder="GET, POST, PUT"></textarea></label>
+                    <label>Blocked paths<textarea id="blocked-paths" rows="3" placeholder="/admin/*&#10;/.env"></textarea></label>
+                    <p class="field-hint">Leave a field empty to keep Caddy defaults. Blocked requests receive 405 for methods and 403 for paths.</p>
+                  </fieldset>
+                  <fieldset class="protection-override-card">
+                    <legend>Managed header operations</legend>
+                    <label>Request headers sent upstream<textarea id="request-headers" rows="3" placeholder="X-App-Name: CaddyMGM&#10;-X-Legacy-Header"></textarea></label>
+                    <label>Response headers sent to visitors<textarea id="response-headers" rows="3" placeholder="Permissions-Policy: geolocation=()&#10;-Server"></textarea></label>
+                    <p class="field-hint">One rule per line. Use <code>Name: value</code> to set a header or <code>-Name</code> to remove it.</p>
+                  </fieldset>
+                  <fieldset class="protection-override-card">
                     <legend>Network listeners</legend>
                     <label>IPv4 bind address<input id="ipv4-bind" value="0.0.0.0" placeholder="0.0.0.0" autocomplete="off" /></label>
                     <label class="status-check"><input id="ipv6-enabled" type="checkbox" /><span class="status-check-title">Enable IPv6 listener</span><span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span></label>

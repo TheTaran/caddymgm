@@ -115,6 +115,11 @@ const els = {
   hstsEnabled: document.querySelector("#hsts-enabled"),
   securityHeaderProfile: document.querySelector("#security-header-profile"),
   compressionProfile: document.querySelector("#compression-profile"),
+  maxRequestBody: document.querySelector("#max-request-body"),
+  allowedMethods: document.querySelector("#allowed-methods"),
+  blockedPaths: document.querySelector("#blocked-paths"),
+  requestHeaders: document.querySelector("#request-headers"),
+  responseHeaders: document.querySelector("#response-headers"),
   ipv4Bind: document.querySelector("#ipv4-bind"),
   ipv6Enabled: document.querySelector("#ipv6-enabled"),
   ipv6Bind: document.querySelector("#ipv6-bind"),
@@ -2053,6 +2058,11 @@ function editSite(site = null) {
   els.hstsEnabled.checked = !!site?.hstsEnabled;
   els.securityHeaderProfile.value = site?.securityHeaderProfile || "";
   els.compressionProfile.value = site?.compressionProfile || "";
+  els.maxRequestBody.value = site?.maxRequestBody || "";
+  els.allowedMethods.value = (site?.allowedMethods || []).join(", ");
+  els.blockedPaths.value = (site?.blockedPaths || []).join("\n");
+  els.requestHeaders.value = formatHeaderRules(site?.requestHeaders || []);
+  els.responseHeaders.value = formatHeaderRules(site?.responseHeaders || []);
   els.ipv4Bind.value = site?.ipv4Bind || "0.0.0.0";
   els.ipv6Enabled.checked = !!site?.ipv6Enabled;
   els.ipv6Bind.value = site?.ipv6Bind || "::";
@@ -2284,6 +2294,19 @@ function syncIPv6Listener() {
   if (enabled && !els.ipv6Bind.value.trim()) els.ipv6Bind.value = "::";
 }
 
+function parseHeaderRules(value) {
+  return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    if (line.startsWith("-")) return { name: line.slice(1).trim(), remove: true };
+    const separator = line.indexOf(":");
+    if (separator < 1) return { name: line, value: "" };
+    return { name: line.slice(0, separator).trim(), value: line.slice(separator + 1).trim() };
+  });
+}
+
+function formatHeaderRules(rules) {
+  return rules.map((rule) => rule.remove ? `-${rule.name}` : `${rule.name}: ${rule.value}`).join("\n");
+}
+
 async function saveSite(event) {
   event.preventDefault();
   const previousSite = editingSite ? { ...editingSite } : null;
@@ -2307,6 +2330,11 @@ async function saveSite(event) {
     hstsEnabled: els.tlsEnabled.checked && els.hstsEnabled.checked,
     securityHeaderProfile: els.securityHeaderProfile.value,
     compressionProfile: els.compressionProfile.value,
+    maxRequestBody: els.maxRequestBody.value,
+    allowedMethods: els.allowedMethods.value.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean),
+    blockedPaths: els.blockedPaths.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+    requestHeaders: mode === "proxy" ? parseHeaderRules(els.requestHeaders.value) : [],
+    responseHeaders: parseHeaderRules(els.responseHeaders.value),
     ipv4Bind: els.ipv4Bind.value,
     ipv6Enabled: els.ipv6Enabled.checked,
     ipv6Bind: els.ipv6Enabled.checked ? els.ipv6Bind.value : "",

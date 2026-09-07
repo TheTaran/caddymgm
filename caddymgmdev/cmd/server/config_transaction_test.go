@@ -363,6 +363,31 @@ func TestUpstreamTimeoutsRenderAndParse(t *testing.T) {
 	}
 }
 
+func TestManagedHTTPAccessSecurityRulesRenderAndParse(t *testing.T) {
+	site := Site{
+		ID: "http-security", Address: "http-security.example.test", Mode: "proxy", Upstream: "http://app:8080", Enabled: true,
+		MaxRequestBody: "10MB", AllowedMethods: []string{"GET", "POST"}, BlockedPaths: []string{"/.env", "/admin/*"},
+		RequestHeaders:  []HeaderRule{{Name: "X-App-Name", Value: "CaddyMGM"}, {Name: "X-Legacy", Remove: true}},
+		ResponseHeaders: []HeaderRule{{Name: "Permissions-Policy", Value: "geolocation=()"}, {Name: "Server", Remove: true}},
+	}
+	if err := normalizeSite(&site); err != nil {
+		t.Fatal(err)
+	}
+	rendered := renderManaged([]Site{site}, nil, "/logs", WebInterface{}, AccessOIDCProvider{}, "file", "8080")
+	for _, want := range []string{"request_body {", "max_size 10MB", "not method GET POST", "path /.env /admin/*", "header_up X-App-Name \"CaddyMGM\"", "Permissions-Policy \"geolocation=()\"", "-Server"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered managed config is missing %q:\n%s", want, rendered)
+		}
+	}
+	parsed, err := parseManaged(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 1 || !reflect.DeepEqual(parsed[0].RequestHeaders, site.RequestHeaders) || !reflect.DeepEqual(parsed[0].ResponseHeaders, site.ResponseHeaders) || parsed[0].MaxRequestBody != site.MaxRequestBody || !reflect.DeepEqual(parsed[0].AllowedMethods, site.AllowedMethods) || !reflect.DeepEqual(parsed[0].BlockedPaths, site.BlockedPaths) {
+		t.Fatalf("HTTP access security rules did not survive render/parse: %#v", parsed)
+	}
+}
+
 func TestWebProtectionAllowModeBlocksCountriesOutsideSelection(t *testing.T) {
 	policy := WebProtection{Enabled: true, CountryMode: "allow", BlockedCountries: []string{"CH", "DE"}}
 	if err := normalizeWebProtection(&policy); err != nil {

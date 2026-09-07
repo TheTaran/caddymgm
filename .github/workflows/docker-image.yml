@@ -38,6 +38,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: caddymgmdev/go.mod
+          cache-dependency-path: caddymgmdev/go.sum
 
       - name: Test
         working-directory: caddymgmdev

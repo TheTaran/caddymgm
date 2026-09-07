@@ -340,6 +340,29 @@ func TestClientIPSettingsRejectsForwardedSourceWithoutTrustedProxies(t *testing.
 	}
 }
 
+func TestUpstreamTimeoutsRenderAndParse(t *testing.T) {
+	site := Site{
+		ID: "timeouts", Address: "timeouts.example.test", Mode: "proxy", Upstream: "http://app:8080", Enabled: true,
+		UpstreamDialTimeout: "5s", UpstreamReadTimeout: "30s",
+	}
+	if err := normalizeSite(&site); err != nil {
+		t.Fatal(err)
+	}
+	rendered := renderManaged([]Site{site}, nil, "/logs", WebInterface{}, AccessOIDCProvider{}, "file", "8080")
+	for _, want := range []string{"transport http {", "dial_timeout 5s", "response_header_timeout 30s"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered managed config is missing %q:\n%s", want, rendered)
+		}
+	}
+	parsed, err := parseManaged(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 1 || parsed[0].UpstreamDialTimeout != "5s" || parsed[0].UpstreamReadTimeout != "30s" {
+		t.Fatalf("timeouts did not survive render/parse: %#v", parsed)
+	}
+}
+
 func TestWebProtectionAllowModeBlocksCountriesOutsideSelection(t *testing.T) {
 	policy := WebProtection{Enabled: true, CountryMode: "allow", BlockedCountries: []string{"CH", "DE"}}
 	if err := normalizeWebProtection(&policy); err != nil {

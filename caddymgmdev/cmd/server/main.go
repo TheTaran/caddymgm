@@ -99,6 +99,8 @@ type Site struct {
 	IPv4Bind              string        `json:"ipv4Bind,omitempty"`
 	IPv6Enabled           bool          `json:"ipv6Enabled,omitempty"`
 	IPv6Bind              string        `json:"ipv6Bind,omitempty"`
+	UpstreamDialTimeout   string        `json:"upstreamDialTimeout,omitempty"`
+	UpstreamReadTimeout   string        `json:"upstreamReadTimeout,omitempty"`
 }
 
 // WebProtection is an ordered website access policy. Explicit IP allow entries
@@ -140,6 +142,8 @@ type sitePayload struct {
 	IPv4Bind              string        `json:"ipv4Bind,omitempty"`
 	IPv6Enabled           bool          `json:"ipv6Enabled,omitempty"`
 	IPv6Bind              string        `json:"ipv6Bind,omitempty"`
+	UpstreamDialTimeout   string        `json:"upstreamDialTimeout,omitempty"`
+	UpstreamReadTimeout   string        `json:"upstreamReadTimeout,omitempty"`
 }
 
 func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
@@ -181,6 +185,8 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		IPv4Bind:              p.IPv4Bind,
 		IPv6Enabled:           p.IPv6Enabled,
 		IPv6Bind:              p.IPv6Bind,
+		UpstreamDialTimeout:   p.UpstreamDialTimeout,
+		UpstreamReadTimeout:   p.UpstreamReadTimeout,
 	}
 }
 
@@ -1837,6 +1843,12 @@ func parseSite(id string, lines []string) (Site, error) {
 			if line == "tls_insecure_skip_verify" {
 				site.SkipTLSVerify = true
 			}
+			if strings.HasPrefix(line, "dial_timeout ") {
+				site.UpstreamDialTimeout = strings.TrimSpace(strings.TrimPrefix(line, "dial_timeout "))
+			}
+			if strings.HasPrefix(line, "response_header_timeout ") {
+				site.UpstreamReadTimeout = strings.TrimSpace(strings.TrimPrefix(line, "response_header_timeout "))
+			}
 			transportDepth += braceDelta(line)
 			if transportDepth <= 0 {
 				inTransport = false
@@ -2315,10 +2327,20 @@ func renderSiteWithProtectionAndClientIP(site Site, policy WebProtection, client
 				out.WriteString(prefix + "\t\theader_down Location " + caddyfileQuote(rule[0]) + " " + caddyfileQuote(rule[1]) + "\n")
 			}
 		}
-		if skipTLSVerify {
-			out.WriteString(prefix + "\t\t# caddymgm:skip-tls-verify\n")
+		if skipTLSVerify || site.UpstreamDialTimeout != "" || site.UpstreamReadTimeout != "" {
+			if skipTLSVerify {
+				out.WriteString(prefix + "\t\t# caddymgm:skip-tls-verify\n")
+			}
 			out.WriteString(prefix + "\t\ttransport http {\n")
-			out.WriteString(prefix + "\t\t\ttls_insecure_skip_verify\n")
+			if skipTLSVerify {
+				out.WriteString(prefix + "\t\t\ttls_insecure_skip_verify\n")
+			}
+			if site.UpstreamDialTimeout != "" {
+				out.WriteString(prefix + "\t\t\tdial_timeout " + site.UpstreamDialTimeout + "\n")
+			}
+			if site.UpstreamReadTimeout != "" {
+				out.WriteString(prefix + "\t\t\tresponse_header_timeout " + site.UpstreamReadTimeout + "\n")
+			}
 			out.WriteString(prefix + "\t\t}\n")
 		}
 		out.WriteString(prefix + "\t}\n")
@@ -2480,6 +2502,8 @@ func normalizeSite(site *Site) error {
 	site.CompressionProfile = strings.ToLower(strings.TrimSpace(site.CompressionProfile))
 	site.IPv4Bind = strings.TrimSpace(site.IPv4Bind)
 	site.IPv6Bind = strings.TrimSpace(site.IPv6Bind)
+	site.UpstreamDialTimeout = strings.TrimSpace(site.UpstreamDialTimeout)
+	site.UpstreamReadTimeout = strings.TrimSpace(site.UpstreamReadTimeout)
 	if site.IPv4Bind == "" {
 		site.IPv4Bind = "0.0.0.0"
 	}
@@ -2495,6 +2519,18 @@ func normalizeSite(site *Site) error {
 		}
 	} else {
 		site.IPv6Bind = ""
+	}
+	for label, value := range map[string]string{
+		"upstream connection timeout": site.UpstreamDialTimeout,
+		"upstream read timeout":       site.UpstreamReadTimeout,
+	} {
+		if value == "" {
+			continue
+		}
+		duration, err := time.ParseDuration(value)
+		if err != nil || duration <= 0 {
+			return fmt.Errorf("%s must be a positive Go duration such as 5s or 1m", label)
+		}
 	}
 	if err := normalizeWebProtection(&site.WebProtection); err != nil {
 		return err

@@ -324,6 +324,17 @@
                     <textarea id="redirect-origins" rows="3" placeholder="https://internal.example.local:443"></textarea>
                   </label>
                   <p id="redirect-origins-hint" class="field-hint" hidden>One internal HTTP or HTTPS origin per line. Paths and external destinations are not accepted.</p>
+                  <div class="tls-version-grid" id="upstream-timeouts-row">
+                    <label>
+                      Upstream connection timeout
+                      <input id="upstream-dial-timeout" placeholder="5s" autocomplete="off" />
+                    </label>
+                    <label>
+                      Upstream read timeout
+                      <input id="upstream-read-timeout" placeholder="30s" autocomplete="off" />
+                    </label>
+                  </div>
+                  <p class="field-hint">Optional positive durations. The read timeout limits the wait for response headers from the upstream; leave both fields empty for Caddy defaults.</p>
                 </section>
 
                 <section id="site-editor-panel-security" class="site-editor-panel" role="tabpanel" aria-labelledby="site-editor-tab-security" data-site-editor-panel="security" hidden>

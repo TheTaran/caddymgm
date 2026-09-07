@@ -25,6 +25,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 | Date | Feature | What's included |
 | --- | --- | --- |
+| 2026-09-07 | **Upstream Transport Timeouts** | Per-web-host connection and response-header wait timeouts for reverse-proxy upstreams, with validated Go duration values. |
 | 2026-09-07 | **Client IP and Forwarding Controls** | Global visitor-IP source selection with trusted proxy CIDRs, plus controlled append, replacement, or removal of `X-Forwarded-For` for reverse-proxy upstreams. |
 | 2026-09-07 | **Network Listeners and DNS IP Lists** | Per-host IPv4 bind addresses, opt-in IPv6 listeners, plus persistent DNS-name allow and deny lists with A/AAAA refresh every 12 hours and last-known-address protection. |
 | 2026-09-07 | **Dashboard Security Analytics** | Added a compact Security Statistics dashboard with period-based trends, ranked blocked source IPs, live events, and an interactive OpenStreetMap view without Leaflet. |
@@ -43,11 +44,6 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 | 2026-08-26 | **Website OIDC Authentication** | Central OIDC authentication for protected web hosts. |
 
 ## Planned Upcoming Features
-
-### HTTP routing and transport
-
-- Configurable upstream read timeout
-- Configurable upstream connection timeout
 
 ### Authentication
 

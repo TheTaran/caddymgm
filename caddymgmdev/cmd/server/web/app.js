@@ -107,6 +107,9 @@ const els = {
   comment: document.querySelector("#comment"),
   upstream: document.querySelector("#upstream"),
   skipTlsVerify: document.querySelector("#skip-tls-verify"),
+  upstreamDialTimeout: document.querySelector("#upstream-dial-timeout"),
+  upstreamReadTimeout: document.querySelector("#upstream-read-timeout"),
+  upstreamTimeoutsRow: document.querySelector("#upstream-timeouts-row"),
   rewriteRedirects: document.querySelector("#rewrite-redirects"),
   redirectOrigins: document.querySelector("#redirect-origins"),
   hstsEnabled: document.querySelector("#hsts-enabled"),
@@ -2043,6 +2046,8 @@ function editSite(site = null) {
   els.comment.value = site?.comment || "";
   els.upstream.value = site?.upstream || "";
   els.skipTlsVerify.checked = !!site?.skipTlsVerify;
+  els.upstreamDialTimeout.value = site?.upstreamDialTimeout || "";
+  els.upstreamReadTimeout.value = site?.upstreamReadTimeout || "";
   els.rewriteRedirects.checked = site ? site.rewriteRedirects !== false : true;
   els.redirectOrigins.value = (site?.redirectOrigins || []).join("\n");
   els.hstsEnabled.checked = !!site?.hstsEnabled;
@@ -2105,6 +2110,7 @@ function syncMode() {
   setFieldVisible(els.rewriteRedirectsRow, mode === "proxy");
   setFieldVisible(els.rewriteRedirectsHint, mode === "proxy");
   setFieldVisible(els.proxyBehaviorOverview, mode === "proxy");
+  setFieldVisible(els.upstreamTimeoutsRow, mode === "proxy");
   const showRedirectOrigins = mode === "proxy" && els.rewriteRedirects.checked;
   setFieldVisible(els.redirectOriginsRow, showRedirectOrigins);
   setFieldVisible(els.redirectOriginsHint, showRedirectOrigins);
@@ -2113,6 +2119,8 @@ function syncMode() {
   els.root.required = mode === "static";
   els.upstream.disabled = mode !== "proxy";
   els.skipTlsVerify.disabled = mode !== "proxy";
+  els.upstreamDialTimeout.disabled = mode !== "proxy";
+  els.upstreamReadTimeout.disabled = mode !== "proxy";
   els.rewriteRedirects.disabled = mode !== "proxy";
   els.redirectOrigins.disabled = !showRedirectOrigins;
   els.root.disabled = mode !== "static";
@@ -2121,6 +2129,8 @@ function syncMode() {
   } else if (mode === "static") {
     els.upstream.value = "";
     els.skipTlsVerify.checked = false;
+	els.upstreamDialTimeout.value = "";
+	els.upstreamReadTimeout.value = "";
   } else {
     els.upstream.value = "";
     els.skipTlsVerify.checked = false;
@@ -2288,6 +2298,8 @@ async function saveSite(event) {
     mode,
     upstream: els.upstream.value,
     skipTlsVerify: els.skipTlsVerify.checked,
+    upstreamDialTimeout: mode === "proxy" ? els.upstreamDialTimeout.value : "",
+    upstreamReadTimeout: mode === "proxy" ? els.upstreamReadTimeout.value : "",
     rewriteRedirects: mode === "proxy" && els.rewriteRedirects.checked,
     redirectOrigins: mode === "proxy" && els.rewriteRedirects.checked
       ? els.redirectOrigins.value.split(/\r?\n/).map((origin) => origin.trim()).filter(Boolean)

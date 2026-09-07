@@ -24,6 +24,8 @@ type securityOverview struct {
 	ClientErrors    int                        `json:"clientErrors"`
 	ServerErrors    int                        `json:"serverErrors"`
 	Events          []securityOverviewEvent    `json:"events"`
+	Trends          []securityTrendPoint       `json:"trends"`
+	TopIPs          []securityTopIP            `json:"topIPs"`
 	RuleCounts      securityOverviewRuleCounts `json:"ruleCounts"`
 }
 
@@ -40,6 +42,17 @@ type securityOverviewRuleCounts struct {
 	ManualBlockedIPs   int `json:"manualBlockedIPs"`
 	AllowedIPs         int `json:"allowedIPs"`
 	ExternalBlockedIPs int `json:"externalBlockedIPs"`
+}
+
+type securityTrendPoint struct {
+	Label    string `json:"label"`
+	Requests int    `json:"requests"`
+	Blocks   int    `json:"blocks"`
+}
+
+type securityTopIP struct {
+	Address string `json:"address"`
+	Count   int    `json:"count"`
 }
 
 type securityLogRecord struct {
@@ -104,6 +117,7 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cutoff := time.Now().Add(-window).Unix()
+	selectedSiteID := strings.TrimSpace(r.URL.Query().Get("site"))
 	a.mu.Lock()
 	sites, _, _, err := a.load()
 	defaults := a.settings.WebProtection
@@ -130,7 +144,22 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 	overview := securityOverview{RuleCounts: securityOverviewRuleCounts{
 		SelectedCountries: len(defaults.BlockedCountries), ManualBlockedIPs: len(defaults.BlockedIPs), AllowedIPs: len(defaults.AllowedIPs), ExternalBlockedIPs: len(external),
 	}}
+	bucketDuration, bucketCount, labelFormat := time.Hour, 24, "15:00"
+	if period == "7d" {
+		bucketDuration, bucketCount, labelFormat = 24*time.Hour, 7, "Mon"
+	} else if period == "30d" {
+		bucketDuration, bucketCount, labelFormat = 24*time.Hour, 30, "02 Jan"
+	}
+	bucketStart := time.Now().Add(-window).Truncate(bucketDuration)
+	overview.Trends = make([]securityTrendPoint, bucketCount)
+	for index := range overview.Trends {
+		overview.Trends[index].Label = bucketStart.Add(time.Duration(index) * bucketDuration).Format(labelFormat)
+	}
+	topIPs := map[string]int{}
 	for _, site := range sites {
+		if selectedSiteID != "" && site.ID != selectedSiteID {
+			continue
+		}
 		if !site.LogsEnabled {
 			continue
 		}
@@ -145,6 +174,10 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 			}
 			if int64(record.Timestamp) < cutoff {
 				continue
+			}
+			bucket := int(time.Unix(int64(record.Timestamp), 0).Sub(bucketStart) / bucketDuration)
+			if bucket >= 0 && bucket < len(overview.Trends) {
+				overview.Trends[bucket].Requests++
 			}
 			address, hasAddress := securityRecordAddress(record)
 			if hideLocalIPs && hasAddress && isLocalDashboardAddress(address) {
@@ -174,6 +207,10 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			overview.ManagedBlocks++
+			if bucket >= 0 && bucket < len(overview.Trends) {
+				overview.Trends[bucket].Blocks++
+			}
+			topIPs[address.String()]++
 			switch reason {
 			case "GEO IP rule":
 				overview.GeoBlocks++
@@ -184,6 +221,16 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 			}
 			overview.Events = append(overview.Events, securityOverviewEvent{Time: time.Unix(int64(record.Timestamp), int64((record.Timestamp-float64(int64(record.Timestamp)))*1e9)).Format(time.RFC3339), Site: site.Address, Address: address.String(), Country: country, Reason: reason})
 		}
+	}
+	overview.TopIPs = make([]securityTopIP, 0, len(topIPs))
+	for address, count := range topIPs {
+		overview.TopIPs = append(overview.TopIPs, securityTopIP{Address: address, Count: count})
+	}
+	sort.Slice(overview.TopIPs, func(i, j int) bool {
+		return overview.TopIPs[i].Count > overview.TopIPs[j].Count || (overview.TopIPs[i].Count == overview.TopIPs[j].Count && overview.TopIPs[i].Address < overview.TopIPs[j].Address)
+	})
+	if len(overview.TopIPs) > 8 {
+		overview.TopIPs = overview.TopIPs[:8]
 	}
 	sort.Slice(overview.Events, func(i, j int) bool { return overview.Events[i].Time > overview.Events[j].Time })
 	if !includeAllEvents && len(overview.Events) > 20 {

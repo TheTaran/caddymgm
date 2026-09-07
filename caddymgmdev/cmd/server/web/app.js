@@ -4,6 +4,7 @@ const els = {
   pageTitleIcon: document.querySelector("#page-title-icon"),
   sectionTitle: document.querySelector("#section-title"),
   sectionTitleIcon: document.querySelector("#section-title-icon"),
+  dashboardTabs: document.querySelector("#dashboard-tabs"),
   metrics: document.querySelector("#metrics"),
   profileAvatar: document.querySelector("#profile-avatar"),
   profileUsername: document.querySelector("#profile-username"),
@@ -22,6 +23,21 @@ const els = {
   securityOverviewPeriod: document.querySelector("#security-overview-period"),
   securityEvents: document.querySelector("#security-events"),
   securityRuleCounts: document.querySelector("#security-rule-counts"),
+  securityStatisticsSummary: document.querySelector("#security-statistics-summary"),
+  securityStatisticsHost: document.querySelector("#security-statistics-host"),
+  securityStatisticsPeriod: document.querySelector("#security-statistics-period"),
+  statisticsRequests: document.querySelector("#statistics-requests"),
+  statisticsManagedBlocks: document.querySelector("#statistics-managed-blocks"),
+  statisticsGeoBlocks: document.querySelector("#statistics-geo-blocks"),
+  statisticsManualBlocks: document.querySelector("#statistics-manual-blocks"),
+  statisticsExternalBlocks: document.querySelector("#statistics-external-blocks"),
+  statistics4xx: document.querySelector("#statistics-4xx"),
+  statistics5xx: document.querySelector("#statistics-5xx"),
+  statisticsRequestTrend: document.querySelector("#statistics-request-trend"),
+  statisticsBlockTrend: document.querySelector("#statistics-block-trend"),
+  statisticsTopIPs: document.querySelector("#statistics-top-ips"),
+  statisticsTopIPSummary: document.querySelector("#statistics-top-ip-summary"),
+  statisticsEvents: document.querySelector("#statistics-events"),
   geoMap: document.querySelector("#geo-map"),
   geoMapSummary: document.querySelector("#geo-map-summary"),
   geoTopIPList: document.querySelector("#geo-top-ip-list"),
@@ -33,7 +49,6 @@ const els = {
   geoMapDetails: document.querySelector("#geo-map-details"),
   siteList: document.querySelector("#site-list"),
   hostFilterProtocol: document.querySelector("#host-filter-protocol"),
-  hostFilterCertificateProvider: document.querySelector("#host-filter-certificate-provider"),
   hostFilterVisibility: document.querySelector("#host-filter-visibility"),
   hostFilterMode: document.querySelector("#host-filter-mode"),
   hostFilterUpstreamTLS: document.querySelector("#host-filter-upstream-tls"),
@@ -208,7 +223,7 @@ const els = {
 };
 
 const viewTitles = {
-  dashboard: ["Dashboard", "Web Hosts Overview"],
+  dashboard: ["Dashboard", ""],
   "proxy-hosts": ["Web Hosts", "Website Configuration"],
   "web-protection": ["Web Protection", "GEO IP Blocking"],
   certificates: ["Certificates", "TLS Certificates"],
@@ -264,7 +279,6 @@ const hostSort = {
 };
 const hostFilters = {
   protocol: "all",
-  certificateProvider: "all",
   visibility: "all",
   mode: "all",
   upstreamTls: "all",
@@ -280,7 +294,7 @@ const auxiliarySort = {
   "protection-events": { key: "time", direction: "desc" },
 };
 const tableFilters = {
-  dashboard: { protocol: "all", certificateProvider: "", visibility: "all", mode: "all", upstreamTls: "all", status: "all", auth: "all", comment: "" },
+  dashboard: { protocol: "all", visibility: "all", mode: "all", upstreamTls: "all", status: "all", auth: "all", comment: "" },
   certificates: { issuer: "", expires: "all", status: "all" },
   "service-logs": { type: "", message: "", status: "" },
   "site-logs": { method: "all", path: "", status: "" },
@@ -303,6 +317,7 @@ let latestOIDCLogs = [];
 let latestProtectionEvents = [];
 let latestGeoTopIPs = [];
 let latestServiceLogsAvailable = true;
+let geoOpenMap = null;
 const LOG_PREVIEW_LIMIT = 10;
 const LOG_LOAD_MORE_LIMIT = 100;
 
@@ -329,11 +344,14 @@ els.siteLogToggle.addEventListener("click", toggleSiteLogsExpanded);
 els.oidcLogToggle.addEventListener("click", toggleOIDCLogsExpanded);
 els.protectionEventToggle.addEventListener("click", toggleProtectionEventsExpanded);
 els.securityOverviewPeriod.addEventListener("change", loadSecurityOverview);
+els.securityStatisticsHost.addEventListener("change", loadSecurityStatistics);
+els.securityStatisticsPeriod.addEventListener("change", loadSecurityStatistics);
+document.querySelectorAll("[data-dashboard-tab]").forEach((tab) => tab.addEventListener("click", () => showDashboardTab(tab.dataset.dashboardTab)));
 els.geoIPScope.addEventListener("change", renderTopIPs);
 els.geoIPHost.addEventListener("change", renderTopIPs);
 els.geoIPFilter.addEventListener("input", renderTopIPs);
 els.geoIPLimit.addEventListener("change", renderTopIPs);
-[els.hostFilterProtocol, els.hostFilterCertificateProvider, els.hostFilterVisibility, els.hostFilterMode, els.hostFilterUpstreamTLS, els.hostFilterStatus, els.hostFilterAuth, els.hostFilterComment].forEach((filter) => {
+[els.hostFilterProtocol, els.hostFilterVisibility, els.hostFilterMode, els.hostFilterUpstreamTLS, els.hostFilterStatus, els.hostFilterAuth, els.hostFilterComment].forEach((filter) => {
   filter.addEventListener(filter.tagName === "INPUT" ? "input" : "change", applyHostFilters);
 });
 els.hostFilterReset.addEventListener("click", resetHostFilters);
@@ -462,7 +480,7 @@ document.querySelectorAll("input[name='mode']").forEach((input) => {
 init();
 
 async function init() {
-  await Promise.all([loadSites(), loadSettings(), loadProfile(), loadVersions(), loadGeoMap(), loadSecurityOverview()]);
+  await Promise.all([loadSites(), loadSettings(), loadProfile(), loadVersions(), loadGeoMap(), loadSecurityOverview(), loadSecurityStatistics()]);
   renderLogs([]);
   renderServiceLogs([]);
   renderOIDCLogs([]);
@@ -623,6 +641,8 @@ function showView(view) {
   els.navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   els.views.forEach((panel) => panel.classList.toggle("active", panel.id === `view-${view}`));
   els.metrics.hidden = view !== "dashboard";
+  els.dashboardTabs.hidden = view !== "dashboard";
+  els.sectionTitle.closest(".section-title").hidden = view === "dashboard";
   const [title, section] = viewTitles[view] || viewTitles.dashboard;
   els.pageTitle.textContent = title;
   els.sectionTitle.textContent = section;
@@ -643,6 +663,7 @@ function showView(view) {
   if (view === "dashboard") {
     loadGeoMap();
     loadSecurityOverview();
+    loadSecurityStatistics();
   }
   if (view === "settings") loadSettings();
   if (view === "certificates") renderCertificatesView();
@@ -696,6 +717,86 @@ function renderSecurityOverview(data) {
   const events = data.events || [];
   els.securityEvents.classList.toggle("has-multiple-events", events.length > 1);
   els.securityEvents.innerHTML = events.length ? events.map((event) => `<article class="security-event"><strong>${escapeHTML(event.reason)}</strong><span> - ${escapeHTML(event.site)} - ${escapeHTML(event.address)}${event.country ? ` - ${escapeHTML(event.country)}` : ""}</span><time> - ${event.time ? new Date(event.time).toLocaleString() : ""}</time></article>`).join("") : '<p class="muted">No managed protection events in retained access logs.</p>';
+}
+
+function showDashboardTab(tab) {
+  document.querySelectorAll("[data-dashboard-tab]").forEach((button) => {
+    const active = button.dataset.dashboardTab === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll("[data-dashboard-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.dashboardPanel !== tab;
+  });
+  if (tab === "statistics") loadSecurityStatistics();
+}
+
+function syncSecurityStatisticsHosts() {
+  const selected = els.securityStatisticsHost.value;
+  els.securityStatisticsHost.innerHTML = '<option value="">All hosts</option>';
+  [...sites].sort((left, right) => hostCollator.compare(left.address || "", right.address || "")).forEach((site) => {
+    const option = document.createElement("option");
+    option.value = site.id;
+    option.textContent = site.address;
+    els.securityStatisticsHost.append(option);
+  });
+  els.securityStatisticsHost.value = sites.some((site) => site.id === selected) ? selected : "";
+}
+
+async function loadSecurityStatistics() {
+  const params = new URLSearchParams({ period: els.securityStatisticsPeriod.value || "1d" });
+  if (els.securityStatisticsHost.value) params.set("site", els.securityStatisticsHost.value);
+  try {
+    renderSecurityStatistics(await request(`/api/security-overview?${params}`));
+  } catch (err) {
+    els.securityStatisticsSummary.textContent = "Security statistics unavailable";
+    els.statisticsEvents.innerHTML = `<p class="error-text">${escapeHTML(err.message)}</p>`;
+  }
+}
+
+function renderSecurityStatistics(data) {
+  const format = (value) => Number(value || 0).toLocaleString();
+  els.statisticsRequests.textContent = format(data.requests);
+  els.statisticsManagedBlocks.textContent = format(data.managedBlocks);
+  els.statisticsGeoBlocks.textContent = format(data.geoBlocks);
+  els.statisticsManualBlocks.textContent = format(data.manualIPBlocks);
+  els.statisticsExternalBlocks.textContent = format(data.externalBlocks);
+  els.statistics4xx.textContent = format(data.clientErrors);
+  els.statistics5xx.textContent = format(data.serverErrors);
+  const periodLabel = els.securityStatisticsPeriod.options[els.securityStatisticsPeriod.selectedIndex]?.text || "24 hours";
+  els.securityStatisticsSummary.textContent = `${format(data.requests)} retained requests - ${periodLabel}`;
+  renderSecurityTrend(els.statisticsRequestTrend, data.trends || [], "requests", "Requests", "request-trend");
+  renderSecurityTrend(els.statisticsBlockTrend, data.trends || [], "blocks", "Blocks", "block-trend");
+  const topIPs = data.topIPs || [];
+  els.statisticsTopIPSummary.textContent = `${topIPs.length} source IP${topIPs.length === 1 ? "" : "s"}`;
+  els.statisticsTopIPs.innerHTML = topIPs.length ? topIPs.map((entry, index) => `<div><span>${index + 1}</span><code>${escapeHTML(entry.address)}</code><strong>${format(entry.count)}</strong></div>`).join("") : '<p class="muted">No managed block sources in this period.</p>';
+  const events = (data.events || []).slice(0, 8);
+  els.statisticsEvents.innerHTML = events.length ? events.map((event) => `<article><strong>${escapeHTML(event.reason)}</strong><span>${escapeHTML(event.site)} - ${escapeHTML(event.address)}${event.country ? ` - ${escapeHTML(event.country)}` : ""}</span><time>${event.time ? new Date(event.time).toLocaleString() : ""}</time></article>`).join("") : '<p class="muted">No managed protection events in this period.</p>';
+}
+
+function renderSecurityTrend(container, points, key, label, className) {
+  container.innerHTML = "";
+  const values = points.map((point) => Number(point[key] || 0));
+  const max = Math.max(1, ...values);
+  if (!points.length || !values.some(Boolean)) {
+    container.innerHTML = `<p class="muted">No ${label.toLowerCase()} in this period.</p>`;
+    return;
+  }
+  const width = 720, height = 190, padding = 18;
+  const step = points.length > 1 ? (width - padding * 2) / (points.length - 1) : 0;
+  const coordinates = values.map((value, index) => `${padding + index * step},${height - padding - (value / max) * (height - padding * 2)}`);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${label} trend chart`);
+  svg.innerHTML = `<path class="security-trend-grid" d="M${padding} ${padding}H${width - padding} M${padding} ${height / 2}H${width - padding} M${padding} ${height - padding}H${width - padding}"/><polyline class="${className}" points="${coordinates.join(" ")}"/>`;
+  container.append(svg);
+  const labels = document.createElement("div");
+  labels.className = "security-trend-labels";
+  const labelIndexes = [0, Math.floor((points.length - 1) / 2), points.length - 1];
+  labels.innerHTML = [...new Set(labelIndexes)].map((index) => `<span>${escapeHTML(points[index].label)}</span>`).join("");
+  container.append(labels);
 }
 
 function escapeHTML(value) {
@@ -920,6 +1021,7 @@ async function loadSites() {
     renderHostLists();
     renderLogFilter();
     renderCertificatesView();
+    syncSecurityStatisticsHosts();
     setStatus(`${sites.length} host${sites.length === 1 ? "" : "s"} managed`);
   } catch (err) {
     setStatus(err.message);
@@ -1230,12 +1332,6 @@ function certificateIssuerName(site) {
   return issuer?.name || "ACME Authority";
 }
 
-function certificateProviderName(site) {
-  if (!site?.tlsMode || site.tlsMode === "off") return "None";
-  if (site.tlsMode === "internal") return "Caddy Internal";
-  return certificateIssuerName(site);
-}
-
 function renderIssuerOptions() {
   const current = els.acmeIssuer.value;
   const settingsCurrent = els.settingsWebACME.value;
@@ -1316,7 +1412,6 @@ function renderMetrics() {
 }
 
 function renderHostLists() {
-  renderHostFilterOptions();
   updateSortHeaders();
   renderSiteList(els.siteList, true, "web-hosts");
 }
@@ -1401,7 +1496,6 @@ function authenticationForSite(site) {
 
 function hostSortValue(site, key) {
   switch (key) {
-    case "certificateProvider": return certificateProviderName(site);
     case "visibility": return visibilityForSite(site).label;
     case "protocol": return protocolForSite(site);
     case "mode": return site.mode === "static" ? "Static" : "Proxy";
@@ -1424,27 +1518,8 @@ function sortedSitesFor(table) {
   }).map(({ site }) => site);
 }
 
-function renderHostFilterOptions() {
-  const current = els.hostFilterCertificateProvider.value;
-  const providers = [...new Set(sites.map(certificateProviderName))].sort((left, right) => hostCollator.compare(left, right));
-  els.hostFilterCertificateProvider.innerHTML = "";
-  const all = document.createElement("option");
-  all.value = "all";
-  all.textContent = "All";
-  els.hostFilterCertificateProvider.append(all);
-  for (const provider of providers) {
-    const option = document.createElement("option");
-    option.value = provider.toLowerCase();
-    option.textContent = provider;
-    els.hostFilterCertificateProvider.append(option);
-  }
-  els.hostFilterCertificateProvider.value = [...els.hostFilterCertificateProvider.options].some((option) => option.value === current) ? current : "all";
-  hostFilters.certificateProvider = els.hostFilterCertificateProvider.value;
-}
-
 function siteMatchesFilters(site, filters) {
   const protocol = protocolForSite(site).toLowerCase();
-  const provider = certificateProviderName(site).toLowerCase();
   const visibility = visibilityForSite(site).label.toLowerCase();
   const mode = site.mode === "static" ? "static" : "proxy";
   const upstreamTls = site.mode !== "proxy" ? "not-applicable" : site.skipTlsVerify ? "skipped" : "verified";
@@ -1452,7 +1527,6 @@ function siteMatchesFilters(site, filters) {
   const auth = authenticationForSite(site).key;
   const comment = (site.comment || "").toLowerCase();
   return (filters.protocol === "all" || protocol === filters.protocol)
-    && (!filters.certificateProvider || filters.certificateProvider === "all" || provider.includes(filters.certificateProvider))
     && (filters.visibility === "all" || visibility === filters.visibility)
     && (filters.mode === "all" || mode === filters.mode)
     && (filters.upstreamTls === "all" || upstreamTls === filters.upstreamTls)
@@ -1470,7 +1544,6 @@ function filteredSitesFor(table) {
 
 function applyHostFilters() {
   hostFilters.protocol = els.hostFilterProtocol.value;
-  hostFilters.certificateProvider = els.hostFilterCertificateProvider.value;
   hostFilters.visibility = els.hostFilterVisibility.value;
   hostFilters.mode = els.hostFilterMode.value;
   hostFilters.upstreamTls = els.hostFilterUpstreamTLS.value;
@@ -1540,7 +1613,6 @@ function renderSiteList(container, editable, table) {
       ? `
           <span class="badge"></span>
           <strong></strong>
-          <span class="certificate-provider"></span>
           <span class="badge"></span>
           <span></span>
           <span class="target"></span>
@@ -1553,7 +1625,6 @@ function renderSiteList(container, editable, table) {
       : `
           <span class="badge"></span>
           <strong></strong>
-          <span class="certificate-provider"></span>
           <span class="badge"></span>
           <span></span>
           <span class="target"></span>
@@ -1563,32 +1634,30 @@ function renderSiteList(container, editable, table) {
           <span class="target"></span>
         `;
     row.children[1].textContent = site.address;
-    row.children[2].textContent = certificateProviderName(site);
-    row.children[2].title = certificateProviderName(site);
     const visibility = visibilityForSite(site);
-    row.children[3].textContent = visibility.label;
-    row.children[3].classList.add(visibility.className);
-    row.children[3].title = visibility.description;
+    row.children[2].textContent = visibility.label;
+    row.children[2].classList.add(visibility.className);
+    row.children[2].title = visibility.description;
     const protocol = protocolForSite(site);
     row.children[0].textContent = protocol;
     row.children[0].classList.toggle("secure", protocol === "https");
     row.children[0].classList.toggle("warn", protocol === "http");
-    row.children[4].textContent = site.mode === "static" ? "Static" : "Proxy";
-    row.children[5].textContent = site.mode === "static" ? site.root : site.upstream;
-    row.children[6].textContent = site.mode === "proxy" ? (site.skipTlsVerify ? "Skipped" : "Verified") : "-";
-    row.children[6].classList.toggle("secure", site.mode === "proxy" && !site.skipTlsVerify);
-    row.children[6].classList.toggle("warn", site.mode === "proxy" && !!site.skipTlsVerify);
-    row.children[6].classList.toggle("off", site.mode !== "proxy");
-    row.children[7].textContent = site.enabled ? "Active" : "Inactive";
-    row.children[7].classList.toggle("off", !site.enabled);
+    row.children[3].textContent = site.mode === "static" ? "Static" : "Proxy";
+    row.children[4].textContent = site.mode === "static" ? site.root : site.upstream;
+    row.children[5].textContent = site.mode === "proxy" ? (site.skipTlsVerify ? "Skipped" : "Verified") : "-";
+    row.children[5].classList.toggle("secure", site.mode === "proxy" && !site.skipTlsVerify);
+    row.children[5].classList.toggle("warn", site.mode === "proxy" && !!site.skipTlsVerify);
+    row.children[5].classList.toggle("off", site.mode !== "proxy");
+    row.children[6].textContent = site.enabled ? "Active" : "Inactive";
+    row.children[6].classList.toggle("off", !site.enabled);
     const authentication = authenticationForSite(site);
-    row.children[8].textContent = authentication.label;
-    row.children[8].classList.toggle("secure", authentication.key !== "disabled");
-    row.children[8].classList.toggle("off", authentication.key === "disabled");
-    row.children[9].textContent = site.comment || "-";
-    row.children[9].title = site.comment || "";
+    row.children[7].textContent = authentication.label;
+    row.children[7].classList.toggle("secure", authentication.key !== "disabled");
+    row.children[7].classList.toggle("off", authentication.key === "disabled");
+    row.children[8].textContent = site.comment || "-";
+    row.children[8].title = site.comment || "";
     if (editable) {
-      const actions = row.children[10];
+      const actions = row.children[9];
       actions.append(createSiteActionButton("Edit", "secondary", () => {
         showView("proxy-hosts");
         editSite(site);
@@ -2613,92 +2682,114 @@ function renderGeoMap(data = {}) {
     appendGeoMapEmpty("No public website accesses found in the retained logs.");
     return;
   }
-
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 1000 500");
-  svg.setAttribute("aria-hidden", "true");
-  svg.innerHTML = `<g class="geo-graticule"><path d="M0 125h1000M0 250h1000M0 375h1000M250 0v500M500 0v500M750 0v500"/></g>
-    <image class="geo-land-map" href="/world-map.svg" x="0" y="0" width="1000" height="500" preserveAspectRatio="none"/>`;
-  for (const location of locations) {
-    const x = ((Number(location.longitude) + 180) / 360) * 1000;
-    const y = ((90 - Number(location.latitude)) / 180) * 500;
-    const marker = document.createElementNS(svg.namespaceURI, "circle");
-    marker.setAttribute("cx", String(x));
-    marker.setAttribute("cy", String(y));
-    marker.setAttribute("r", "4");
-    marker.setAttribute("class", "geo-marker");
-    marker.setAttribute("tabindex", "0");
-    marker.setAttribute("role", "button");
-    marker.setAttribute("aria-label", `${geoLocationLabel(location)}, ${location.count} requests`);
-    marker.addEventListener("click", () => showGeoLocation(location, marker));
-    marker.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        showGeoLocation(location, marker);
-      }
-    });
-    svg.append(marker);
-  }
-  els.geoMap.append(svg);
-  addGeoMapZoomControls(svg);
+  renderOpenStreetMap(locations);
 }
 
-function addGeoMapZoomControls(svg) {
-  const minZoom = 1, maxZoom = 8, zoomStep = 0.25;
-  let zoom = minZoom, centerX = 500, centerY = 250, dragStart = null;
+function renderOpenStreetMap(locations) {
+  const minZoom = 2, maxZoom = 7;
+  const viewport = document.createElement("div");
+  viewport.className = "geo-osm-viewport";
+  const tiles = document.createElement("div");
+  tiles.className = "geo-osm-tiles";
+  const markers = document.createElement("div");
+  markers.className = "geo-osm-markers";
+  viewport.append(tiles, markers);
+  els.geoMap.append(viewport);
+  const state = { zoom: 2, center: { latitude: 25, longitude: 15 }, drag: null };
+  const tileSize = 256;
+  const project = (latitude, longitude, zoom = state.zoom) => {
+    const scale = tileSize * (2 ** zoom);
+    const lat = Math.max(-85.05112878, Math.min(85.05112878, Number(latitude)));
+    return {
+      x: ((Number(longitude) + 180) / 360) * scale,
+      y: (1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * scale,
+    };
+  };
+  const unproject = (x, y, zoom = state.zoom) => {
+    const scale = tileSize * (2 ** zoom);
+    const longitude = ((x / scale) * 360) - 180;
+    const latitude = Math.atan(Math.sinh(Math.PI * (1 - (2 * y / scale)))) * 180 / Math.PI;
+    return { latitude, longitude };
+  };
+  const normalizeCenter = () => {
+    const maxLatitude = 85.05112878;
+    state.center.latitude = Math.max(-maxLatitude, Math.min(maxLatitude, state.center.latitude));
+    state.center.longitude = ((state.center.longitude + 540) % 360) - 180;
+  };
+  const redraw = () => {
+    normalizeCenter();
+    const bounds = viewport.getBoundingClientRect();
+    const width = bounds.width || 1, height = bounds.height || 1;
+    const center = project(state.center.latitude, state.center.longitude);
+    const world = tileSize * (2 ** state.zoom);
+    const startX = Math.floor((center.x - width / 2) / tileSize);
+    const endX = Math.floor((center.x + width / 2) / tileSize);
+    const startY = Math.max(0, Math.floor((center.y - height / 2) / tileSize));
+    const endY = Math.min((2 ** state.zoom) - 1, Math.floor((center.y + height / 2) / tileSize));
+    tiles.innerHTML = "";
+    for (let y = startY; y <= endY; y += 1) for (let x = startX; x <= endX; x += 1) {
+      const tile = document.createElement("img");
+      const wrappedX = ((x % (2 ** state.zoom)) + (2 ** state.zoom)) % (2 ** state.zoom);
+      tile.src = `https://tile.openstreetmap.org/${state.zoom}/${wrappedX}/${y}.png`;
+      tile.alt = ""; tile.draggable = false;
+      tile.style.left = `${Math.round((x * tileSize) - center.x + width / 2)}px`;
+      tile.style.top = `${Math.round((y * tileSize) - center.y + height / 2)}px`;
+      tiles.append(tile);
+    }
+    markers.innerHTML = "";
+    for (const location of locations) {
+      const point = project(location.latitude, location.longitude);
+      let offset = point.x - center.x;
+      if (offset > world / 2) offset -= world;
+      if (offset < -world / 2) offset += world;
+      const marker = document.createElement("button");
+      marker.type = "button"; marker.className = "geo-osm-marker";
+      marker.style.left = `${Math.round(offset + width / 2)}px`;
+      marker.style.top = `${Math.round(point.y - center.y + height / 2)}px`;
+      marker.setAttribute("aria-label", `${geoLocationLabel(location)}, ${location.count} requests`);
+      marker.addEventListener("click", () => showGeoLocation(location, marker));
+      markers.append(marker);
+    }
+    zoomOut.disabled = state.zoom <= minZoom;
+    zoomIn.disabled = state.zoom >= maxZoom;
+    reset.disabled = state.zoom === 2 && state.center.latitude === 25 && state.center.longitude === 15;
+  };
   const controls = document.createElement("div");
   controls.className = "geo-zoom-controls";
   controls.setAttribute("aria-label", "Map zoom controls");
   const zoomOut = document.createElement("button");
   zoomOut.type = "button"; zoomOut.textContent = "−"; zoomOut.setAttribute("aria-label", "Zoom out");
-  const slider = document.createElement("input");
-  slider.type = "range"; slider.min = String(minZoom); slider.max = String(maxZoom);
-  slider.step = String(zoomStep); slider.value = String(zoom); slider.setAttribute("aria-label", "Map zoom level");
   const zoomIn = document.createElement("button");
   zoomIn.type = "button"; zoomIn.textContent = "+"; zoomIn.setAttribute("aria-label", "Zoom in");
   const reset = document.createElement("button");
   reset.type = "button"; reset.className = "geo-zoom-reset"; reset.textContent = "Reset";
   reset.setAttribute("aria-label", "Reset map zoom and position");
-  const clampCenter = () => {
-    const width = 1000 / zoom, height = 500 / zoom;
-    centerX = Math.min(1000 - width / 2, Math.max(width / 2, centerX));
-    centerY = Math.min(500 - height / 2, Math.max(height / 2, centerY));
-  };
-  const render = () => {
-    clampCenter();
-    const width = 1000 / zoom, height = 500 / zoom;
-    svg.setAttribute("viewBox", `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`);
-    svg.querySelectorAll(".geo-marker").forEach((marker) => marker.setAttribute("r", String(4 / zoom)));
-    slider.value = String(zoom);
-    slider.setAttribute("aria-valuetext", `${Math.round(zoom * 100)} percent`);
-    zoomOut.disabled = zoom <= minZoom; zoomIn.disabled = zoom >= maxZoom;
-    reset.disabled = zoom === minZoom && centerX === 500 && centerY === 250;
-    svg.classList.toggle("zoomed", zoom > minZoom);
-  };
-  const setZoom = (nextZoom) => { zoom = Math.min(maxZoom, Math.max(minZoom, Number(nextZoom))); render(); };
-  zoomOut.addEventListener("click", () => setZoom(zoom - zoomStep));
-  zoomIn.addEventListener("click", () => setZoom(zoom + zoomStep));
-  slider.addEventListener("input", () => setZoom(slider.value));
-  reset.addEventListener("click", () => { zoom = minZoom; centerX = 500; centerY = 250; render(); });
-  svg.addEventListener("wheel", (event) => { event.preventDefault(); setZoom(zoom + (event.deltaY < 0 ? zoomStep : -zoomStep)); }, { passive: false });
-  svg.addEventListener("pointerdown", (event) => {
-    if (zoom <= minZoom || event.button !== 0 || event.target.closest(".geo-marker")) return;
-    dragStart = { x: event.clientX, y: event.clientY, centerX, centerY };
-    svg.setPointerCapture(event.pointerId); svg.classList.add("dragging");
+  const setZoom = (nextZoom) => { state.zoom = Math.min(maxZoom, Math.max(minZoom, Number(nextZoom))); redraw(); };
+  zoomOut.addEventListener("click", () => setZoom(state.zoom - 1));
+  zoomIn.addEventListener("click", () => setZoom(state.zoom + 1));
+  reset.addEventListener("click", () => { state.zoom = 2; state.center = { latitude: 25, longitude: 15 }; redraw(); });
+  viewport.addEventListener("wheel", (event) => { event.preventDefault(); setZoom(state.zoom + (event.deltaY < 0 ? 1 : -1)); }, { passive: false });
+  viewport.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest(".geo-osm-marker, .geo-zoom-controls, .geo-map-details")) return;
+    state.drag = { x: event.clientX, y: event.clientY, center: project(state.center.latitude, state.center.longitude) };
+    viewport.setPointerCapture(event.pointerId); viewport.classList.add("dragging");
   });
-  svg.addEventListener("pointermove", (event) => {
-    if (!dragStart) return;
-    const bounds = svg.getBoundingClientRect();
-    centerX = dragStart.centerX - ((event.clientX - dragStart.x) / bounds.width) * (1000 / zoom);
-    centerY = dragStart.centerY - ((event.clientY - dragStart.y) / bounds.height) * (500 / zoom);
-    render();
+  viewport.addEventListener("pointermove", (event) => {
+    if (!state.drag) return;
+    const point = unproject(state.drag.center.x - (event.clientX - state.drag.x), state.drag.center.y - (event.clientY - state.drag.y));
+    state.center = point; redraw();
   });
-  const stopDragging = () => { dragStart = null; svg.classList.remove("dragging"); };
-  svg.addEventListener("pointerup", stopDragging);
-  svg.addEventListener("pointercancel", stopDragging);
-  controls.append(zoomOut, slider, zoomIn, reset);
+  const stopDragging = () => { state.drag = null; viewport.classList.remove("dragging"); };
+  viewport.addEventListener("pointerup", stopDragging);
+  viewport.addEventListener("pointercancel", stopDragging);
+  controls.append(zoomOut, zoomIn, reset);
   els.geoMap.append(controls);
-  render();
+  const attribution = document.createElement("small");
+  attribution.className = "geo-osm-attribution";
+  attribution.innerHTML = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
+  els.geoMap.append(attribution);
+  geoOpenMap = { redraw };
+  requestAnimationFrame(redraw);
 }
 
 function syncGeoTopHostOptions() {
@@ -2783,7 +2874,7 @@ function renderTopIPs() {
 }
 
 function showGeoLocation(location, marker) {
-  els.geoMap.querySelectorAll(".geo-marker").forEach((item) => item.classList.toggle("active", item === marker));
+  els.geoMap.querySelectorAll(".geo-marker, .geo-osm-marker").forEach((item) => item.classList.toggle("active", item === marker));
   els.geoMapDetails.innerHTML = "";
   els.geoMapDetails.hidden = false;
   const heading = document.createElement("div");
@@ -2822,7 +2913,7 @@ function showGeoLocation(location, marker) {
 }
 
 function closeGeoLocation() {
-  els.geoMap.querySelectorAll(".geo-marker").forEach((item) => item.classList.remove("active"));
+  els.geoMap.querySelectorAll(".geo-marker, .geo-osm-marker").forEach((item) => item.classList.remove("active"));
   els.geoMapDetails.hidden = true;
   els.geoMapDetails.innerHTML = "";
 }

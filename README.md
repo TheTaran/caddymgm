@@ -48,7 +48,6 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 ### Authentication
 
-- LDAP integration for website authentication or OIDC
 - NTLM authentication
 
 ## Screenshots

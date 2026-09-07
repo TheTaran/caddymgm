@@ -112,6 +112,10 @@ const els = {
   hstsEnabled: document.querySelector("#hsts-enabled"),
   securityHeaderProfile: document.querySelector("#security-header-profile"),
   compressionProfile: document.querySelector("#compression-profile"),
+  ipv4Bind: document.querySelector("#ipv4-bind"),
+  ipv6Enabled: document.querySelector("#ipv6-enabled"),
+  ipv6Bind: document.querySelector("#ipv6-bind"),
+  ipv6BindRow: document.querySelector("#ipv6-bind-row"),
   root: document.querySelector("#root"),
   upstreamRow: document.querySelector("#upstream-row"),
   skipTlsVerifyRow: document.querySelector("#skip-tls-verify-row"),
@@ -418,6 +422,7 @@ els.issuerReset.addEventListener("click", closeIssuerForm);
 els.issuerDelete.addEventListener("click", deleteIssuer);
 els.issuerRootCAUploadButton.addEventListener("click", uploadRootCA);
 els.tlsEnabled.addEventListener("change", syncTLSMode);
+els.ipv6Enabled.addEventListener("change", syncIPv6Listener);
 els.tlsMinVersion.addEventListener("change", () => {
   if (els.tlsMinVersion.value === "tls1.3" && els.tlsMaxVersion.value === "tls1.2") els.tlsMaxVersion.value = "tls1.3";
 });
@@ -769,7 +774,7 @@ function renderSecurityStatistics(data) {
   renderSecurityTrend(els.statisticsBlockTrend, data.trends || [], "blocks", "Blocks", "block-trend");
   const topIPs = data.topIPs || [];
   els.statisticsTopIPSummary.textContent = `${topIPs.length} source IP${topIPs.length === 1 ? "" : "s"}`;
-  els.statisticsTopIPs.innerHTML = topIPs.length ? topIPs.map((entry, index) => `<div><span>${index + 1}</span><code>${escapeHTML(entry.address)}</code><strong>${format(entry.count)}</strong></div>`).join("") : '<p class="muted">No managed block sources in this period.</p>';
+  els.statisticsTopIPs.innerHTML = topIPs.length ? topIPs.map((entry, index) => `<div><span>${index + 1}</span><code>${escapeHTML(entry.address)}</code><span class="statistics-ip-origin">${escapeHTML(entry.country || "Unknown country")}</span><strong>${format(entry.count)}</strong></div>`).join("") : '<p class="muted">No managed block sources in this period.</p>';
   const events = (data.events || []).slice(0, 8);
   els.statisticsEvents.innerHTML = events.length ? events.map((event) => `<article><strong>${escapeHTML(event.reason)}</strong><span>${escapeHTML(event.site)} - ${escapeHTML(event.address)}${event.country ? ` - ${escapeHTML(event.country)}` : ""}</span><time>${event.time ? new Date(event.time).toLocaleString() : ""}</time></article>`).join("") : '<p class="muted">No managed protection events in this period.</p>';
 }
@@ -2032,6 +2037,9 @@ function editSite(site = null) {
   els.hstsEnabled.checked = !!site?.hstsEnabled;
   els.securityHeaderProfile.value = site?.securityHeaderProfile || "";
   els.compressionProfile.value = site?.compressionProfile || "";
+  els.ipv4Bind.value = site?.ipv4Bind || "0.0.0.0";
+  els.ipv6Enabled.checked = !!site?.ipv6Enabled;
+  els.ipv6Bind.value = site?.ipv6Bind || "::";
   els.root.value = site?.root || "";
   els.extra.value = site?.extraDirectives || "";
   els.enabled.checked = site?.enabled ?? true;
@@ -2067,6 +2075,7 @@ function editSite(site = null) {
   syncSiteAuth();
   syncSecurityHeaderProfile();
   syncBasicAuth();
+  syncIPv6Listener();
   syncEditorHostSummary();
   els.editor.scrollIntoView({ behavior: "smooth", block: "start" });
   els.address.focus({ preventScroll: true });
@@ -2246,6 +2255,14 @@ function syncProtectionOverride() {
   els.protectionOverrideFields.hidden = !els.protectionOverride.checked;
 }
 
+function syncIPv6Listener() {
+  const enabled = els.ipv6Enabled.checked;
+  els.ipv6BindRow.hidden = !enabled;
+  els.ipv6Bind.disabled = !enabled;
+  els.ipv6Bind.required = enabled;
+  if (enabled && !els.ipv6Bind.value.trim()) els.ipv6Bind.value = "::";
+}
+
 async function saveSite(event) {
   event.preventDefault();
   const previousSite = editingSite ? { ...editingSite } : null;
@@ -2267,6 +2284,9 @@ async function saveSite(event) {
     hstsEnabled: els.tlsEnabled.checked && els.hstsEnabled.checked,
     securityHeaderProfile: els.securityHeaderProfile.value,
     compressionProfile: els.compressionProfile.value,
+    ipv4Bind: els.ipv4Bind.value,
+    ipv6Enabled: els.ipv6Enabled.checked,
+    ipv6Bind: els.ipv6Enabled.checked ? els.ipv6Bind.value : "",
     root: els.root.value,
     extraDirectives: els.extra.value,
     logsEnabled: els.logsEnabled.checked,

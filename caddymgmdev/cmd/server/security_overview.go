@@ -52,6 +52,7 @@ type securityTrendPoint struct {
 
 type securityTopIP struct {
 	Address string `json:"address"`
+	Country string `json:"country,omitempty"`
 	Count   int    `json:"count"`
 }
 
@@ -155,7 +156,7 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 	for index := range overview.Trends {
 		overview.Trends[index].Label = bucketStart.Add(time.Duration(index) * bucketDuration).Format(labelFormat)
 	}
-	topIPs := map[string]int{}
+	topIPs := map[string]securityTopIP{}
 	for _, site := range sites {
 		if selectedSiteID != "" && site.ID != selectedSiteID {
 			continue
@@ -210,7 +211,13 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 			if bucket >= 0 && bucket < len(overview.Trends) {
 				overview.Trends[bucket].Blocks++
 			}
-			topIPs[address.String()]++
+			entry := topIPs[address.String()]
+			entry.Address = address.String()
+			entry.Count++
+			if entry.Country == "" {
+				entry.Country = country
+			}
+			topIPs[address.String()] = entry
 			switch reason {
 			case "GEO IP rule":
 				overview.GeoBlocks++
@@ -223,8 +230,8 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	overview.TopIPs = make([]securityTopIP, 0, len(topIPs))
-	for address, count := range topIPs {
-		overview.TopIPs = append(overview.TopIPs, securityTopIP{Address: address, Count: count})
+	for _, entry := range topIPs {
+		overview.TopIPs = append(overview.TopIPs, entry)
 	}
 	sort.Slice(overview.TopIPs, func(i, j int) bool {
 		return overview.TopIPs[i].Count > overview.TopIPs[j].Count || (overview.TopIPs[i].Count == overview.TopIPs[j].Count && overview.TopIPs[i].Address < overview.TopIPs[j].Address)

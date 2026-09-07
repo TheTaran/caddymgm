@@ -44,6 +44,33 @@ func TestNormalizeManualIPListsPreservesEnteredAddressesAndCIDRs(t *testing.T) {
 	}
 }
 
+func TestManualAllowlistAcceptsDNSNamesAndUsesResolvedAddresses(t *testing.T) {
+	lists, err := normalizeManualIPLists(ManualIPLists{{
+		Name: "Office VPN", Mode: "allow", Entries: []string{"vpn.example.net", "10.0.0.10"}, ResolvedEntries: []string{"2001:db8::10", "198.51.100.10"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lists[0].Entries[0]; got != "vpn.example.net" {
+		t.Fatalf("DNS name = %q, want preserved name", got)
+	}
+	got := manualIPListEntries(lists, "allow")
+	want := []string{"10.0.0.10", "198.51.100.10", "2001:db8::10"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("matcher entries = %#v, want %#v", got, want)
+	}
+	blocked, err := normalizeManualIPLists(ManualIPLists{{Name: "Blocked", Mode: "block", Entries: []string{"threat.example.net"}, ResolvedEntries: []string{"203.0.113.99"}}})
+	if err != nil {
+		t.Fatalf("block list DNS name was rejected: %v", err)
+	}
+	if got := manualIPListEntries(blocked, "block"); !reflect.DeepEqual(got, []string{"203.0.113.99"}) {
+		t.Fatalf("block DNS matcher entries = %#v", got)
+	}
+	if _, err := normalizeManualIPLists(ManualIPLists{{Name: "Private blocked", Mode: "block", ResolvedEntries: []string{"10.0.0.1"}}}); err == nil {
+		t.Fatal("private DNS block result was accepted")
+	}
+}
+
 func TestNormalizeExternalBlocklistsConvertsGitHubBlobURLs(t *testing.T) {
 	got, err := normalizeExternalBlocklists(context.Background(), ExternalBlocklists{{
 		Name: "FireHOL Level 1",

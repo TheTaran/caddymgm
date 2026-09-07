@@ -25,6 +25,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 | Date | Feature | What's included |
 | --- | --- | --- |
+| 2026-09-07 | **Network Listeners and DNS IP Lists** | Per-host IPv4 bind addresses, opt-in IPv6 listeners, plus persistent DNS-name allow and deny lists with A/AAAA refresh every 12 hours and last-known-address protection. |
 | 2026-09-07 | **Dashboard Security Analytics** | Added a compact Security Statistics dashboard with period-based trends, ranked blocked source IPs, live events, and an interactive OpenStreetMap view without Leaflet. |
 | 2026-09-02 | **Go Runtime Update** | Updated the CaddyMGM build and module baseline to Go 1.27.1. |
 | 2026-09-02 | **Dashboard Data Controls** | Optional exclusion of local network IPs from Dashboard analytics while preserving complete access logs. External blocklists now refresh automatically every 24 hours. |

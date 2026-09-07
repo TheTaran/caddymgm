@@ -22,6 +22,8 @@ import (
 const (
 	externalBlocklistUpdateInterval = 24 * time.Hour
 	externalBlocklistUpdateTimeout  = 10 * time.Minute
+	dnsAllowlistUpdateInterval      = 12 * time.Hour
+	dnsAllowlistUpdateTimeout       = time.Minute
 )
 
 type ExternalBlocklist struct {
@@ -35,10 +37,12 @@ type ExternalBlocklist struct {
 type ExternalBlocklists []ExternalBlocklist
 
 type ManualIPList struct {
-	Name      string   `json:"name"`
-	Reference string   `json:"reference,omitempty"`
-	Mode      string   `json:"mode"`
-	Entries   []string `json:"entries"`
+	Name            string   `json:"name"`
+	Reference       string   `json:"reference,omitempty"`
+	Mode            string   `json:"mode"`
+	Entries         []string `json:"entries"`
+	ResolvedEntries []string `json:"resolvedEntries,omitempty"`
+	ResolvedAt      string   `json:"resolvedAt,omitempty"`
 }
 
 type ManualIPLists []ManualIPList
@@ -66,7 +70,11 @@ func normalizeManualIPLists(values ManualIPLists) (ManualIPLists, error) {
 			return nil, err
 		}
 		seen[key] = true
-		result = append(result, ManualIPList{Name: name, Reference: strings.TrimSpace(value.Reference), Mode: mode, Entries: entries})
+		resolved, err := normalizeManualResolvedEntries(value.ResolvedEntries, mode == "allow")
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, ManualIPList{Name: name, Reference: strings.TrimSpace(value.Reference), Mode: mode, Entries: entries, ResolvedEntries: resolved, ResolvedAt: strings.TrimSpace(value.ResolvedAt)})
 	}
 	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
 	return result, nil
@@ -89,7 +97,15 @@ func normalizeManualIPListEntries(values []string, allowPrivate bool) ([]string,
 		if err != nil {
 			prefix, prefixErr := netip.ParsePrefix(value)
 			if prefixErr != nil {
-				return nil, errors.New("IP protection entries must be valid IP addresses or CIDR ranges")
+				if isDNSName(value) {
+					value = strings.ToLower(value)
+					if !seen[value] {
+						seen[value] = true
+						result = append(result, value)
+					}
+					continue
+				}
+				return nil, errors.New("IP protection entries must be valid IP addresses, CIDR ranges, or DNS names")
 			}
 			address = prefix.Addr()
 		}
@@ -105,6 +121,45 @@ func normalizeManualIPListEntries(values []string, allowPrivate bool) ([]string,
 	return result, nil
 }
 
+func normalizeManualResolvedEntries(values []string, allowPrivate bool) ([]string, error) {
+	result, seen := make([]string, 0, len(values)), map[string]bool{}
+	for _, value := range values {
+		address, err := netip.ParseAddr(strings.TrimSpace(value))
+		if err != nil {
+			return nil, errors.New("resolved DNS entries must be IP addresses")
+		}
+		address = address.Unmap()
+		if !allowPrivate && (address.IsPrivate() || address.IsLoopback() || address.IsLinkLocalUnicast() || address.IsMulticast() || address.IsUnspecified()) {
+			return nil, errors.New("resolved DNS block entries cannot be private, loopback, link-local, multicast, or unspecified addresses")
+		}
+		value = address.String()
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func isDNSName(value string) bool {
+	value = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".")
+	if len(value) == 0 || len(value) > 253 || !strings.Contains(value, ".") {
+		return false
+	}
+	for _, label := range strings.Split(value, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, character := range label {
+			if !(character == '-' || character >= 'a' && character <= 'z' || character >= '0' && character <= '9') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func manualIPListEntries(values ManualIPLists, mode string) []string {
 	entries, seen := make([]string, 0), map[string]bool{}
 	for _, value := range values {
@@ -112,6 +167,17 @@ func manualIPListEntries(values ManualIPLists, mode string) []string {
 			continue
 		}
 		for _, entry := range value.Entries {
+			if _, err := netip.ParseAddr(entry); err != nil {
+				if _, prefixErr := netip.ParsePrefix(entry); prefixErr != nil {
+					continue
+				}
+			}
+			if !seen[entry] {
+				seen[entry] = true
+				entries = append(entries, entry)
+			}
+		}
+		for _, entry := range value.ResolvedEntries {
 			if !seen[entry] {
 				seen[entry] = true
 				entries = append(entries, entry)
@@ -119,6 +185,78 @@ func manualIPListEntries(values ManualIPLists, mode string) []string {
 		}
 	}
 	return entries
+}
+
+// resolveManualAllowlistDNS updates DNS-name entries. If a later refresh fails,
+// the last successful addresses remain active instead of weakening an existing rule.
+func resolveManualAllowlistDNS(ctx context.Context, lists, previous ManualIPLists) (ManualIPLists, bool, error) {
+	prior := make(map[string]ManualIPList, len(previous))
+	for _, list := range previous {
+		prior[strings.ToLower(list.Name)] = list
+	}
+	changed := false
+	for index := range lists {
+		list := &lists[index]
+		names := make([]string, 0)
+		for _, entry := range list.Entries {
+			if isDNSName(entry) {
+				names = append(names, entry)
+			}
+		}
+		if len(names) == 0 {
+			continue
+		}
+		resolved, seen := make([]string, 0), map[string]bool{}
+		for _, name := range names {
+			addresses, err := net.DefaultResolver.LookupIP(ctx, "ip", name)
+			if err != nil || len(addresses) == 0 {
+				continue
+			}
+			for _, address := range addresses {
+				parsed, ok := netip.AddrFromSlice(address)
+				if !ok {
+					continue
+				}
+				parsed = parsed.Unmap()
+				if list.Mode == "block" && (parsed.IsPrivate() || parsed.IsLoopback() || parsed.IsLinkLocalUnicast() || parsed.IsMulticast() || parsed.IsUnspecified()) {
+					continue
+				}
+				value := parsed.String()
+				if !seen[value] {
+					seen[value] = true
+					resolved = append(resolved, value)
+				}
+			}
+		}
+		if len(resolved) == 0 {
+			if cached, ok := prior[strings.ToLower(list.Name)]; ok && len(cached.ResolvedEntries) > 0 {
+				resolved = append([]string(nil), cached.ResolvedEntries...)
+			} else if len(list.ResolvedEntries) > 0 {
+				resolved = append([]string(nil), list.ResolvedEntries...)
+			} else {
+				return nil, false, fmt.Errorf("could not resolve DNS allowlist entries for %q", list.Name)
+			}
+		}
+		sort.Strings(resolved)
+		if !slicesEqual(list.ResolvedEntries, resolved) {
+			list.ResolvedEntries = resolved
+			changed = true
+		}
+		list.ResolvedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	return lists, changed, nil
+}
+
+func slicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (values *ExternalBlocklists) UnmarshalJSON(content []byte) error {
@@ -268,6 +406,57 @@ func (a *App) startExternalBlocklistUpdater() {
 			time.Sleep(externalBlocklistUpdateInterval)
 		}
 	}()
+}
+
+func (a *App) startManualAllowlistDNSUpdater() {
+	go func() {
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), dnsAllowlistUpdateTimeout)
+			changed, err := a.refreshManualAllowlistDNS(ctx)
+			cancel()
+			if err != nil {
+				log.Printf("DNS allowlist refresh failed; retrying in %s: %v", dnsAllowlistUpdateInterval, err)
+			} else if changed {
+				log.Printf("DNS allowlist addresses refreshed; next refresh in %s", dnsAllowlistUpdateInterval)
+			}
+			time.Sleep(dnsAllowlistUpdateInterval)
+		}
+	}()
+}
+
+func (a *App) refreshManualAllowlistDNS(ctx context.Context) (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.settings.ManualIPLists) == 0 {
+		return false, nil
+	}
+	nextLists, changed, err := resolveManualAllowlistDNS(ctx, append(ManualIPLists(nil), a.settings.ManualIPLists...), a.settings.ManualIPLists)
+	if err != nil || !changed {
+		return changed, err
+	}
+	sites, head, tail, err := a.load()
+	if err != nil {
+		return false, err
+	}
+	previousSettings := a.settings
+	previousSettingsFile, err := os.ReadFile(a.settingsPath)
+	if err != nil {
+		return false, err
+	}
+	a.settings.ManualIPLists = nextLists
+	a.settings.WebProtection.AllowedIPs = manualIPListEntries(nextLists, "allow")
+	if err := a.saveSettingsLocked(); err != nil {
+		a.settings = previousSettings
+		return false, err
+	}
+	if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
+		a.settings = previousSettings
+		if restoreErr := writeFileAtomically(a.settingsPath, previousSettingsFile, 0o600); restoreErr != nil {
+			return false, fmt.Errorf("%w; restoring DNS allowlist settings failed: %v", err, restoreErr)
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (a *App) refreshExternalBlocklists(ctx context.Context) (int, error) {

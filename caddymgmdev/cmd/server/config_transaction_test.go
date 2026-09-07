@@ -310,6 +310,36 @@ func TestWebProtectionRenderAndParsePreservesHostOverride(t *testing.T) {
 	}
 }
 
+func TestClientIPSettingsRenderTrustedHeaderAndForwarding(t *testing.T) {
+	settings := ClientIPSettings{
+		Source:               "x_forwarded_for",
+		TrustedProxyCIDRs:    []string{"192.0.2.10", "2001:db8::/32"},
+		ForwardedForHandling: "replace",
+	}
+	if err := normalizeClientIPSettings(&settings); err != nil {
+		t.Fatal(err)
+	}
+	site := Site{ID: "client-ip", Address: "client-ip.example.test", Mode: "proxy", Upstream: "http://app:8080", Enabled: true}
+	rendered := renderManagedWithClientIP([]Site{site}, nil, "/logs", WebInterface{}, WebProtection{}, settings, AccessOIDCProvider{}, "file", "8080")
+	for _, want := range []string{
+		"trusted_proxies static 192.0.2.10/32 2001:db8::/32",
+		"client_ip_headers X-Forwarded-For",
+		"header_up -X-Forwarded-For",
+		"header_up X-Forwarded-For {remote_host}",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered managed config is missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestClientIPSettingsRejectsForwardedSourceWithoutTrustedProxies(t *testing.T) {
+	settings := ClientIPSettings{Source: "x_real_ip", ForwardedForHandling: "append"}
+	if err := normalizeClientIPSettings(&settings); err == nil {
+		t.Fatal("forwarded source without trusted proxies was accepted")
+	}
+}
+
 func TestWebProtectionAllowModeBlocksCountriesOutsideSelection(t *testing.T) {
 	policy := WebProtection{Enabled: true, CountryMode: "allow", BlockedCountries: []string{"CH", "DE"}}
 	if err := normalizeWebProtection(&policy); err != nil {

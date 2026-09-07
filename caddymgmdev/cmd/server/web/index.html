@@ -740,6 +740,30 @@
                 Caddy API URL
                 <input id="settings-caddy-api-url" readonly />
               </label>
+              <div class="settings-subsection">
+                <h3>Visitor IP and forwarding</h3>
+                <p class="field-note">Use a forwarded header only when Caddy is behind a trusted proxy. Direct deployments should keep Remote IP.</p>
+                <label>
+                  Get Attack IP From
+                  <select id="settings-client-ip-source">
+                    <option value="remote_ip">Remote IP</option>
+                    <option value="x_forwarded_for">X-Forwarded-For</option>
+                    <option value="x_real_ip">X-Real-IP</option>
+                  </select>
+                </label>
+                <label>
+                  Trusted Proxy IPs and CIDRs
+                  <textarea id="settings-trusted-proxy-cidrs" rows="3" placeholder="192.0.2.10\n2001:db8::/32"></textarea>
+                </label>
+                <label>
+                  X-Forwarded-For sent upstream
+                  <select id="settings-forwarded-for-handling">
+                    <option value="append">Append (Caddy default)</option>
+                    <option value="replace">Replace with visitor IP</option>
+                    <option value="remove">Remove header</option>
+                  </select>
+                </label>
+              </div>
             </section>
 
             <section id="settings-panel-logs" class="panel-card editor-card settings-card settings-group settings-panel" role="tabpanel" aria-labelledby="settings-tab-logs" data-settings-panel="logs" hidden>

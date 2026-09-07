@@ -201,6 +201,9 @@ const els = {
   settingsWebTLSEnabled: document.querySelector("#settings-web-tls-enabled"),
   settingsWebACMERow: document.querySelector("#settings-web-acme-row"),
   settingsWebACME: document.querySelector("#settings-web-acme"),
+  settingsClientIPSource: document.querySelector("#settings-client-ip-source"),
+  settingsTrustedProxyCIDRs: document.querySelector("#settings-trusted-proxy-cidrs"),
+  settingsForwardedForHandling: document.querySelector("#settings-forwarded-for-handling"),
   settingsLogRetention: document.querySelector("#settings-log-retention"),
   settingsHideLocalDashboardIPs: document.querySelector("#settings-hide-local-dashboard-ips"),
   settingsCaddyMode: document.querySelector("#settings-caddy-mode"),
@@ -1064,6 +1067,9 @@ async function loadSettings() {
     els.settingsAccessGateway.value = providers.oidc?.gatewayUrl || "";
     els.settingsWebHost.value = settings.webInterface?.host || "";
     els.settingsWebTLSEnabled.checked = !!settings.webInterface?.tlsEnabled;
+    els.settingsClientIPSource.value = settings.clientIp?.source || "remote_ip";
+    els.settingsTrustedProxyCIDRs.value = (settings.clientIp?.trustedProxyCidrs || []).join("\n");
+    els.settingsForwardedForHandling.value = settings.clientIp?.forwardedForHandling || "append";
     els.settingsLogRetention.value = settings.logRetention || 100;
     els.settingsHideLocalDashboardIPs.checked = !!settings.hideLocalDashboardIps;
     els.settingsCaddyMode.value = settings.caddyMode || "file";
@@ -1107,6 +1113,11 @@ async function saveSettings(event) {
     },
     logRetention: Number(els.settingsLogRetention.value || 100),
     hideLocalDashboardIps: els.settingsHideLocalDashboardIPs.checked,
+    clientIp: {
+      source: els.settingsClientIPSource.value,
+      trustedProxyCidrs: els.settingsTrustedProxyCIDRs.value.split(/[\n,]/).map((value) => value.trim()).filter(Boolean),
+      forwardedForHandling: els.settingsForwardedForHandling.value,
+    },
     manualIpLists: settings?.manualIpLists || [],
     acmeIssuers: settings?.acmeIssuers || [],
     webProtection: settings?.webProtection || {},

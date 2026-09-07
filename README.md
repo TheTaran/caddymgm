@@ -25,6 +25,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 | Date | Feature | What's included |
 | --- | --- | --- |
+| 2026-09-07 | **Client IP and Forwarding Controls** | Global visitor-IP source selection with trusted proxy CIDRs, plus controlled append, replacement, or removal of `X-Forwarded-For` for reverse-proxy upstreams. |
 | 2026-09-07 | **Network Listeners and DNS IP Lists** | Per-host IPv4 bind addresses, opt-in IPv6 listeners, plus persistent DNS-name allow and deny lists with A/AAAA refresh every 12 hours and last-known-address protection. |
 | 2026-09-07 | **Dashboard Security Analytics** | Added a compact Security Statistics dashboard with period-based trends, ranked blocked source IPs, live events, and an interactive OpenStreetMap view without Leaflet. |
 | 2026-09-02 | **Go Runtime Update** | Updated the CaddyMGM build and module baseline to Go 1.27.1. |
@@ -43,20 +44,10 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 ## Planned Upcoming Features
 
-### Client IP and network listeners
-
-- Configurable visitor IP source (`Get Attack IP From`)
-- Explicit IPv6 listener configuration
-- Per-web-host IPv4/IPv6 and port 80/443 listener selection
-- Controlled clearing and rewriting of `X-Forwarded-For`
-
 ### HTTP routing and transport
 
-- Configurable automatic HTTP-to-HTTPS redirects
-- Server-Sent Events (SSE) streaming support
 - Configurable upstream read timeout
 - Configurable upstream connection timeout
-- Advanced low-level reverse-proxy configuration
 
 ### Authentication
 
@@ -65,13 +56,10 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 ### HTTP headers and access security
 
-- Configurable HTTP header operations
-- Additional security features to protect managed websites, including:
-  - access policies for everyone, allowed IPs, or blocked IPs
-  - IP address and CIDR lists
-  - maximum request body size limits
-  - allowed HTTP methods
-  - blocked paths
+- Structured HTTP header operations
+- Managed maximum request body size limits
+- Allowed HTTP methods
+- Blocked paths
 
 ## Screenshots
 

@@ -205,6 +205,7 @@ type Settings struct {
 	ConfigPath             string             `json:"configPath"`
 	LogRetention           int                `json:"logRetention"`
 	HideLocalDashboardIPs  bool               `json:"hideLocalDashboardIps,omitempty"`
+	ClientIP               ClientIPSettings   `json:"clientIp,omitempty"`
 	ACMEIssuers            []ACMEIssuer       `json:"acmeIssuers,omitempty"`
 	CaddyMode              string             `json:"caddyMode"`
 	CaddyAPIURL            string             `json:"caddyApiUrl"`
@@ -216,6 +217,14 @@ type Settings struct {
 	ExternalBlockedIPCount int                `json:"externalBlockedIpCount,omitempty"`
 	RefreshBlocklists      bool               `json:"refreshExternalBlocklists,omitempty"`
 	RefreshBlocklistURL    string             `json:"refreshExternalBlocklistUrl,omitempty"`
+}
+
+// ClientIPSettings controls which address Caddy uses for visitor-aware rules
+// and which X-Forwarded-For value is sent to proxy upstreams.
+type ClientIPSettings struct {
+	Source               string   `json:"source,omitempty"`
+	TrustedProxyCIDRs    []string `json:"trustedProxyCidrs,omitempty"`
+	ForwardedForHandling string   `json:"forwardedForHandling,omitempty"`
 }
 
 type OIDCSettings struct {
@@ -868,6 +877,10 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if next.LogRetention < 25 {
 		next.LogRetention = 100
 	}
+	if err := normalizeClientIPSettings(&next.ClientIP); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	if err := normalizeWebProtection(&next.WebProtection); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -1462,12 +1475,54 @@ func (a *App) applySettingsEnvOverridesLocked(settings *Settings) {
 	if settings.LogRetention == 0 {
 		settings.LogRetention = 100
 	}
+	_ = normalizeClientIPSettings(&settings.ClientIP)
 	normalizeWebInterface(&settings.WebInterface, a.caddyMode)
 	settings.OIDC = normalizeOIDCSettings(settings.OIDC, OIDCSettings{})
 	if !settings.OIDCAuthEnabled {
 		settings.OIDC.Enabled = false
 	}
 	settings.ACMEIssuers = ensureBuiltInACMEIssuers(settings.ACMEIssuers)
+}
+
+func normalizeClientIPSettings(settings *ClientIPSettings) error {
+	settings.Source = strings.ToLower(strings.TrimSpace(settings.Source))
+	if settings.Source == "" {
+		settings.Source = "remote_ip"
+	}
+	if settings.Source != "remote_ip" && settings.Source != "x_forwarded_for" && settings.Source != "x_real_ip" {
+		return errors.New("visitor IP source must be Remote IP, X-Forwarded-For, or X-Real-IP")
+	}
+	settings.ForwardedForHandling = strings.ToLower(strings.TrimSpace(settings.ForwardedForHandling))
+	if settings.ForwardedForHandling == "" {
+		settings.ForwardedForHandling = "append"
+	}
+	if settings.ForwardedForHandling != "append" && settings.ForwardedForHandling != "replace" && settings.ForwardedForHandling != "remove" {
+		return errors.New("X-Forwarded-For handling must be append, replace, or remove")
+	}
+	entries := make([]string, 0, len(settings.TrustedProxyCIDRs))
+	seen := make(map[string]bool)
+	for _, raw := range settings.TrustedProxyCIDRs {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if address, err := netip.ParseAddr(value); err == nil {
+			value = netip.PrefixFrom(address, address.BitLen()).String()
+		} else if prefix, err := netip.ParsePrefix(value); err == nil {
+			value = prefix.Masked().String()
+		} else {
+			return fmt.Errorf("invalid trusted proxy IP or CIDR %q", raw)
+		}
+		if !seen[value] {
+			seen[value] = true
+			entries = append(entries, value)
+		}
+	}
+	settings.TrustedProxyCIDRs = entries
+	if settings.Source != "remote_ip" && len(entries) == 0 {
+		return errors.New("trusted proxy CIDRs are required when using a forwarded visitor IP header")
+	}
+	return nil
 }
 
 func (a *App) readSites() ([]Site, error) {
@@ -1503,7 +1558,7 @@ func (a *App) save(head string, sites []Site, tail string) error {
 	}
 	defaultProtection := a.settings.WebProtection
 	defaultProtection.BlockedIPs = append(append([]string{}, defaultProtection.BlockedIPs...), a.settings.ExternalBlockedIPs...)
-	out.WriteString(renderManagedWithProtection(sites, a.settings.ACMEIssuers, a.caddyLogDir, a.settings.WebInterface, defaultProtection, a.authProviders.OIDC, a.caddyMode, a.webPort))
+	out.WriteString(renderManagedWithClientIP(sites, a.settings.ACMEIssuers, a.caddyLogDir, a.settings.WebInterface, defaultProtection, a.settings.ClientIP, a.authProviders.OIDC, a.caddyMode, a.webPort))
 	if strings.TrimSpace(tail) != "" {
 		out.WriteString("\n")
 		out.WriteString(strings.TrimLeft(tail, "\n"))
@@ -1927,8 +1982,13 @@ func renderManaged(sites []Site, issuers []ACMEIssuer, logDir string, webInterfa
 }
 
 func renderManagedWithProtection(sites []Site, issuers []ACMEIssuer, logDir string, webInterface WebInterface, defaultProtection WebProtection, accessProvider AccessOIDCProvider, caddyMode string, webPort string) string {
+	return renderManagedWithClientIP(sites, issuers, logDir, webInterface, defaultProtection, ClientIPSettings{}, accessProvider, caddyMode, webPort)
+}
+
+func renderManagedWithClientIP(sites []Site, issuers []ACMEIssuer, logDir string, webInterface WebInterface, defaultProtection WebProtection, clientIP ClientIPSettings, accessProvider AccessOIDCProvider, caddyMode string, webPort string) string {
 	var out strings.Builder
 	out.WriteString(managedStart + "\n")
+	out.WriteString(renderClientIPGlobalOptions(clientIP))
 	needsGeoIP := defaultProtection.Enabled && len(defaultProtection.BlockedCountries) > 0
 	for _, site := range sites {
 		if site.ProtectionOverride && site.WebProtection.Enabled && len(site.WebProtection.BlockedCountries) > 0 {
@@ -1952,13 +2012,29 @@ func renderManagedWithProtection(sites []Site, issuers []ACMEIssuer, logDir stri
 		if site.ProtectionOverride {
 			policy = site.WebProtection
 		}
-		out.WriteString(renderSiteWithProtection(site, policy, issuers, logDir, effectiveWebInterfaceUpstream(webInterface, caddyMode)))
+		out.WriteString(renderSiteWithProtectionAndClientIP(site, policy, clientIP, issuers, logDir, effectiveWebInterfaceUpstream(webInterface, caddyMode)))
 		out.WriteString("# caddymgm:end-site\n")
 		if !site.Enabled {
 			out.WriteString(renderUnavailableSite(site, issuers, logDir))
 		}
 	}
 	out.WriteString(managedEnd + "\n")
+	return out.String()
+}
+
+func renderClientIPGlobalOptions(settings ClientIPSettings) string {
+	if settings.Source == "" || settings.Source == "remote_ip" || len(settings.TrustedProxyCIDRs) == 0 {
+		return ""
+	}
+	header := "X-Forwarded-For"
+	if settings.Source == "x_real_ip" {
+		header = "X-Real-IP"
+	}
+	var out strings.Builder
+	out.WriteString("{\n\tservers {\n")
+	out.WriteString("\t\ttrusted_proxies static " + strings.Join(settings.TrustedProxyCIDRs, " ") + "\n")
+	out.WriteString("\t\tclient_ip_headers " + header + "\n")
+	out.WriteString("\t}\n}\n")
 	return out.String()
 }
 
@@ -2147,6 +2223,10 @@ func renderSite(site Site, issuers []ACMEIssuer, logDir, authGatewayUpstream str
 }
 
 func renderSiteWithProtection(site Site, policy WebProtection, issuers []ACMEIssuer, logDir, authGatewayUpstream string) string {
+	return renderSiteWithProtectionAndClientIP(site, policy, ClientIPSettings{}, issuers, logDir, authGatewayUpstream)
+}
+
+func renderSiteWithProtectionAndClientIP(site Site, policy WebProtection, clientIP ClientIPSettings, issuers []ACMEIssuer, logDir, authGatewayUpstream string) string {
 	var out strings.Builder
 	prefix := ""
 	if !site.Enabled {
@@ -2223,6 +2303,13 @@ func renderSiteWithProtection(site Site, policy WebProtection, issuers []ACMEIss
 		skipTLSVerify := site.SkipTLSVerify && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(site.Upstream)), "http://")
 		out.WriteString(prefix + "\treverse_proxy " + site.Upstream + " {\n")
 		out.WriteString(prefix + "\t\theader_up Host {host}\n")
+		switch clientIP.ForwardedForHandling {
+		case "replace":
+			out.WriteString(prefix + "\t\theader_up -X-Forwarded-For\n")
+			out.WriteString(prefix + "\t\theader_up X-Forwarded-For {remote_host}\n")
+		case "remove":
+			out.WriteString(prefix + "\t\theader_up -X-Forwarded-For\n")
+		}
 		if site.RewriteRedirects && canRewrite {
 			for _, rule := range redirectRules {
 				out.WriteString(prefix + "\t\theader_down Location " + caddyfileQuote(rule[0]) + " " + caddyfileQuote(rule[1]) + "\n")

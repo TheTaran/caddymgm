@@ -44,12 +44,6 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 | 2026-08-28 | **Website Security Controls** | Redirect rewriting, additional advertised origins, managed Host and forwarded headers, HSTS, Standard/Strict security headers, and bcrypt-based Basic Authentication. |
 | 2026-08-26 | **Website OIDC Authentication** | Central OIDC authentication for protected web hosts. |
 
-## Planned Upcoming Features
-
-### Authentication
-
-- NTLM authentication
-
 ## Screenshots
 
 | View | Preview |

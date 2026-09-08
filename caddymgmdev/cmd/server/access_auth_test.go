@@ -69,11 +69,23 @@ func TestSafeAccessReturnPath(t *testing.T) {
 func TestRenderAccessGateway(t *testing.T) {
 	provider := AccessOIDCProvider{Enabled: true, GatewayURL: "https://sso.example.com", ACMEIssuerID: "step"}
 	issuers := []ACMEIssuer{{ID: "step", DirectoryURL: "https://ca.example.com/acme/directory"}}
-	rendered := renderAccessGateway(provider, issuers, "caddymgm:8080")
-	for _, want := range []string{"https://sso.example.com", "reverse_proxy /.caddymgm/auth/* caddymgm:8080", "dir https://ca.example.com/acme/directory"} {
+	rendered := renderAccessGateway(provider, issuers, "caddymgm:8080", nil)
+	for _, want := range []string{"https://sso.example.com", "bind 0.0.0.0", "reverse_proxy /.caddymgm/auth/* caddymgm:8080", "dir https://ca.example.com/acme/directory"} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("gateway missing %q:\n%s", want, rendered)
 		}
+	}
+}
+
+func TestRenderAccessGatewayAddsIPv6ListenerForEnabledIPv6Host(t *testing.T) {
+	provider := AccessOIDCProvider{Enabled: true, GatewayURL: "https://sso.example.com"}
+	rendered := renderAccessGateway(provider, nil, "caddymgm:8080", []Site{
+		{ID: "ipv4", Enabled: true},
+		{ID: "ipv6", Enabled: true, IPv6Enabled: true},
+		{ID: "disabled-ipv6", Enabled: false, IPv6Enabled: true},
+	})
+	if strings.Count(rendered, "https://sso.example.com {") != 2 || !strings.Contains(rendered, "bind 0.0.0.0") || !strings.Contains(rendered, "bind [::]") {
+		t.Fatalf("gateway listeners are incomplete:\n%s", rendered)
 	}
 }
 

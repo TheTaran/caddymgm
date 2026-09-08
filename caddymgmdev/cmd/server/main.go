@@ -2086,7 +2086,7 @@ func renderManagedWithClientIP(sites []Site, issuers []ACMEIssuer, logDir string
 	if block := renderWebInterface(webInterface, issuers, caddyMode, webPort); block != "" {
 		out.WriteString(block)
 	}
-	if block := renderAccessGateway(accessProvider, issuers, effectiveWebInterfaceUpstream(webInterface, caddyMode)); block != "" {
+	if block := renderAccessGateway(accessProvider, issuers, effectiveWebInterfaceUpstream(webInterface, caddyMode), sites); block != "" {
 		out.WriteString(block)
 	}
 	for _, site := range sites {
@@ -2228,7 +2228,7 @@ func renderWebInterface(webInterface WebInterface, issuers []ACMEIssuer, caddyMo
 	return out.String()
 }
 
-func renderAccessGateway(provider AccessOIDCProvider, issuers []ACMEIssuer, upstream string) string {
+func renderAccessGateway(provider AccessOIDCProvider, issuers []ACMEIssuer, upstream string, sites []Site) string {
 	if !provider.Enabled || upstream == "" {
 		return ""
 	}
@@ -2238,24 +2238,34 @@ func renderAccessGateway(provider AccessOIDCProvider, issuers []ACMEIssuer, upst
 	}
 	var out strings.Builder
 	out.WriteString("# caddymgm:access-gateway\n")
-	out.WriteString("https://" + u.Host + " {\n")
-	out.WriteString("\trewrite / /.caddymgm/auth/portal\n")
-	out.WriteString("\treverse_proxy /.caddymgm/auth/* " + upstream + "\n")
-	if issuer, ok := findACMEIssuer(issuers, provider.ACMEIssuerID); ok {
-		out.WriteString("\t# caddymgm:tls-issuer " + issuer.ID + "\n")
-		out.WriteString("\ttls {\n")
-		out.WriteString("\t\tissuer acme {\n")
-		out.WriteString("\t\t\tdir " + issuer.DirectoryURL + "\n")
-		if issuer.Email != "" {
-			out.WriteString("\t\t\temail " + issuer.Email + "\n")
+	binds := []string{"0.0.0.0"}
+	for _, site := range sites {
+		if site.Enabled && site.IPv6Enabled {
+			binds = append(binds, "[::]")
+			break
 		}
-		if issuer.RootCAFile != "" {
-			out.WriteString("\t\t\ttrusted_roots " + caddyfileQuote(issuer.RootCAFile) + "\n")
-		}
-		out.WriteString("\t\t}\n")
-		out.WriteString("\t}\n")
 	}
-	out.WriteString("}\n")
+	for _, bind := range binds {
+		out.WriteString("https://" + u.Host + " {\n")
+		out.WriteString("\tbind " + bind + "\n")
+		out.WriteString("\trewrite / /.caddymgm/auth/portal\n")
+		out.WriteString("\treverse_proxy /.caddymgm/auth/* " + upstream + "\n")
+		if issuer, ok := findACMEIssuer(issuers, provider.ACMEIssuerID); ok {
+			out.WriteString("\t# caddymgm:tls-issuer " + issuer.ID + "\n")
+			out.WriteString("\ttls {\n")
+			out.WriteString("\t\tissuer acme {\n")
+			out.WriteString("\t\t\tdir " + issuer.DirectoryURL + "\n")
+			if issuer.Email != "" {
+				out.WriteString("\t\t\temail " + issuer.Email + "\n")
+			}
+			if issuer.RootCAFile != "" {
+				out.WriteString("\t\t\ttrusted_roots " + caddyfileQuote(issuer.RootCAFile) + "\n")
+			}
+			out.WriteString("\t\t}\n")
+			out.WriteString("\t}\n")
+		}
+		out.WriteString("}\n")
+	}
 	out.WriteString("# caddymgm:end-access-gateway\n")
 	return out.String()
 }

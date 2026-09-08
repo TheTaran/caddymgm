@@ -25,6 +25,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 
 | Date | Feature | What's included |
 | --- | --- | --- |
+| 2026-09-08 | **Reliable Service Startup** | Compose health checks now wait for Caddy's Admin API before CaddyMGM starts and synchronizes managed configuration. |
 | 2026-09-07 | **Structured HTTP Access Security** | Per-host request and response header operations, request body limits, allowed-method rules, and blocked-path rules rendered as validated Caddy directives. |
 | 2026-09-07 | **Upstream Transport Timeouts** | Per-web-host connection and response-header wait timeouts for reverse-proxy upstreams, with validated Go duration values. |
 | 2026-09-07 | **Client IP and Forwarding Controls** | Global visitor-IP source selection with trusted proxy CIDRs, plus controlled append, replacement, or removal of `X-Forwarded-For` for reverse-proxy upstreams. |

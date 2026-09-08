@@ -408,14 +408,16 @@ func (a *App) handleAccessCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auditSuccess := false
+	auditFailure := "OIDC callback did not complete"
 	defer func() {
 		if !auditSuccess {
-			a.recordOIDCAudit(r, "login_failed", "failed", "", "", "CaddyMGM SSO", "Website SSO login")
+			a.recordOIDCAudit(r, "login_failed", "failed", "", "", "CaddyMGM SSO", "Website SSO login failed: "+auditFailure)
 		}
 	}()
 	state, code := strings.TrimSpace(r.URL.Query().Get("state")), strings.TrimSpace(r.URL.Query().Get("code"))
 	cookie, err := r.Cookie(accessStateCookieName)
 	if err != nil || state == "" || code == "" || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {
+		auditFailure = "invalid OIDC response or state cookie"
 		writeError(w, http.StatusBadRequest, errors.New("invalid OIDC response"))
 		return
 	}
@@ -425,37 +427,44 @@ func (a *App) handleAccessCallback(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 	http.SetCookie(w, accessCookie(accessStateCookieName, "", -time.Hour))
 	if !ok || !pending.ExpiresAt.After(time.Now()) {
+		auditFailure = "OIDC state expired or is no longer pending"
 		writeError(w, http.StatusBadRequest, errors.New("OIDC state expired"))
 		return
 	}
 	runtime, err := a.accessRuntime(r.Context(), pending.RedirectURL)
 	if err != nil {
+		auditFailure = "OIDC provider is unavailable"
 		writeError(w, http.StatusServiceUnavailable, errors.New("OIDC provider unavailable"))
 		return
 	}
 	token, err := runtime.Config.Exchange(r.Context(), code)
 	if err != nil {
+		auditFailure = "OIDC authorization code exchange failed"
 		writeError(w, http.StatusUnauthorized, errors.New("OIDC exchange failed"))
 		return
 	}
 	raw, ok := token.Extra("id_token").(string)
 	if !ok {
+		auditFailure = "OIDC provider response did not contain an ID token"
 		writeError(w, http.StatusUnauthorized, errors.New("missing ID token"))
 		return
 	}
 	idToken, err := runtime.Verifier.Verify(r.Context(), raw)
 	if err != nil {
+		auditFailure = "OIDC ID token verification failed"
 		writeError(w, http.StatusUnauthorized, errors.New("invalid ID token"))
 		return
 	}
 	var claims map[string]any
 	if err := idToken.Claims(&claims); err != nil {
+		auditFailure = "OIDC ID token claims could not be read"
 		writeError(w, http.StatusUnauthorized, errors.New("invalid claims"))
 		return
 	}
 	textClaim := func(name string) string { value, _ := claims[name].(string); return strings.TrimSpace(value) }
 	username := firstNonEmpty(textClaim("preferred_username"), textClaim("email"), textClaim("name"), textClaim("sub"))
 	if username == "" {
+		auditFailure = "OIDC identity did not contain a usable username"
 		writeError(w, http.StatusUnauthorized, errors.New("OIDC identity is missing"))
 		return
 	}
@@ -463,6 +472,7 @@ func (a *App) handleAccessCallback(w http.ResponseWriter, r *http.Request) {
 	if pending.SiteID != "" {
 		site, err = a.siteByID(pending.SiteID)
 		if err != nil {
+			auditFailure = "protected web host is unavailable or no longer enabled"
 			writeError(w, http.StatusForbidden, err)
 			return
 		}

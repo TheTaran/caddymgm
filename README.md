@@ -29,7 +29,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 | 2026-09-07 | **Structured HTTP Access Security** | Per-host request and response header operations, request body limits, allowed-method rules, and blocked-path rules rendered as validated Caddy directives. |
 | 2026-09-07 | **Upstream Transport Timeouts** | Per-web-host connection and response-header wait timeouts for reverse-proxy upstreams, with validated Go duration values. |
 | 2026-09-07 | **Client IP and Forwarding Controls** | Global visitor-IP source selection with trusted proxy CIDRs, plus controlled append, replacement, or removal of `X-Forwarded-For` for reverse-proxy upstreams. |
-| 2026-09-07 | **Network Listeners and DNS IP Lists** | Per-host IPv4 bind addresses, opt-in IPv6 listeners, plus persistent DNS-name allow and deny lists with A/AAAA refresh every 12 hours and last-known-address protection. |
+| 2026-09-07 | **DNS IP Lists** | Persistent DNS-name allow and deny lists with A/AAAA refresh every 12 hours and last-known-address protection. Docker port publishing controls listener exposure. |
 | 2026-09-07 | **Dashboard Security Analytics** | Added a compact Security Statistics dashboard with period-based trends, ranked blocked source IPs, live events, and an interactive OpenStreetMap view without Leaflet. |
 | 2026-09-02 | **Go Runtime Update** | Updated the CaddyMGM build and module baseline to Go 1.27.1. |
 | 2026-09-02 | **Dashboard Data Controls** | Optional exclusion of local network IPs from Dashboard analytics while preserving complete access logs. External blocklists now refresh automatically every 24 hours. |

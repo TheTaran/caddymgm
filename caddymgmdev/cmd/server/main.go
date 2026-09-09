@@ -96,9 +96,6 @@ type Site struct {
 	BasicAuthPassword     string        `json:"-"`
 	ProtectionOverride    bool          `json:"protectionOverride,omitempty"`
 	WebProtection         WebProtection `json:"webProtection,omitempty"`
-	IPv4Bind              string        `json:"ipv4Bind,omitempty"`
-	IPv6Enabled           bool          `json:"ipv6Enabled,omitempty"`
-	IPv6Bind              string        `json:"ipv6Bind,omitempty"`
 	UpstreamDialTimeout   string        `json:"upstreamDialTimeout,omitempty"`
 	UpstreamReadTimeout   string        `json:"upstreamReadTimeout,omitempty"`
 	RequestHeaders        []HeaderRule  `json:"requestHeaders,omitempty"`
@@ -150,9 +147,6 @@ type sitePayload struct {
 	BasicAuthPassword     string        `json:"basicAuthPassword,omitempty"`
 	ProtectionOverride    bool          `json:"protectionOverride,omitempty"`
 	WebProtection         WebProtection `json:"webProtection,omitempty"`
-	IPv4Bind              string        `json:"ipv4Bind,omitempty"`
-	IPv6Enabled           bool          `json:"ipv6Enabled,omitempty"`
-	IPv6Bind              string        `json:"ipv6Bind,omitempty"`
 	UpstreamDialTimeout   string        `json:"upstreamDialTimeout,omitempty"`
 	UpstreamReadTimeout   string        `json:"upstreamReadTimeout,omitempty"`
 	RequestHeaders        []HeaderRule  `json:"requestHeaders,omitempty"`
@@ -198,9 +192,6 @@ func (p sitePayload) site(id string, defaultLogsEnabled bool) Site {
 		BasicAuthPassword:     p.BasicAuthPassword,
 		ProtectionOverride:    p.ProtectionOverride,
 		WebProtection:         p.WebProtection,
-		IPv4Bind:              p.IPv4Bind,
-		IPv6Enabled:           p.IPv6Enabled,
-		IPv6Bind:              p.IPv6Bind,
 		UpstreamDialTimeout:   p.UpstreamDialTimeout,
 		UpstreamReadTimeout:   p.UpstreamReadTimeout,
 		RequestHeaders:        p.RequestHeaders,
@@ -1842,13 +1833,9 @@ func parseSite(id string, lines []string) (Site, error) {
 			site.WebProtection.AllowedIPs = strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:protection-allowed-ips ")))
 			continue
 		}
-		if strings.HasPrefix(line, "# caddymgm:ipv4-bind ") {
-			site.IPv4Bind = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:ipv4-bind "))
-			continue
-		}
-		if strings.HasPrefix(line, "# caddymgm:ipv6-bind ") {
-			site.IPv6Enabled = true
-			site.IPv6Bind = strings.TrimSpace(strings.TrimPrefix(line, "# caddymgm:ipv6-bind "))
+		if strings.HasPrefix(line, "# caddymgm:ipv4-bind ") || strings.HasPrefix(line, "# caddymgm:ipv6-bind ") {
+			// Consume legacy listener markers. Docker port publishing controls
+			// host bindings, so CaddyMGM no longer manages per-host binds.
 			continue
 		}
 		if strings.HasPrefix(line, "# caddymgm:max-request-body ") {
@@ -2086,7 +2073,7 @@ func renderManagedWithClientIP(sites []Site, issuers []ACMEIssuer, logDir string
 	if block := renderWebInterface(webInterface, issuers, caddyMode, webPort); block != "" {
 		out.WriteString(block)
 	}
-	if block := renderAccessGateway(accessProvider, issuers, effectiveWebInterfaceUpstream(webInterface, caddyMode), sites); block != "" {
+	if block := renderAccessGateway(accessProvider, issuers, effectiveWebInterfaceUpstream(webInterface, caddyMode)); block != "" {
 		out.WriteString(block)
 	}
 	for _, site := range sites {
@@ -2228,7 +2215,7 @@ func renderWebInterface(webInterface WebInterface, issuers []ACMEIssuer, caddyMo
 	return out.String()
 }
 
-func renderAccessGateway(provider AccessOIDCProvider, issuers []ACMEIssuer, upstream string, sites []Site) string {
+func renderAccessGateway(provider AccessOIDCProvider, issuers []ACMEIssuer, upstream string) string {
 	if !provider.Enabled || upstream == "" {
 		return ""
 	}
@@ -2238,34 +2225,24 @@ func renderAccessGateway(provider AccessOIDCProvider, issuers []ACMEIssuer, upst
 	}
 	var out strings.Builder
 	out.WriteString("# caddymgm:access-gateway\n")
-	binds := []string{"0.0.0.0"}
-	for _, site := range sites {
-		if site.Enabled && site.IPv6Enabled {
-			binds = append(binds, "[::]")
-			break
+	out.WriteString("https://" + u.Host + " {\n")
+	out.WriteString("\trewrite / /.caddymgm/auth/portal\n")
+	out.WriteString("\treverse_proxy /.caddymgm/auth/* " + upstream + "\n")
+	if issuer, ok := findACMEIssuer(issuers, provider.ACMEIssuerID); ok {
+		out.WriteString("\t# caddymgm:tls-issuer " + issuer.ID + "\n")
+		out.WriteString("\ttls {\n")
+		out.WriteString("\t\tissuer acme {\n")
+		out.WriteString("\t\t\tdir " + issuer.DirectoryURL + "\n")
+		if issuer.Email != "" {
+			out.WriteString("\t\t\temail " + issuer.Email + "\n")
 		}
-	}
-	for _, bind := range binds {
-		out.WriteString("https://" + u.Host + " {\n")
-		out.WriteString("\tbind " + bind + "\n")
-		out.WriteString("\trewrite / /.caddymgm/auth/portal\n")
-		out.WriteString("\treverse_proxy /.caddymgm/auth/* " + upstream + "\n")
-		if issuer, ok := findACMEIssuer(issuers, provider.ACMEIssuerID); ok {
-			out.WriteString("\t# caddymgm:tls-issuer " + issuer.ID + "\n")
-			out.WriteString("\ttls {\n")
-			out.WriteString("\t\tissuer acme {\n")
-			out.WriteString("\t\t\tdir " + issuer.DirectoryURL + "\n")
-			if issuer.Email != "" {
-				out.WriteString("\t\t\temail " + issuer.Email + "\n")
-			}
-			if issuer.RootCAFile != "" {
-				out.WriteString("\t\t\ttrusted_roots " + caddyfileQuote(issuer.RootCAFile) + "\n")
-			}
-			out.WriteString("\t\t}\n")
-			out.WriteString("\t}\n")
+		if issuer.RootCAFile != "" {
+			out.WriteString("\t\t\ttrusted_roots " + caddyfileQuote(issuer.RootCAFile) + "\n")
 		}
-		out.WriteString("}\n")
+		out.WriteString("\t\t}\n")
+		out.WriteString("\t}\n")
 	}
+	out.WriteString("}\n")
 	out.WriteString("# caddymgm:end-access-gateway\n")
 	return out.String()
 }
@@ -2329,17 +2306,7 @@ func renderSiteWithProtectionAndClientIP(site Site, policy WebProtection, client
 	if site.TLSMode == "" || site.TLSMode == "off" {
 		address = "http://" + strings.TrimPrefix(strings.TrimPrefix(address, "http://"), "https://")
 	}
-	ipv4Bind := site.IPv4Bind
-	if ipv4Bind == "" {
-		ipv4Bind = "0.0.0.0"
-	}
 	out.WriteString(prefix + address + " {\n")
-	out.WriteString(prefix + "\t# caddymgm:ipv4-bind " + ipv4Bind + "\n")
-	out.WriteString(prefix + "\tbind " + ipv4Bind + "\n")
-	if site.IPv6Enabled {
-		out.WriteString(prefix + "\t# caddymgm:ipv6-bind " + site.IPv6Bind + "\n")
-		out.WriteString(prefix + "\tbind [" + site.IPv6Bind + "]\n")
-	}
 	if site.Comment != "" {
 		out.WriteString(prefix + "\t# caddymgm:comment " + strconv.Quote(site.Comment) + "\n")
 	}
@@ -2637,27 +2604,9 @@ func normalizeSite(site *Site) error {
 	site.BasicAuthUsername = strings.TrimSpace(site.BasicAuthUsername)
 	site.SecurityHeaderProfile = strings.ToLower(strings.TrimSpace(site.SecurityHeaderProfile))
 	site.CompressionProfile = strings.ToLower(strings.TrimSpace(site.CompressionProfile))
-	site.IPv4Bind = strings.TrimSpace(site.IPv4Bind)
-	site.IPv6Bind = strings.TrimSpace(site.IPv6Bind)
 	site.UpstreamDialTimeout = strings.TrimSpace(site.UpstreamDialTimeout)
 	site.UpstreamReadTimeout = strings.TrimSpace(site.UpstreamReadTimeout)
 	site.MaxRequestBody = strings.TrimSpace(site.MaxRequestBody)
-	if site.IPv4Bind == "" {
-		site.IPv4Bind = "0.0.0.0"
-	}
-	if address, err := netip.ParseAddr(site.IPv4Bind); err != nil || !address.Is4() {
-		return errors.New("IPv4 bind must be a valid IPv4 address")
-	}
-	if site.IPv6Enabled {
-		if site.IPv6Bind == "" {
-			site.IPv6Bind = "::"
-		}
-		if address, err := netip.ParseAddr(site.IPv6Bind); err != nil || !address.Is6() {
-			return errors.New("IPv6 bind must be a valid IPv6 address")
-		}
-	} else {
-		site.IPv6Bind = ""
-	}
 	for label, value := range map[string]string{
 		"upstream connection timeout": site.UpstreamDialTimeout,
 		"upstream read timeout":       site.UpstreamReadTimeout,

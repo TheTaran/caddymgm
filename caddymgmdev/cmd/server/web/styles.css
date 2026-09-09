@@ -977,6 +977,14 @@ h2 {
 #view-proxy-hosts .table-head,
 #view-proxy-hosts .site-row-editable {
   grid-template-columns: var(--web-host-columns);
+  justify-items: start;
+}
+
+/* Header cells and their matching row cells must begin at the same grid edge. */
+#view-proxy-hosts .table-head > :not(:last-child),
+#view-proxy-hosts .site-row-editable > :not(:last-child) {
+  justify-self: stretch;
+  text-align: left;
 }
 
 #view-proxy-hosts .site-table-scroll {
@@ -1319,7 +1327,7 @@ h2 {
   color: var(--warning);
 }
 
-.badge.public {
+.badge.external {
   background: rgba(84, 214, 144, 0.13);
   color: var(--ok);
 }

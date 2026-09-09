@@ -201,7 +201,7 @@
                 <div class="table-head" data-sort-table="web-hosts">
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="protocol">Protocol</button><select id="host-filter-protocol" class="column-filter" aria-label="Filter by protocol"><option value="all">All</option><option value="https">HTTPS</option><option value="http">HTTP</option></select></span>
                   <span role="columnheader"><button class="sort-button" type="button" data-sort="address">Address</button></span>
-                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="visibility">Visibility</button><select id="host-filter-visibility" class="column-filter" aria-label="Filter by visibility"><option value="all">All</option><option value="internal">Internal</option><option value="public">Public</option></select></span>
+                  <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="visibility">Visibility</button><select id="host-filter-visibility" class="column-filter" aria-label="Filter by visibility"><option value="all">All</option><option value="internal">Internal</option><option value="external">External</option></select></span>
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="mode">Type</button><select id="host-filter-mode" class="column-filter" aria-label="Filter by type"><option value="all">All</option><option value="proxy">Proxy</option><option value="static">Static</option></select></span>
                   <span role="columnheader"><button class="sort-button" type="button" data-sort="target">Target</button></span>
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="upstreamTls">Upstream TLS</button><select id="host-filter-upstream-tls" class="column-filter" aria-label="Filter by upstream TLS"><option value="all">All</option><option value="verified">Verified</option><option value="skipped">Skipped</option><option value="not-applicable">N/A</option></select></span>
@@ -402,13 +402,6 @@
                     <label>Request headers sent upstream<textarea id="request-headers" rows="3" placeholder="X-App-Name: CaddyMGM&#10;-X-Legacy-Header"></textarea></label>
                     <label>Response headers sent to visitors<textarea id="response-headers" rows="3" placeholder="Permissions-Policy: geolocation=()&#10;-Server"></textarea></label>
                     <p class="field-hint">One rule per line. Use <code>Name: value</code> to set a header or <code>-Name</code> to remove it.</p>
-                  </fieldset>
-                  <fieldset class="protection-override-card">
-                    <legend>Network listeners</legend>
-                    <label>IPv4 bind address<input id="ipv4-bind" value="0.0.0.0" placeholder="0.0.0.0" autocomplete="off" /></label>
-                    <label class="status-check"><input id="ipv6-enabled" type="checkbox" /><span class="status-check-title">Enable IPv6 listener</span><span class="status-check-state" data-disabled="Disabled" data-enabled="Enabled" aria-hidden="true"></span></label>
-                    <label id="ipv6-bind-row" hidden>IPv6 bind address<input id="ipv6-bind" placeholder="::" autocomplete="off" /></label>
-                    <p class="field-hint">IPv4 is active for every host. IPv6 is disabled by default and must be explicitly enabled per web host.</p>
                   </fieldset>
                   <fieldset class="protection-override-card">
                     <legend>Web Protection</legend>

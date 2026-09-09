@@ -122,10 +122,6 @@ const els = {
   blockedPaths: document.querySelector("#blocked-paths"),
   requestHeaders: document.querySelector("#request-headers"),
   responseHeaders: document.querySelector("#response-headers"),
-  ipv4Bind: document.querySelector("#ipv4-bind"),
-  ipv6Enabled: document.querySelector("#ipv6-enabled"),
-  ipv6Bind: document.querySelector("#ipv6-bind"),
-  ipv6BindRow: document.querySelector("#ipv6-bind-row"),
   root: document.querySelector("#root"),
   upstreamRow: document.querySelector("#upstream-row"),
   skipTlsVerifyRow: document.querySelector("#skip-tls-verify-row"),
@@ -435,7 +431,6 @@ els.issuerReset.addEventListener("click", closeIssuerForm);
 els.issuerDelete.addEventListener("click", deleteIssuer);
 els.issuerRootCAUploadButton.addEventListener("click", uploadRootCA);
 els.tlsEnabled.addEventListener("change", syncTLSMode);
-els.ipv6Enabled.addEventListener("change", syncIPv6Listener);
 els.tlsMinVersion.addEventListener("change", () => {
   if (els.tlsMinVersion.value === "tls1.3" && els.tlsMaxVersion.value === "tls1.2") els.tlsMaxVersion.value = "tls1.3";
 });
@@ -2072,9 +2067,6 @@ function editSite(site = null) {
   els.blockedPaths.value = (site?.blockedPaths || []).join("\n");
   els.requestHeaders.value = formatHeaderRules(site?.requestHeaders || []);
   els.responseHeaders.value = formatHeaderRules(site?.responseHeaders || []);
-  els.ipv4Bind.value = site?.ipv4Bind || "0.0.0.0";
-  els.ipv6Enabled.checked = !!site?.ipv6Enabled;
-  els.ipv6Bind.value = site?.ipv6Bind || "::";
   els.root.value = site?.root || "";
   els.extra.value = site?.extraDirectives || "";
   els.enabled.checked = site?.enabled ?? true;
@@ -2110,7 +2102,6 @@ function editSite(site = null) {
   syncSiteAuth();
   syncSecurityHeaderProfile();
   syncBasicAuth();
-  syncIPv6Listener();
   syncEditorHostSummary();
   els.editor.scrollIntoView({ behavior: "smooth", block: "start" });
   els.address.focus({ preventScroll: true });
@@ -2295,14 +2286,6 @@ function syncProtectionOverride() {
   els.protectionOverrideFields.hidden = !els.protectionOverride.checked;
 }
 
-function syncIPv6Listener() {
-  const enabled = els.ipv6Enabled.checked;
-  els.ipv6BindRow.hidden = !enabled;
-  els.ipv6Bind.disabled = !enabled;
-  els.ipv6Bind.required = enabled;
-  if (enabled && !els.ipv6Bind.value.trim()) els.ipv6Bind.value = "::";
-}
-
 function parseHeaderRules(value) {
   return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
     if (line.startsWith("-")) return { name: line.slice(1).trim(), remove: true };
@@ -2344,9 +2327,6 @@ async function saveSite(event) {
     blockedPaths: els.blockedPaths.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
     requestHeaders: mode === "proxy" ? parseHeaderRules(els.requestHeaders.value) : [],
     responseHeaders: parseHeaderRules(els.responseHeaders.value),
-    ipv4Bind: els.ipv4Bind.value,
-    ipv6Enabled: els.ipv6Enabled.checked,
-    ipv6Bind: els.ipv6Enabled.checked ? els.ipv6Bind.value : "",
     root: els.root.value,
     extraDirectives: els.extra.value,
     logsEnabled: els.logsEnabled.checked,
@@ -2666,7 +2646,7 @@ function visibilityForSite(site) {
   const internal = isInternalHostname(host);
   return internal
     ? { label: "Internal", className: "internal", description: "Inferred from a local hostname or private IP address" }
-    : { label: "Public", className: "public", description: "Inferred from a public hostname or IP address" };
+    : { label: "External", className: "external", description: "Inferred from a public hostname or IP address" };
 }
 
 function hostnameFromSiteAddress(address) {

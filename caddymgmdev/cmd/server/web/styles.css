@@ -980,11 +980,11 @@ h2 {
   justify-items: start;
 }
 
-/* Header cells and their matching row cells must begin at the same grid edge. */
-#view-proxy-hosts .table-head > :not(:last-child),
-#view-proxy-hosts .site-row-editable > :not(:last-child) {
-  justify-self: stretch;
-  text-align: left;
+/* Header controls and row values share the same compact grid origin. */
+#view-proxy-hosts .table-head > *,
+#view-proxy-hosts .site-row-editable > * {
+  justify-self: start;
+  min-width: 0;
 }
 
 #view-proxy-hosts .site-table-scroll {

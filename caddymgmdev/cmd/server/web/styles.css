@@ -971,7 +971,7 @@ h2 {
 }
 
 #view-proxy-hosts .site-table-scroll {
-  --web-host-columns: minmax(72px, .55fr) minmax(170px, 1.2fr) minmax(78px, .65fr) minmax(58px, .48fr) minmax(185px, 1.45fr) minmax(92px, .72fr) minmax(72px, .62fr) minmax(94px, .78fr) minmax(120px, 1fr) 132px;
+  --web-host-columns: 132px minmax(72px, .55fr) minmax(170px, 1.2fr) minmax(78px, .65fr) minmax(58px, .48fr) minmax(185px, 1.45fr) minmax(92px, .72fr) minmax(72px, .62fr) minmax(94px, .78fr) minmax(120px, 1fr);
 }
 
 #view-proxy-hosts .table-head,
@@ -1128,9 +1128,9 @@ h2 {
   box-shadow: 0 8px 14px rgba(7, 8, 11, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
-#view-proxy-hosts .table-head > :last-child {
-  justify-self: end;
-  justify-content: flex-end;
+#view-proxy-hosts .table-head > .actions-head {
+  justify-self: start;
+  justify-content: flex-start;
 }
 
 .table-head {
@@ -1200,9 +1200,9 @@ h2 {
   text-align: left;
 }
 
-#view-proxy-hosts .table-head > :last-child {
-  justify-self: end;
-  text-align: right;
+#view-proxy-hosts .table-head > .actions-head {
+  justify-self: start;
+  text-align: left;
 }
 
 .site-list {
@@ -2357,6 +2357,7 @@ pre {
 }
 
 .geo-map-layout {
+  --geo-map-height: clamp(320px, 56vh, 500px);
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
   gap: 16px;
@@ -2365,7 +2366,8 @@ pre {
 
 .geo-map {
   position: relative;
-  min-height: clamp(360px, 42vh, 480px);
+  height: var(--geo-map-height);
+  min-height: 0;
   isolation: isolate;
   overflow: hidden;
   border: 1px solid rgba(91, 184, 255, 0.14);
@@ -2376,7 +2378,7 @@ pre {
 .geo-map-canvas {
   width: 100%;
   height: 100%;
-  min-height: clamp(360px, 42vh, 480px);
+  min-height: 0;
 }
 
 .geo-osm-viewport,
@@ -2636,8 +2638,9 @@ pre {
 .geo-map-sidebar {
   display: flex;
   min-width: 0;
-  height: 100%;
-  max-height: none;
+  min-height: 0;
+  height: var(--geo-map-height);
+  max-height: var(--geo-map-height);
   flex-direction: column;
   gap: 12px;
   overflow: hidden;
@@ -2744,8 +2747,8 @@ pre {
 
 @media (max-width: 900px) {
   .geo-map-sidebar {
-    height: auto;
-    max-height: none;
+    height: var(--geo-map-height);
+    max-height: var(--geo-map-height);
   }
 
   #geo-top-ip-list {
@@ -2923,8 +2926,8 @@ pre {
 @media (max-width: 760px) { .security-statistics-card .panel-heading, .security-statistics-controls { align-items: stretch; flex-direction: column; } .security-statistics-layout { grid-template-columns: 1fr; } .security-statistics-grid { grid-template-columns: repeat(2, minmax(100px, 1fr)); } .statistics-events article { grid-template-columns: 1fr; gap: 2px; padding: 5px 0; } }
 
 #view-proxy-hosts .site-row-editable .site-actions {
-  justify-self: end;
-  justify-content: flex-end;
+  justify-self: start;
+  justify-content: flex-start;
 }
 
 @media (max-width: 760px) {
@@ -2994,4 +2997,56 @@ fieldset { gap: 10px; padding: 8px; }
 
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }
+}
+
+/* Keep host headings, filters and values on identical column boundaries. */
+#view-proxy-hosts .web-host-table {
+  min-width: 1300px;
+  padding: 0 10px;
+}
+
+#view-proxy-hosts .web-host-table .table-head,
+#view-proxy-hosts .web-host-table .site-row {
+  margin-inline: 0;
+  padding-inline: 8px;
+  border-inline: 0;
+}
+
+#view-proxy-hosts .web-host-table .table-head,
+#view-proxy-hosts .web-host-table .site-list {
+  min-width: 0;
+}
+
+#view-proxy-hosts .table-head > span {
+  display: grid;
+  grid-template-rows: 14px 20px;
+  align-content: center;
+  align-items: start;
+  justify-items: start;
+  gap: 2px;
+}
+
+#view-proxy-hosts .table-head .sort-button {
+  min-height: 14px;
+  padding: 0;
+  line-height: 14px;
+}
+
+#view-proxy-hosts .table-head .column-filter {
+  margin: 0;
+  align-self: start;
+}
+
+#view-proxy-hosts .table-head > .actions-head {
+  justify-items: start;
+}
+
+.badge.status-active {
+  background: rgba(83, 201, 139, 0.14);
+  color: #72d6a0;
+}
+
+.badge.status-inactive {
+  background: rgba(255, 86, 119, 0.14);
+  color: #ff91a8;
 }

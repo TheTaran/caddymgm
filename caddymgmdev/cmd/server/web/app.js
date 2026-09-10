@@ -1677,7 +1677,8 @@ function renderSiteList(container, editable, table) {
     row.children[5].classList.toggle("warn", site.mode === "proxy" && !!site.skipTlsVerify);
     row.children[5].classList.toggle("off", site.mode !== "proxy");
     row.children[6].textContent = site.enabled ? "Active" : "Inactive";
-    row.children[6].classList.toggle("off", !site.enabled);
+    row.children[6].classList.toggle("status-active", site.enabled);
+    row.children[6].classList.toggle("status-inactive", !site.enabled);
     const authentication = authenticationForSite(site);
     row.children[7].textContent = authentication.label;
     row.children[7].classList.toggle("secure", authentication.key !== "disabled");
@@ -1691,8 +1692,9 @@ function renderSiteList(container, editable, table) {
         editSite(site);
       }));
       actions.append(
-        createSiteActionButton(site.enabled ? "Deactivate" : "Activate", "secondary", () => toggleSiteEnabled(site)),
+        createSiteActionButton(site.enabled ? "Disable" : "Enable", "secondary", () => toggleSiteEnabled(site)),
       );
+      row.prepend(actions);
     }
     container.append(row);
   }

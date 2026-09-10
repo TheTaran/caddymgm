@@ -198,7 +198,9 @@
                 <span class="host-table-meta"><span id="host-filter-summary" aria-live="polite"></span><span>Manage individual websites</span></span>
               </div>
               <div class="site-table-scroll">
+                <div class="web-host-table">
                 <div class="table-head" data-sort-table="web-hosts">
+                  <span class="actions-head"><span>Actions</span><button id="host-filter-reset" class="filter-reset-button" type="button" title="Reset all filters">Reset</button></span>
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="protocol">Protocol</button><select id="host-filter-protocol" class="column-filter" aria-label="Filter by protocol"><option value="all">All</option><option value="https">HTTPS</option><option value="http">HTTP</option></select></span>
                   <span role="columnheader"><button class="sort-button" type="button" data-sort="address">Address</button></span>
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="visibility">Visibility</button><select id="host-filter-visibility" class="column-filter" aria-label="Filter by visibility"><option value="all">All</option><option value="internal">Internal</option><option value="external">External</option></select></span>
@@ -208,9 +210,9 @@
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="status">Status</button><select id="host-filter-status" class="column-filter" aria-label="Filter by status"><option value="all">All</option><option value="active">Active</option><option value="inactive">Inactive</option></select></span>
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="auth">Authentication</button><select id="host-filter-auth" class="column-filter" aria-label="Filter by authentication"><option value="all">All</option><option value="oidc">OIDC</option><option value="basic">Basic</option><option value="disabled">Disabled</option></select></span>
                   <span class="column-head-control" role="columnheader"><button class="sort-button" type="button" data-sort="comment">Comment</button><input id="host-filter-comment" class="column-filter column-filter-text" type="search" placeholder="Filter" aria-label="Filter by comment" /></span>
-                  <span class="actions-head"><span>Actions</span><button id="host-filter-reset" class="filter-reset-button" type="button" title="Reset all filters">Reset</button></span>
                 </div>
                 <div id="site-list" class="site-list"></div>
+                </div>
               </div>
             </section>
 

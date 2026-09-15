@@ -2726,6 +2726,8 @@ async function loadGeoMap() {
 function renderGeoMap(data = {}) {
   const locations = Array.isArray(data.locations) ? data.locations : [];
   const topIPs = Array.isArray(data.topIps) ? data.topIps : [];
+  if (geoOpenMap?.remove) geoOpenMap.remove();
+  geoOpenMap = null;
   els.geoMap.innerHTML = "";
   els.geoMapDetails.innerHTML = "";
   els.geoMapDetails.hidden = true;
@@ -2744,10 +2746,10 @@ function renderGeoMap(data = {}) {
     appendGeoMapEmpty("No public website accesses found in the retained logs.");
     return;
   }
-  renderOpenStreetMap(locations);
+  renderOpenFreeMap(locations);
 }
 
-function renderOpenStreetMap(locations) {
+function renderLegacyOpenStreetMap(locations) {
   const minZoom = 2, maxZoom = 7;
   const viewport = document.createElement("div");
   viewport.className = "geo-osm-viewport";
@@ -2854,6 +2856,41 @@ function renderOpenStreetMap(locations) {
   requestAnimationFrame(redraw);
 }
 
+function renderOpenFreeMap(locations) {
+  if (!window.maplibregl) {
+    appendGeoMapEmpty("The OpenFreeMap renderer could not be loaded.");
+    return;
+  }
+  const mapElement = document.createElement("div");
+  mapElement.className = "geo-openfreemap-canvas";
+  els.geoMap.append(mapElement);
+  const map = new window.maplibregl.Map({
+    container: mapElement,
+    style: "https://tiles.openfreemap.org/styles/liberty",
+    center: [15, 25],
+    zoom: 2,
+    minZoom: 2,
+    maxZoom: 7,
+    attributionControl: true,
+  });
+  map.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), "bottom-left");
+  for (const location of locations) {
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = "geo-openfreemap-marker";
+    marker.setAttribute("aria-label", `${geoLocationLabel(location)}, ${location.count} requests`);
+    marker.addEventListener("click", () => showGeoLocation(location, marker));
+    new window.maplibregl.Marker({ element: marker, anchor: "center" })
+      .setLngLat([Number(location.longitude), Number(location.latitude)])
+      .addTo(map);
+  }
+  map.on("error", () => {
+    const canvas = map.getCanvas();
+    if (canvas) canvas.setAttribute("data-map-error", "true");
+  });
+  geoOpenMap = { redraw: () => map.resize(), remove: () => map.remove() };
+}
+
 function syncGeoTopHostOptions() {
   const current = els.geoIPHost.value;
   const hosts = [...new Set(latestGeoTopIPs.flatMap((ip) => Array.isArray(ip.sites) ? ip.sites : []))]
@@ -2936,7 +2973,7 @@ function renderTopIPs() {
 }
 
 function showGeoLocation(location, marker) {
-  els.geoMap.querySelectorAll(".geo-marker, .geo-osm-marker").forEach((item) => item.classList.toggle("active", item === marker));
+  els.geoMap.querySelectorAll(".geo-marker, .geo-osm-marker, .geo-openfreemap-marker").forEach((item) => item.classList.toggle("active", item === marker));
   els.geoMapDetails.innerHTML = "";
   els.geoMapDetails.hidden = false;
   const heading = document.createElement("div");
@@ -2975,7 +3012,7 @@ function showGeoLocation(location, marker) {
 }
 
 function closeGeoLocation() {
-  els.geoMap.querySelectorAll(".geo-marker, .geo-osm-marker").forEach((item) => item.classList.remove("active"));
+  els.geoMap.querySelectorAll(".geo-marker, .geo-osm-marker, .geo-openfreemap-marker").forEach((item) => item.classList.remove("active"));
   els.geoMapDetails.hidden = true;
   els.geoMapDetails.innerHTML = "";
 }

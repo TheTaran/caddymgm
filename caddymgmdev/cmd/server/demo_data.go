@@ -2,6 +2,31 @@ package main
 
 import "time"
 
+func demoThroughput(spec securityTrendSpec, siteID string) throughputResponse {
+	start := time.Now().UTC().Add(-spec.window).Truncate(spec.bucketDuration)
+	count := int(time.Now().UTC().Sub(start)/spec.bucketDuration) + 1
+	points := make([]throughputPoint, count)
+	var ingress, egress int64
+	for i := range points {
+		t := start.Add(time.Duration(i) * spec.bucketDuration)
+		in := int64(18_000 + (i*7)%42_000)
+		out := int64(64_000 + (i*13)%180_000)
+		if i%9 == 4 {
+			out += 720_000
+			in += 90_000
+		}
+		if siteID != "" {
+			out = out * int64(1+(len(siteID)%3))
+			in = in * int64(1+(len(siteID)%2))
+		}
+		points[i] = throughputPoint{Label: t.Format(spec.labelFormat), Start: t.Format(time.RFC3339), Ingress: in, Egress: out}
+		ingress += in
+		egress += out
+	}
+	seconds := int64(spec.window / time.Second)
+	return throughputResponse{Ingress: ingress, Egress: egress, IngressRate: ingress / seconds, EgressRate: egress / seconds, Interval: spec.intervalLabel, Points: points}
+}
+
 // demoGeoMapResponse is deliberately static so dashboard work can be reviewed
 // in a development instance without generating traffic or modifying access logs.
 func demoGeoMapResponse() geoMapResponse {
@@ -33,8 +58,8 @@ func demoSecurityOverview(now time.Time, spec securityTrendSpec, includeAllEvent
 	bucketCount := int(now.Sub(bucketStart)/spec.bucketDuration) + 1
 	overview := securityOverview{
 		TrendInterval: spec.intervalLabel,
-		RuleCounts: securityOverviewRuleCounts{SelectedCountries: 3, ManualBlockedIPs: 4, AllowedIPs: 6, ExternalBlockedIPs: 38_520},
-		Trends:       make([]securityTrendPoint, bucketCount),
+		RuleCounts:    securityOverviewRuleCounts{SelectedCountries: 3, ManualBlockedIPs: 4, AllowedIPs: 6, ExternalBlockedIPs: 38_520},
+		Trends:        make([]securityTrendPoint, bucketCount),
 		TopIPs: []securityTopIP{
 			{Address: "203.0.113.24", Country: "Switzerland", Count: 47},
 			{Address: "198.51.100.42", Country: "United States", Count: 35},

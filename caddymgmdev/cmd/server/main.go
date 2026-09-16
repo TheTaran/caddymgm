@@ -301,6 +301,7 @@ type App struct {
 	staticRootBase    string
 	webListen         string
 	webPort           string
+	demoData          bool
 	httpClient        *http.Client
 	settings          Settings
 	logs              []LogEntry
@@ -419,6 +420,7 @@ func main() {
 		staticRootBase:    staticRootBase,
 		webListen:         webListen,
 		webPort:           webPort,
+		demoData:          envBool("CADDYMGM_DEMO_DATA", false),
 		httpClient:        &http.Client{Timeout: 15 * time.Second},
 		sessions:          make(map[string]Session),
 		oidcStates:        make(map[string]time.Time),
@@ -1037,6 +1039,10 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 	if siteID == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"logs": []LogEntry{}})
+		return
+	}
+	if a.demoData {
+		writeJSON(w, http.StatusOK, map[string]any{"logs": demoAccessLogs(siteID)})
 		return
 	}
 

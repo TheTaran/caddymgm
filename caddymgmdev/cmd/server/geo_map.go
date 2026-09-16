@@ -196,6 +196,10 @@ type geoLocationAggregate struct {
 }
 
 func (a *App) handleGeoMap(w http.ResponseWriter, _ *http.Request) {
+	if a.demoData {
+		writeJSON(w, http.StatusOK, demoGeoMapResponse())
+		return
+	}
 	database, databaseErr := maxminddb.Open(a.geoIPDBPath)
 	if databaseErr == nil {
 		defer database.Close()

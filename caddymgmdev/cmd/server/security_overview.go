@@ -137,6 +137,10 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
+	if a.demoData {
+		writeJSON(w, http.StatusOK, demoSecurityOverview(now, trendSpec, includeAllEvents))
+		return
+	}
 	cutoff := now.Add(-trendSpec.window).Unix()
 	selectedSiteID := strings.TrimSpace(r.URL.Query().Get("site"))
 	a.mu.Lock()

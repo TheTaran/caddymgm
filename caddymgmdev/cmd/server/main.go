@@ -9,7 +9,6 @@ import (
 	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
-	"database/sql"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -303,7 +302,6 @@ type App struct {
 	webListen         string
 	webPort           string
 	demoData          bool
-	throughputDB      *sql.DB
 	httpClient        *http.Client
 	settings          Settings
 	logs              []LogEntry
@@ -446,7 +444,6 @@ func main() {
 	app.startGeoIPUpdater()
 	app.startExternalBlocklistUpdater()
 	app.startManualAllowlistDNSUpdater()
-	app.startThroughputIngestor()
 	go func() {
 		if countries, err := app.loadGeoCountries(); err == nil {
 			log.Printf("GeoLite2 country cache ready with %d entries", len(countries))
@@ -476,7 +473,6 @@ func main() {
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
 	mux.HandleFunc("GET /api/geo-map", app.handleGeoMap)
 	mux.HandleFunc("GET /api/security-overview", app.handleSecurityOverview)
-	mux.HandleFunc("GET /api/throughput", app.handleThroughput)
 	mux.HandleFunc("GET /api/geo-countries", app.handleGeoCountries)
 	mux.HandleFunc("GET /api/geo-flag/", app.handleGeoFlag)
 	mux.HandleFunc("POST /api/certificates/root-ca", app.handleUploadRootCA)

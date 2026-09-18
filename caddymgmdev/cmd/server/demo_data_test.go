@@ -41,17 +41,6 @@ func TestDemoAccessLogsFillFirstPage(t *testing.T) {
 	}
 }
 
-func TestDemoThroughputContainsTraffic(t *testing.T) {
-	_, spec, err := securityTrendSpecForPeriod("1h")
-	if err != nil {
-		t.Fatal(err)
-	}
-	data := demoThroughput(spec, "")
-	if len(data.Points) == 0 || data.Egress == 0 || data.EgressRate == 0 {
-		t.Fatalf("demo throughput is empty: %#v", data)
-	}
-}
-
 func containsJSONField(value, field string) bool {
 	return strings.Contains(value, field)
 }

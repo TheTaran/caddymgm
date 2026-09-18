@@ -128,7 +128,6 @@
           <div id="dashboard-tabs" class="dashboard-tabs" role="tablist" aria-label="Dashboard sections">
             <button type="button" class="dashboard-tab active" data-dashboard-tab="overview" role="tab" aria-selected="true">Overview</button>
             <button type="button" class="dashboard-tab" data-dashboard-tab="statistics" role="tab" aria-selected="false">Security Statistics</button>
-            <button type="button" class="dashboard-tab" data-dashboard-tab="throughput" role="tab" aria-selected="false">Throughput</button>
           </div>
         </section>
 
@@ -172,13 +171,6 @@
             </div>
           </section>
           </div>
-          <section data-dashboard-panel="throughput" hidden>
-            <section class="panel-card throughput-card">
-              <div class="panel-heading"><div><h2>Throughput</h2><span id="throughput-summary">Loading traffic data...</span></div><div class="security-statistics-controls"><label><span>Web host</span><select id="throughput-host"><option value="">All hosts</option></select></label><label><span>Period</span><select id="throughput-period"><option value="1h">1 hour</option><option value="6h">6 hours</option><option value="1d">24 hours</option><option value="7d">7 days</option><option value="30d">30 days</option></select></label></div></div>
-              <div class="throughput-values"><article><span>↓ Download</span><strong id="throughput-egress-rate">—</strong></article><article><span>↑ Upload</span><strong id="throughput-ingress-rate">—</strong></article><article><span>Total transferred</span><strong id="throughput-total">—</strong></article></div>
-              <div id="throughput-chart" class="throughput-chart" aria-label="Caddy throughput chart"></div>
-            </section>
-          </section>
           <section data-dashboard-panel="statistics" hidden>
             <section class="panel-card security-statistics-card">
               <div class="panel-heading"><div><h2>Security Statistics</h2><span id="security-statistics-summary">Loading retained access logs...</span></div><div class="security-statistics-controls"><label><span>Web host</span><select id="security-statistics-host"><option value="">All hosts</option></select></label><label><span>Period</span><select id="security-statistics-period"><option value="1h">1 hour</option><option value="6h">6 hours</option><option value="1d">24 hours</option><option value="7d">7 days</option><option value="30d">30 days</option></select></label></div></div>

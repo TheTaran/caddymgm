@@ -2990,30 +2990,6 @@ pre {
 .security-trend-tooltip strong, .security-trend-tooltip span { display: block; }
 .security-trend-tooltip strong { color: #a7d9ff; font-weight: 700; }
 .security-trend-tooltip span { color: var(--muted); }
-.throughput-card { min-height: 390px; }
-.throughput-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
-.throughput-values article { border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; background: rgba(255,255,255,.025); }
-.throughput-values span { display: block; color: var(--muted); font-size: 10px; text-transform: uppercase; }
-.throughput-values strong { display: block; margin-top: 3px; color: var(--accent); font-size: 18px; }
-.throughput-values article:first-child strong { color: #c28cff; }
-.throughput-chart { position: relative; min-height: 250px; border-top: 1px solid rgba(137,151,168,.1); }
-.throughput-chart svg { width: 100%; height: 250px; overflow: visible; }
-.throughput-grid { stroke: rgba(137,151,168,.16); stroke-width: 1; fill: none; }
-.throughput-egress, .throughput-ingress { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-.throughput-egress { stroke: #c28cff; }
-.throughput-ingress { stroke: #4ec5ff; }
-.throughput-crosshair { stroke: rgba(224,239,250,.78); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
-.throughput-highlight { fill: var(--panel); stroke-width: 2.5; pointer-events: none; }
-.throughput-highlight-egress { stroke: #c28cff; }
-.throughput-highlight-ingress { stroke: #4ec5ff; }
-.throughput-hover-area { fill: transparent; cursor: crosshair; }
-.throughput-tooltip-egress { color: #c28cff !important; }
-.throughput-tooltip-ingress { color: #4ec5ff !important; }
-.throughput-chart text { fill: var(--muted); font-size: 10px; }
-.throughput-legend { position: absolute; top: 7px; right: 8px; display: flex; gap: 12px; font-size: 10px; }
-.throughput-legend-egress { color: #c28cff; }
-.throughput-legend-ingress { color: #4ec5ff; }
-@media (max-width: 680px) { .throughput-values { grid-template-columns: 1fr; } }
 .request-trend, .block-trend { fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
 .request-trend { stroke: var(--accent); }
 .block-trend { stroke: #ff647f; }

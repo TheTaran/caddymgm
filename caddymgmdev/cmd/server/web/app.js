@@ -26,13 +26,6 @@ const els = {
   securityStatisticsSummary: document.querySelector("#security-statistics-summary"),
   securityStatisticsHost: document.querySelector("#security-statistics-host"),
   securityStatisticsPeriod: document.querySelector("#security-statistics-period"),
-  throughputSummary: document.querySelector("#throughput-summary"),
-  throughputHost: document.querySelector("#throughput-host"),
-  throughputPeriod: document.querySelector("#throughput-period"),
-  throughputEgressRate: document.querySelector("#throughput-egress-rate"),
-  throughputIngressRate: document.querySelector("#throughput-ingress-rate"),
-  throughputTotal: document.querySelector("#throughput-total"),
-  throughputChart: document.querySelector("#throughput-chart"),
   statisticsRequests: document.querySelector("#statistics-requests"),
   statisticsManagedBlocks: document.querySelector("#statistics-managed-blocks"),
   statisticsGeoBlocks: document.querySelector("#statistics-geo-blocks"),
@@ -338,7 +331,6 @@ let latestProtectionEvents = [];
 let latestGeoTopIPs = [];
 let latestServiceLogsAvailable = true;
 let geoOpenMap = null;
-let throughputPollTimer = null;
 const LOG_PREVIEW_LIMIT = 10;
 const LOG_LOAD_MORE_LIMIT = 100;
 
@@ -367,8 +359,6 @@ els.protectionEventToggle.addEventListener("click", toggleProtectionEventsExpand
 els.securityOverviewPeriod.addEventListener("change", loadSecurityOverview);
 els.securityStatisticsHost.addEventListener("change", loadSecurityStatistics);
 els.securityStatisticsPeriod.addEventListener("change", loadSecurityStatistics);
-els.throughputHost.addEventListener("change", loadThroughput);
-els.throughputPeriod.addEventListener("change", loadThroughput);
 document.querySelectorAll("[data-dashboard-tab]").forEach((tab) => tab.addEventListener("click", () => showDashboardTab(tab.dataset.dashboardTab)));
 els.geoIPScope.addEventListener("change", renderTopIPs);
 els.geoIPHost.addEventListener("change", renderTopIPs);
@@ -503,7 +493,7 @@ document.querySelectorAll("input[name='mode']").forEach((input) => {
 init();
 
 async function init() {
-  await Promise.all([loadSites(), loadSettings(), loadProfile(), loadVersions(), loadGeoMap(), loadSecurityOverview(), loadSecurityStatistics(), loadThroughput()]);
+  await Promise.all([loadSites(), loadSettings(), loadProfile(), loadVersions(), loadGeoMap(), loadSecurityOverview(), loadSecurityStatistics()]);
   renderLogs([]);
   renderServiceLogs([]);
   renderOIDCLogs([]);
@@ -752,11 +742,6 @@ function showDashboardTab(tab) {
     panel.hidden = panel.dataset.dashboardPanel !== tab;
   });
   if (tab === "statistics") loadSecurityStatistics();
-  if (throughputPollTimer) { clearInterval(throughputPollTimer); throughputPollTimer = null; }
-  if (tab === "throughput") {
-    loadThroughput();
-    throughputPollTimer = setInterval(loadThroughput, 5000);
-  }
 }
 
 function syncSecurityStatisticsHosts() {
@@ -769,69 +754,6 @@ function syncSecurityStatisticsHosts() {
     els.securityStatisticsHost.append(option);
   });
   els.securityStatisticsHost.value = sites.some((site) => site.id === selected) ? selected : "";
-  syncThroughputHosts();
-}
-
-function syncThroughputHosts() {
-  const selected = els.throughputHost.value;
-  els.throughputHost.innerHTML = '<option value="">All hosts</option>';
-  [...sites].sort((left, right) => hostCollator.compare(left.address || "", right.address || "")).forEach((site) => {
-    const option = document.createElement("option"); option.value = site.id; option.textContent = site.address; els.throughputHost.append(option);
-  });
-  els.throughputHost.value = sites.some((site) => site.id === selected) ? selected : "";
-}
-
-function formatTransferRate(value) {
-  const units = ["B/s", "KB/s", "MB/s", "GB/s"]; let amount = Number(value || 0); let index = 0;
-  while (Math.abs(amount) >= 1000 && index < units.length - 1) { amount /= 1000; index += 1; }
-  return `${amount.toFixed(index ? 1 : 0)} ${units[index]}`;
-}
-
-function formatTransferTotal(value) {
-  const units = ["B", "KB", "MB", "GB", "TB"]; let amount = Number(value || 0); let index = 0;
-  while (Math.abs(amount) >= 1000 && index < units.length - 1) { amount /= 1000; index += 1; }
-  return `${amount.toFixed(index ? 1 : 0)} ${units[index]}`;
-}
-
-async function loadThroughput() {
-  const params = new URLSearchParams({ period: els.throughputPeriod.value || "1h" });
-  if (els.throughputHost.value) params.set("site", els.throughputHost.value);
-  try { renderThroughput(await request(`/api/throughput?${params}`)); }
-  catch (err) { els.throughputSummary.textContent = "Throughput unavailable"; els.throughputChart.innerHTML = `<p class="error-text">${escapeHTML(err.message)}</p>`; }
-}
-
-function renderThroughput(data) {
-  const total = Number(data.ingress || 0) + Number(data.egress || 0);
-  els.throughputEgressRate.textContent = formatTransferRate(data.egressRate);
-  els.throughputIngressRate.textContent = formatTransferRate(data.ingressRate);
-  els.throughputTotal.textContent = formatTransferTotal(total);
-  els.throughputSummary.textContent = `${formatTransferTotal(total)} transferred - ${data.interval || "5 minutes"} buckets`;
-  const points = data.points || [], max = Math.max(1, ...points.flatMap((point) => [Number(point.ingress || 0), Number(point.egress || 0)]));
-  if (!points.length) { els.throughputChart.innerHTML = '<p class="muted">No throughput data in this period.</p>'; return; }
-  const width = 900, height = 250, pad = 28, step = points.length > 1 ? (width - pad * 2) / (points.length - 1) : 0;
-  const line = (key) => points.map((point, i) => `${pad + i * step},${height - pad - (Number(point[key] || 0) / max) * (height - pad * 2)}`).join(" ");
-  els.throughputChart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Throughput over time"><path class="throughput-grid" d="M${pad} ${pad}H${width-pad} M${pad} ${height/2}H${width-pad} M${pad} ${height-pad}H${width-pad}"/><polyline class="throughput-egress" points="${line("egress")}"/><polyline class="throughput-ingress" points="${line("ingress")}"/><line class="throughput-crosshair" x1="${pad}" y1="${pad}" x2="${pad}" y2="${height-pad}" hidden/><circle class="throughput-highlight throughput-highlight-egress" cx="${pad}" cy="${height-pad}" r="4" hidden/><circle class="throughput-highlight throughput-highlight-ingress" cx="${pad}" cy="${height-pad}" r="4" hidden/><rect class="throughput-hover-area" x="${pad}" y="${pad}" width="${width-pad*2}" height="${height-pad*2}"/><text x="${pad}" y="${height - 7}">${escapeHTML(points[0].label || "")}</text><text x="${width-pad}" y="${height - 7}" text-anchor="end">${escapeHTML(points[points.length-1].label || "")}</text></svg><div class="throughput-legend"><span class="throughput-legend-egress">↓ Download</span><span class="throughput-legend-ingress">↑ Upload</span></div>`;
-  const svg = els.throughputChart.querySelector("svg");
-  const crosshair = svg.querySelector(".throughput-crosshair");
-  const egressHighlight = svg.querySelector(".throughput-highlight-egress");
-  const ingressHighlight = svg.querySelector(".throughput-highlight-ingress");
-  const tooltip = document.createElement("div"); tooltip.className = "security-trend-tooltip throughput-tooltip"; tooltip.hidden = true; els.throughputChart.append(tooltip);
-  svg.addEventListener("pointermove", (event) => {
-    const bounds = svg.getBoundingClientRect();
-    const relativeX = ((event.clientX - bounds.left) / Math.max(1, bounds.width)) * width;
-    const index = points.length === 1 ? 0 : Math.max(0, Math.min(points.length - 1, Math.round((relativeX - pad) / step)));
-    const x = pad + index * step;
-    const egress = Number(points[index].egress || 0), ingress = Number(points[index].ingress || 0);
-    const y = (value) => height - pad - (value / max) * (height - pad * 2);
-    crosshair.setAttribute("x1", String(x)); crosshair.setAttribute("x2", String(x)); crosshair.hidden = false;
-    egressHighlight.setAttribute("cx", String(x)); egressHighlight.setAttribute("cy", String(y(egress))); egressHighlight.hidden = false;
-    ingressHighlight.setAttribute("cx", String(x)); ingressHighlight.setAttribute("cy", String(y(ingress))); ingressHighlight.hidden = false;
-    const date = points[index].start ? new Date(points[index].start).toLocaleString() : points[index].label;
-    tooltip.innerHTML = `<strong>${escapeHTML(date)}</strong><span class="throughput-tooltip-egress">↓ ${escapeHTML(formatTransferRate(egress))}</span><span class="throughput-tooltip-ingress">↑ ${escapeHTML(formatTransferRate(ingress))}</span>`;
-    tooltip.hidden = false;
-    tooltip.style.left = `${Math.max(68, Math.min(bounds.width - 68, (x / width) * bounds.width))}px`;
-  });
-  svg.addEventListener("pointerleave", () => { crosshair.hidden = true; egressHighlight.hidden = true; ingressHighlight.hidden = true; tooltip.hidden = true; });
 }
 
 async function loadSecurityStatistics() {

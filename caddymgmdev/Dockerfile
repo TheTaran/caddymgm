@@ -21,6 +21,7 @@ RUN mkdir -p /config /logs /caddymgm && chown -R caddymgm:caddymgm /config /logs
 
 USER caddymgm
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD wget -q -O /dev/null http://127.0.0.1:8080/api/auth/config || exit 1
 ENV CADDY_CONFIG_PATH=/config/Caddyfile
 ENV CADDYMGM_ACCESS_LOG_DIR=/logs
 ENV CADDYMGM_WEB_LISTEN=:8080

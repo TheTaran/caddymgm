@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: caddymgmdev/go.mod
+          cache-dependency-path: caddymgmdev/go.sum
+
+      - name: Check Go formatting
+        working-directory: caddymgmdev
+        run: test -z "$(gofmt -l ./cmd)"
+
+      - name: Run go vet
+        working-directory: caddymgmdev
+        run: go vet ./...
+
+      - name: Run Go tests
+        working-directory: caddymgmdev
+        run: go test ./...
+
+      - name: Run race detector
+        working-directory: caddymgmdev
+        run: go test -race ./...
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Scan Go dependencies
+        working-directory: caddymgmdev
+        run: "$(go env GOPATH)/bin/govulncheck ./..."
+
+      - name: Lint GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/*.yml
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check dashboard JavaScript syntax
+        run: node --check caddymgmdev/cmd/server/web/app.js
+
+      - name: Validate Compose files
+        shell: bash
+        run: |
+          set -euo pipefail
+          touch .env
+          trap 'rm -f .env' EXIT
+          for file in compose.yml compose-template.yml compose-production-template.yml; do
+            docker compose -f "${file}" config --quiet
+          done
+
+      - name: Build application image
+        run: docker build --tag caddymgm-ci:local ./caddymgmdev
+
+      - name: Verify application container health
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="caddymgm-ci-${GITHUB_RUN_ID}"
+          cleanup() { docker rm --force "${container}" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker run --detach --name "${container}" \
+            --env CADDYMGM_AUTH_ENABLED=false \
+            --env CADDYMGM_ADMIN_PASSWORD=ci-test-password \
+            --env CADDYMGM_CADDY_MODE=file \
+            --env CADDY_CONFIG_PATH=/tmp/Caddyfile \
+            --env CADDYMGM_SETTINGS_PATH=/tmp/caddymgm-settings.json \
+            --env CADDYMGM_ACCESS_LOG_DIR=/tmp/logs \
+            --env CADDYMGM_GEOIP_DB_PATH=/tmp/GeoLite2-City.mmdb \
+            caddymgm-ci:local
+          for attempt in $(seq 1 30); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' "${container}")"
+            if [[ "${status}" == "healthy" ]]; then
+              exit 0
+            fi
+            if [[ "${status}" == "unhealthy" ]]; then
+              docker logs "${container}"
+              exit 1
+            fi
+            sleep 2
+          done
+          docker logs "${container}"
+          echo "CaddyMGM container did not become healthy" >&2
+          exit 1

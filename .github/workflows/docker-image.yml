@@ -69,11 +69,11 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
+        if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
-        if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
+        if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -82,7 +82,7 @@ jobs:
 
       - name: Prepare Docker tags
         id: docker-tags
-        if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
+        if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true'
         shell: bash
         run: |
           {
@@ -100,7 +100,7 @@ jobs:
 
       - name: Prepare Caddy image tag
         id: caddy-image
-        if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
+        if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -117,7 +117,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push
-        if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
+        if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./caddymgmdev
@@ -129,7 +129,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push Caddy with Geo-IP
-        if: github.ref_type == 'tag' && steps.release-tag.outputs.is_release == 'true'
+        if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./caddy

@@ -33,8 +33,8 @@ func demoSecurityOverview(now time.Time, spec securityTrendSpec, includeAllEvent
 	bucketCount := int(now.Sub(bucketStart)/spec.bucketDuration) + 1
 	overview := securityOverview{
 		TrendInterval: spec.intervalLabel,
-		RuleCounts: securityOverviewRuleCounts{SelectedCountries: 3, ManualBlockedIPs: 4, AllowedIPs: 6, ExternalBlockedIPs: 38_520},
-		Trends:       make([]securityTrendPoint, bucketCount),
+		RuleCounts:    securityOverviewRuleCounts{SelectedCountries: 3, ManualBlockedIPs: 4, AllowedIPs: 6, ExternalBlockedIPs: 38_520},
+		Trends:        make([]securityTrendPoint, bucketCount),
 		TopIPs: []securityTopIP{
 			{Address: "203.0.113.24", Country: "Switzerland", Count: 47},
 			{Address: "198.51.100.42", Country: "United States", Count: 35},

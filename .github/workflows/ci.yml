@@ -47,7 +47,8 @@ jobs:
 
       - name: Scan Go dependencies
         working-directory: caddymgmdev
-        run: "$(go env GOPATH)/bin/govulncheck ./..."
+        run: |
+          "$(go env GOPATH)/bin/govulncheck" ./...
 
       - name: Install actionlint
         run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
@@ -91,8 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           container="caddymgm-ci-${GITHUB_RUN_ID}"
-          cleanup() { docker rm --force "${container}" >/dev/null 2>&1 || true; }
-          trap cleanup EXIT
+          trap 'docker rm --force "${container}" >/dev/null 2>&1 || true' EXIT
           docker run --detach --name "${container}" \
             --env CADDYMGM_AUTH_ENABLED=false \
             --env CADDYMGM_ADMIN_PASSWORD=ci-test-password \
@@ -114,5 +114,5 @@ jobs:
             sleep 2
           done
           docker logs "${container}"
-          echo "CaddyMGM container did not become healthy" >&2
+          echo "CaddyMGM container did not become healthy after ${attempt} attempts" >&2
           exit 1

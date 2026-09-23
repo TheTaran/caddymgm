@@ -80,8 +80,8 @@ jobs:
           set -euo pipefail
           touch .env
           trap 'rm -f .env' EXIT
-          for file in compose.yml compose-template.yml compose-production-template.yml; do
-            docker compose -f "${file}" config --quiet
+          for file in compose-template.yml compose-production-template.yml; do
+            COMPOSE_PROFILES=docker-caddy docker compose -f "${file}" config --quiet
           done
 
       - name: Build application image

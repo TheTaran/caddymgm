@@ -54,7 +54,16 @@ jobs:
 
       - name: Lint GitHub Actions workflows
         run: |
-          "$(go env GOPATH)/bin/actionlint" .github/workflows/*.yml
+          set -euo pipefail
+          output_file="${RUNNER_TEMP}/actionlint-output.txt"
+          if "$(go env GOPATH)/bin/actionlint" .github/workflows/*.yml >"${output_file}" 2>&1; then
+            cat "${output_file}"
+          else
+            cat "${output_file}"
+            details="$(tr '\n' ' ' <"${output_file}")"
+            echo "::error title=actionlint::${details}"
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

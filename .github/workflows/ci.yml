@@ -49,8 +49,12 @@ jobs:
         working-directory: caddymgmdev
         run: "$(go env GOPATH)/bin/govulncheck ./..."
 
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
       - name: Lint GitHub Actions workflows
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/*.yml
+        run: |
+          "$(go env GOPATH)/bin/actionlint" .github/workflows/*.yml
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

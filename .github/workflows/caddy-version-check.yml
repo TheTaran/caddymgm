@@ -33,12 +33,34 @@ jobs:
             exit 1
           fi
 
-          caddy_latest="$(gh api repos/caddyserver/caddy/releases/latest --jq '.tag_name' | sed 's/^v//')"
+          caddy_release_latest="$(gh api repos/caddyserver/caddy/releases/latest --jq '.tag_name' | sed 's/^v//')"
+          caddy_releases="$(gh api 'repos/caddyserver/caddy/releases?per_page=100' --jq '.[].tag_name' | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p')"
+          caddy_latest=""
+          docker_tag_status() {
+            curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' \
+              "https://hub.docker.com/v2/repositories/library/caddy/tags/$1"
+          }
+          while IFS= read -r candidate; do
+            [[ -n "${candidate}" ]] || continue
+            builder_status="$(docker_tag_status "${candidate}-builder")"
+            runtime_status="$(docker_tag_status "${candidate}-alpine")"
+            if [[ "${builder_status}" == "200" && "${runtime_status}" == "200" ]]; then
+              caddy_latest="${candidate}"
+              break
+            fi
+            if [[ "${builder_status}" != "404" && "${builder_status}" != "200" || "${runtime_status}" != "404" && "${runtime_status}" != "200" ]]; then
+              echo "Docker Hub returned unexpected statuses for Caddy ${candidate}: builder=${builder_status}, alpine=${runtime_status}" >&2
+              exit 1
+            fi
+          done <<< "${caddy_releases}"
           geoip_latest="$(gh api 'repos/shift72/caddy-geo-ip/tags?per_page=1' --jq '.[0].name')"
           go_latest="$(curl --fail --silent --show-error --location 'https://go.dev/dl/?mode=json' | jq -r '.[0].version' | sed 's/^go//')"
-          if [[ -z "${caddy_latest}" || "${caddy_latest}" == "null" || -z "${geoip_latest}" || "${geoip_latest}" == "null" || -z "${go_latest}" || "${go_latest}" == "null" ]]; then
+          if [[ -z "${caddy_release_latest}" || -z "${caddy_latest}" || -z "${geoip_latest}" || "${geoip_latest}" == "null" || -z "${go_latest}" || "${go_latest}" == "null" ]]; then
             echo "Unable to read the latest component versions" >&2
             exit 1
+          fi
+          if [[ "${caddy_latest}" != "${caddy_release_latest}" ]]; then
+            echo "Caddy ${caddy_release_latest} is released, but its official builder/alpine images are not yet available; using latest published image ${caddy_latest}."
           fi
 
           updates=()

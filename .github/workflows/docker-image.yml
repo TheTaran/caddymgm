@@ -116,6 +116,26 @@ jobs:
             echo "tag=${caddy_version}-geoip-${geoip_version}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Check whether immutable Caddy image tag already exists
+        id: caddy-image-exists
+        if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${CADDY_IMAGE_NAME}:${{ steps.caddy-image.outputs.tag }}"
+          inspect_output="$(docker buildx imagetools inspect "${image}" 2>&1)" && inspect_status=0 || inspect_status=$?
+          if [[ "${inspect_status}" -eq 0 ]]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "Immutable Caddy image ${image} already exists; leaving it untouched."
+          elif grep -qiE 'not found|manifest unknown' <<< "${inspect_output}"; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "Immutable Caddy image ${image} is not published yet; it will be built."
+          else
+            echo "Unable to verify immutable Caddy image ${image}; refusing to risk overwriting it." >&2
+            echo "${inspect_output}" >&2
+            exit 1
+          fi
+
       - name: Build and push
         if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true'
         uses: docker/build-push-action@v6
@@ -129,7 +149,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push Caddy with Geo-IP
-        if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true'
+        if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true' && steps.caddy-image-exists.outputs.build == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./caddy

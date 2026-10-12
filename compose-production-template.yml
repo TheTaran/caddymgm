@@ -31,7 +31,7 @@ services:
         condition: service_healthy
 
   caddy:
-    image: ghcr.io/thetaran/caddymgm-caddy:${CADDY_GEOIP_IMAGE_TAG:-2.11.6-geoip-v0.6.0}
+    image: ghcr.io/thetaran/caddymgm-caddy:${CADDY_GEOIP_IMAGE_TAG:-2.11.7-geoip-v0.6.0}
     container_name: caddy
     profiles:
       - docker-caddy

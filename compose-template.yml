@@ -41,7 +41,7 @@ services:
     build:
       context: ./caddy
       args:
-        CADDY_VERSION: ${CADDY_VERSION:-2.11.6}
+        CADDY_VERSION: ${CADDY_VERSION:-2.11.7}
         CADDY_GEOIP_MODULE_VERSION: ${CADDY_GEOIP_MODULE_VERSION:-v0.6.0}
     container_name: caddy
     profiles:

@@ -31,7 +31,7 @@ Caddy can run separately and can be updated independently from CaddyMGM.
 | 2026-09-07 | **Client IP and Forwarding Controls** | Global visitor-IP source selection with trusted proxy CIDRs, plus controlled append, replacement, or removal of `X-Forwarded-For` for reverse-proxy upstreams. |
 | 2026-09-07 | **DNS IP Lists** | Persistent DNS-name allow and deny lists with A/AAAA refresh every 12 hours and last-known-address protection. Docker port publishing controls listener exposure. |
 | 2026-09-07 | **Dashboard Security Analytics** | Added a compact Security Statistics dashboard with period-based trends, ranked blocked source IPs, live events, and an interactive OpenStreetMap view without Leaflet. |
-| 2026-10-12 | **Component Updates** | Updated the Caddy Geo-IP image to Caddy 2.11.6 and the CaddyMGM build baseline to Go 1.27.2. |
+| 2026-10-12 | **Component Updates** | Updated the Caddy Geo-IP image to Caddy 2.11.7 and the CaddyMGM build baseline to Go 1.27.2. |
 | 2026-09-02 | **Dashboard Data Controls** | Optional exclusion of local network IPs from Dashboard analytics while preserving complete access logs. External blocklists now refresh automatically every 24 hours. |
 | 2026-09-02 | **Web Protection Host Overrides** | Compact per-host Geo-IP protection controls with country selection by flag and name instead of manual country-code entry. |
 | 2026-09-01 | **Security Operations & Distribution** | Period-filtered security statistics, direct assignment of observed IPs to manual lists, a published Caddy Geo-IP image, and unified Caddy, Geo-IP module, and Go update checks. |
@@ -292,7 +292,7 @@ The following variables are used by Docker Compose and CaddyMGM.
 | `CADDY_ACCESS_LOG_DIR` | `/logs` | Directory written into generated Caddy log directives |
 | `COMPOSE_PROFILES` | `docker-caddy` in example | Start optional Compose services such as Caddy |
 | `CADDY_IMAGE` | `caddymgm-caddy:development` | Locally built Caddy image including the Geo-IP module |
-| `CADDY_VERSION` | `2.11.6` | Version-pinned official Caddy base image used for the local build |
+| `CADDY_VERSION` | `2.11.7` | Version-pinned official Caddy base image used for the local build |
 | `CADDY_GEOIP_MODULE_VERSION` | `v0.6.0` | Version-pinned Geo-IP Caddy module used for the local build |
 | `CADDY_HTTP_PORT` | `80` | Host port mapped to Caddy HTTP |
 | `CADDY_HTTPS_PORT` | `443` | Host port mapped to Caddy HTTPS and HTTP/3 UDP |

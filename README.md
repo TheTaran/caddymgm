@@ -292,7 +292,7 @@ The following variables are used by Docker Compose and CaddyMGM.
 | `CADDY_ACCESS_LOG_DIR` | `/logs` | Directory written into generated Caddy log directives |
 | `COMPOSE_PROFILES` | `docker-caddy` in example | Start optional Compose services such as Caddy |
 | `CADDY_IMAGE` | `caddymgm-caddy:development` | Locally built Caddy image including the Geo-IP module |
-| `CADDY_VERSION` | `2.11.4` | Version-pinned official Caddy base image used for the local build |
+| `CADDY_VERSION` | `2.11.6` | Version-pinned official Caddy base image used for the local build |
 | `CADDY_GEOIP_MODULE_VERSION` | `v0.6.0` | Version-pinned Geo-IP Caddy module used for the local build |
 | `CADDY_HTTP_PORT` | `80` | Host port mapped to Caddy HTTP |
 | `CADDY_HTTPS_PORT` | `443` | Host port mapped to Caddy HTTPS and HTTP/3 UDP |

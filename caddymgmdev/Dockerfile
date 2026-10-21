@@ -1,6 +1,6 @@
 FROM ghcr.io/maxmind/geoipupdate:v8.0.0 AS geoipupdate
 
-FROM golang:1.27.2-alpine AS build
+FROM golang:1.27.3-alpine AS build
 
 WORKDIR /src
 ARG VERSION=dev

@@ -21,30 +21,6 @@ CaddyMGM gives you a web UI to:
 The Caddy configuration stays outside the container.
 Caddy can run separately and can be updated independently from CaddyMGM.
 
-## Recently Added Features
-
-| Date | Feature | What's included |
-| --- | --- | --- |
-| 2026-09-08 | **Reliable Service Startup** | Compose health checks now wait for Caddy's Admin API before CaddyMGM starts and synchronizes managed configuration. |
-| 2026-09-07 | **Structured HTTP Access Security** | Per-host request and response header operations, request body limits, allowed-method rules, and blocked-path rules rendered as validated Caddy directives. |
-| 2026-09-07 | **Upstream Transport Timeouts** | Per-web-host connection and response-header wait timeouts for reverse-proxy upstreams, with validated Go duration values. |
-| 2026-09-07 | **Client IP and Forwarding Controls** | Global visitor-IP source selection with trusted proxy CIDRs, plus controlled append, replacement, or removal of `X-Forwarded-For` for reverse-proxy upstreams. |
-| 2026-09-07 | **DNS IP Lists** | Persistent DNS-name allow and deny lists with A/AAAA refresh every 12 hours and last-known-address protection. Docker port publishing controls listener exposure. |
-| 2026-09-07 | **Dashboard Security Analytics** | Added a compact Security Statistics dashboard with period-based trends, ranked blocked source IPs, live events, and an interactive OpenStreetMap view without Leaflet. |
-| 2026-10-21 | **Component Updates** | Updated the Caddy Geo-IP image to Caddy 2.11.7 and the CaddyMGM build baseline to Go 1.27.3. |
-| 2026-09-02 | **Dashboard Data Controls** | Optional exclusion of local network IPs from Dashboard analytics while preserving complete access logs. External blocklists now refresh automatically every 24 hours. |
-| 2026-09-02 | **Web Protection Host Overrides** | Compact per-host Geo-IP protection controls with country selection by flag and name instead of manual country-code entry. |
-| 2026-09-01 | **Security Operations & Distribution** | Period-filtered security statistics, direct assignment of observed IPs to manual lists, a published Caddy Geo-IP image, and unified Caddy, Geo-IP module, and Go update checks. |
-| 2026-09-01 | **Web Protection Operations** | Named manual allow/deny IP lists, managed external blocklists, protection-event dashboard metrics, and a filterable Web Protection log view. |
-| 2026-08-31 | **Runtime Security Hardening** | Supported Alpine 3.24 runtime with current security packages plus updated Go cryptography and OAuth dependencies. |
-| 2026-08-31 | **Web Protection** | Global Geo-IP country blocking, IP/CIDR deny and allow rules, per-host overrides, and validated external threat feeds. |
-| 2026-08-31 | **Response Compression** | Per-host `Off`, `Gzip`, or `Zstandard + Gzip` profiles with automatic client negotiation and Gzip fallback. |
-| 2026-08-31 | **TLS Controls** | Configurable minimum and maximum TLS versions while cipher suites remain securely managed by Caddy. |
-| 2026-08-28 | **Web Host Navigation** | Structured editor with `Basic`, `Forwarding Rules`, `Advanced`, and `Authentication` sections plus a live host summary. |
-| 2026-08-28 | **Disabled Host Page** | Managed HTTP 503 response while retaining the complete web-host configuration. |
-| 2026-08-28 | **Website Security Controls** | Redirect rewriting, additional advertised origins, managed Host and forwarded headers, HSTS, Standard/Strict security headers, and bcrypt-based Basic Authentication. |
-| 2026-08-26 | **Website OIDC Authentication** | Central OIDC authentication for protected web hosts. |
-
 ## Screenshots
 
 | View | Preview |
@@ -106,9 +82,9 @@ If you also want Docker Compose to run Caddy, enable the profile:
 COMPOSE_PROFILES=docker-caddy docker compose up -d --build
 ```
 
-The Compose-managed Caddy service is built from the official, version-pinned Caddy image and includes the Geo-IP module required for country-based access controls. Release workflows publish the resulting custom image under `ghcr.io/thetaran/caddymgm-caddy` with an immutable Caddy/module tag and a `latest` tag. The Caddy image and module versions are fixed through `CADDY_VERSION` and `CADDY_GEOIP_MODULE_VERSION`; the scheduled component check opens one GitHub issue whenever Caddy, the Geo-IP module, or Go has an update available. The GeoLite2 database remains a read-only runtime mount at `/geoip/GeoLite2-City.mmdb`, so database refreshes do not rebuild the Caddy image.
+The Compose-managed Caddy service is built from the official, version-pinned Caddy image and includes the Geo-IP module required for country-based access controls. Release workflows publish the resulting custom image under `ghcr.io/thetaran/caddymgm-caddy` with an immutable Caddy/module tag and a `latest` tag. The Caddy image and module versions are fixed through `CADDY_VERSION` and `CADDY_GEOIP_MODULE_VERSION`; the scheduled component check opens one GitHub issue whenever Caddy, the Geo-IP module, GeoIP Update, or Go has an update available. The GeoLite2 database remains a read-only runtime mount at `/geoip/GeoLite2-City.mmdb`, so database refreshes do not rebuild the Caddy image.
 
-The scheduled GitHub workflow `Check component versions` compares the pinned Caddy, Geo-IP module, and Go versions with their latest upstream versions every Monday. When an update is available, it creates or refreshes one GitHub issue; it never updates images or publishes a release automatically.
+The scheduled GitHub workflow `Check component versions` compares the pinned Caddy, Geo-IP module, GeoIP Update, and Go versions with their latest upstream versions every Monday. When an update is available, it creates or refreshes one GitHub issue; it never updates images or publishes a release automatically. Dependabot checks Go modules, GitHub Actions, and untracked Alpine base-image updates weekly through pull requests.
 
 This publishes:
 

@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /caddymgmdev
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /caddy
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: caddy
+
+  - package-ecosystem: docker
+    directory: /caddymgmdev
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: golang
+      - dependency-name: ghcr.io/maxmind/geoipupdate

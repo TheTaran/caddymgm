@@ -27,8 +27,9 @@ jobs:
 
           caddy_current="$(sed -nE 's/^[[:space:]]*CADDY_VERSION: \$\{CADDY_VERSION:-([^}]+)\}.*/\1/p' compose-template.yml)"
           geoip_current="$(sed -nE 's/^ARG CADDY_GEOIP_MODULE_VERSION=([^[:space:]]+).*/\1/p' caddy/Dockerfile)"
+          geoipupdate_current="$(sed -nE 's/^FROM ghcr\.io\/maxmind\/geoipupdate:([^[:space:]]+).*/\1/p' caddymgmdev/Dockerfile)"
           go_current="$(sed -nE 's/^go[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' caddymgmdev/go.mod)"
-          if [[ -z "${caddy_current}" || -z "${geoip_current}" || -z "${go_current}" ]]; then
+          if [[ -z "${caddy_current}" || -z "${geoip_current}" || -z "${geoipupdate_current}" || -z "${go_current}" ]]; then
             echo "Unable to read all pinned component versions" >&2
             exit 1
           fi
@@ -54,8 +55,9 @@ jobs:
             fi
           done <<< "${caddy_releases}"
           geoip_latest="$(gh api 'repos/shift72/caddy-geo-ip/tags?per_page=1' --jq '.[0].name')"
+          geoipupdate_latest="$(gh api repos/maxmind/geoipupdate/releases/latest --jq '.tag_name')"
           go_latest="$(curl --fail --silent --show-error --location 'https://go.dev/dl/?mode=json' | jq -r '.[0].version' | sed 's/^go//')"
-          if [[ -z "${caddy_release_latest}" || -z "${caddy_latest}" || -z "${geoip_latest}" || "${geoip_latest}" == "null" || -z "${go_latest}" || "${go_latest}" == "null" ]]; then
+          if [[ -z "${caddy_release_latest}" || -z "${caddy_latest}" || -z "${geoip_latest}" || "${geoip_latest}" == "null" || -z "${geoipupdate_latest}" || "${geoipupdate_latest}" == "null" || -z "${go_latest}" || "${go_latest}" == "null" ]]; then
             echo "Unable to read the latest component versions" >&2
             exit 1
           fi
@@ -76,6 +78,7 @@ jobs:
           }
           check_component "Caddy" "${caddy_current}" "${caddy_latest}"
           check_component "Geo-IP Caddy module" "${geoip_current}" "${geoip_latest}"
+          check_component "GeoIP Update" "${geoipupdate_current}" "${geoipupdate_latest}"
           check_component "Go" "${go_current}" "${go_latest}"
 
           issue_title="Component updates available"
@@ -87,7 +90,7 @@ jobs:
           if [[ "${#updates[@]}" -eq 0 ]]; then
             echo "All pinned components are current."
             if [[ -n "${existing_issue}" ]]; then
-              gh issue close "${existing_issue}" --repo "${REPOSITORY}" --comment "Caddy, the Geo-IP Caddy module, and Go are current."
+              gh issue close "${existing_issue}" --repo "${REPOSITORY}" --comment "Caddy, the Geo-IP Caddy module, GeoIP Update, and Go are current."
             fi
             exit 0
           fi

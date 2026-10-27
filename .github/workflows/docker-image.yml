@@ -126,7 +126,7 @@ jobs:
 
       - name: Build and push
         if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./caddymgmdev
           build-args: |
@@ -138,7 +138,7 @@ jobs:
 
       - name: Build and push Caddy with Geo-IP
         if: (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && steps.release-tag.outputs.is_release == 'true' && steps.caddy-image-exists.outputs.build == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./caddy
           build-args: |

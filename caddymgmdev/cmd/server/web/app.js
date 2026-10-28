@@ -51,6 +51,7 @@ const els = {
   geoMapDetails: document.querySelector("#geo-map-details"),
   siteList: document.querySelector("#site-list"),
   hostFilterProtocol: document.querySelector("#host-filter-protocol"),
+  hostFilterAddress: document.querySelector("#host-filter-address"),
   hostFilterVisibility: document.querySelector("#host-filter-visibility"),
   hostFilterMode: document.querySelector("#host-filter-mode"),
   hostFilterUpstreamTLS: document.querySelector("#host-filter-upstream-tls"),
@@ -292,6 +293,7 @@ const hostSort = {
 };
 const hostFilters = {
   protocol: "all",
+  address: "",
   visibility: "all",
   mode: "all",
   upstreamTls: "all",
@@ -364,7 +366,7 @@ els.geoIPScope.addEventListener("change", renderTopIPs);
 els.geoIPHost.addEventListener("change", renderTopIPs);
 els.geoIPFilter.addEventListener("input", renderTopIPs);
 els.geoIPLimit.addEventListener("change", renderTopIPs);
-[els.hostFilterProtocol, els.hostFilterVisibility, els.hostFilterMode, els.hostFilterUpstreamTLS, els.hostFilterStatus, els.hostFilterAuth, els.hostFilterComment].forEach((filter) => {
+[els.hostFilterProtocol, els.hostFilterAddress, els.hostFilterVisibility, els.hostFilterMode, els.hostFilterUpstreamTLS, els.hostFilterStatus, els.hostFilterAuth, els.hostFilterComment].forEach((filter) => {
   filter.addEventListener(filter.tagName === "INPUT" ? "input" : "change", applyHostFilters);
 });
 els.hostFilterReset.addEventListener("click", resetHostFilters);
@@ -1578,6 +1580,7 @@ function sortedSitesFor(table) {
 
 function siteMatchesFilters(site, filters) {
   const protocol = protocolForSite(site).toLowerCase();
+  const address = (site.address || "").toLowerCase();
   const visibility = visibilityForSite(site).label.toLowerCase();
   const mode = site.mode === "static" ? "static" : "proxy";
   const upstreamTls = site.mode !== "proxy" ? "not-applicable" : site.skipTlsVerify ? "skipped" : "verified";
@@ -1585,6 +1588,7 @@ function siteMatchesFilters(site, filters) {
   const auth = authenticationForSite(site).key;
   const comment = (site.comment || "").toLowerCase();
   return (filters.protocol === "all" || protocol === filters.protocol)
+    && (!filters.address || address.includes(filters.address))
     && (filters.visibility === "all" || visibility === filters.visibility)
     && (filters.mode === "all" || mode === filters.mode)
     && (filters.upstreamTls === "all" || upstreamTls === filters.upstreamTls)
@@ -1602,6 +1606,7 @@ function filteredSitesFor(table) {
 
 function applyHostFilters() {
   hostFilters.protocol = els.hostFilterProtocol.value;
+  hostFilters.address = els.hostFilterAddress.value.trim().toLowerCase();
   hostFilters.visibility = els.hostFilterVisibility.value;
   hostFilters.mode = els.hostFilterMode.value;
   hostFilters.upstreamTls = els.hostFilterUpstreamTLS.value;
@@ -1613,6 +1618,7 @@ function applyHostFilters() {
 
 function resetHostFilters() {
   document.querySelectorAll("select.column-filter").forEach((filter) => { filter.value = "all"; });
+  els.hostFilterAddress.value = "";
   els.hostFilterComment.value = "";
   applyHostFilters();
 }

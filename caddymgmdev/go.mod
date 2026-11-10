@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/oschwald/maxminddb-golang/v2 v2.1.0
+	github.com/oschwald/maxminddb-golang/v2 v2.9.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/oauth2 v0.36.0
 )

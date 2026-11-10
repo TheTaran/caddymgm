@@ -196,6 +196,16 @@ const els = {
   settingsOIDCClientSecret: document.querySelector("#settings-oidc-client-secret"),
   settingsOIDCRedirect: document.querySelector("#settings-oidc-redirect"),
   settingsOIDCScopes: document.querySelector("#settings-oidc-scopes"),
+  settingsMCPStatus: document.querySelector("#settings-mcp-status"),
+  settingsMCPGenerate: document.querySelector("#settings-mcp-generate"),
+  settingsMCPDisable: document.querySelector("#settings-mcp-disable"),
+  settingsMCPEndpoint: document.querySelector("#settings-mcp-endpoint"),
+  settingsMCPToken: document.querySelector("#settings-mcp-token"),
+  settingsMCPTokenWrap: document.querySelector("#settings-mcp-token-wrap"),
+  settingsMCPName: document.querySelector("#settings-mcp-name"),
+  settingsMCPScopes: document.querySelector("#settings-mcp-scopes"),
+  settingsMCPTokens: document.querySelector("#settings-mcp-tokens"),
+  settingsMCPReport: document.querySelector("#settings-mcp-report"),
   settingsAccessEnabled: document.querySelector("#settings-access-enabled"),
   settingsAccessName: document.querySelector("#settings-access-name"),
   settingsAccessIssuer: document.querySelector("#settings-access-issuer"),
@@ -357,6 +367,8 @@ els.logSiteFilter.addEventListener("change", () => {
 els.serviceLogToggle.addEventListener("click", toggleServiceLogsExpanded);
 els.siteLogToggle.addEventListener("click", toggleSiteLogsExpanded);
 els.oidcLogToggle.addEventListener("click", toggleOIDCLogsExpanded);
+els.settingsMCPGenerate.addEventListener("click", generateMCPToken);
+els.settingsMCPDisable.addEventListener("click", disableMCP);
 els.protectionEventToggle.addEventListener("click", toggleProtectionEventsExpanded);
 els.securityOverviewPeriod.addEventListener("change", loadSecurityOverview);
 els.securityStatisticsHost.addEventListener("change", loadSecurityStatistics);
@@ -1118,6 +1130,13 @@ async function loadSettings() {
     els.settingsHideLocalDashboardIPs.checked = !!settings.hideLocalDashboardIps;
     els.settingsCaddyMode.value = settings.caddyMode || "file";
     els.settingsCaddyAPIURL.value = settings.caddyApiUrl || "";
+    const mcpTokens = settings.mcpTokens || [];
+    els.settingsMCPStatus.textContent = mcpTokens.length ? `${mcpTokens.length} active token${mcpTokens.length === 1 ? "" : "s"} · POST /mcp` : "Disabled";
+    els.settingsMCPDisable.disabled = !mcpTokens.length;
+    els.settingsMCPToken.value = "";
+    els.settingsMCPTokenWrap.hidden = true;
+    renderMCPTokens(mcpTokens);
+    loadMCPReport();
     renderCertificatesView();
     renderIssuerOptions();
     renderHostLists();
@@ -1128,6 +1147,50 @@ async function loadSettings() {
   } catch (err) {
     setStatus(err.message);
   }
+}
+
+async function generateMCPToken() {
+  try {
+    const scopes = [...els.settingsMCPScopes.querySelectorAll("input:checked")].map((input) => input.value);
+    const result = await request("/api/mcp/token", { method: "POST", body: JSON.stringify({ name: els.settingsMCPName.value, scopes }) });
+    settings.mcpEnabled = true;
+    els.settingsMCPStatus.textContent = "MCP token created · POST /mcp";
+    els.settingsMCPDisable.disabled = false;
+    els.settingsMCPEndpoint.value = new URL(result.endpoint || "/mcp", window.location.origin).toString();
+    els.settingsMCPToken.value = result.token;
+    els.settingsMCPTokenWrap.hidden = false;
+    await loadSettings();
+    setStatus("MCP token generated. Copy it now; it will not be shown again.");
+    showConfirmation("MCP token generated");
+  } catch (err) { setStatus(err.message); }
+}
+
+function renderMCPTokens(tokens) {
+  els.settingsMCPTokens.innerHTML = "";
+  if (!tokens.length) { els.settingsMCPTokens.textContent = "No active MCP tokens."; return; }
+  for (const token of tokens) {
+    const row = document.createElement("div"); row.className = "log-row";
+    row.textContent = `${token.name} · ${token.scopes.join(", ")} · ${token.requests || 0} requests · last used ${token.lastUsed || "never"}`;
+    const remove = document.createElement("button"); remove.type = "button"; remove.className = "secondary"; remove.textContent = "Revoke";
+    remove.addEventListener("click", async () => { await request(`/api/mcp/tokens/${encodeURIComponent(token.id)}`, { method: "DELETE" }); await loadSettings(); setStatus("MCP token revoked"); });
+    row.append(" ", remove); els.settingsMCPTokens.append(row);
+  }
+}
+
+async function loadMCPReport() {
+  try { const report = await request("/api/mcp/report"); els.settingsMCPReport.textContent = `${report.requests} requests · ${report.successful} successful · ${report.failed} failed · ${report.responseBytes} response bytes`; } catch (_) { els.settingsMCPReport.textContent = "MCP report unavailable."; }
+}
+
+async function disableMCP() {
+  try {
+    await request("/api/mcp/token", { method: "DELETE" });
+    settings.mcpEnabled = false;
+    els.settingsMCPStatus.textContent = "Disabled";
+    els.settingsMCPDisable.disabled = true;
+    els.settingsMCPToken.value = "";
+    els.settingsMCPTokenWrap.hidden = true;
+    setStatus("MCP disabled");
+  } catch (err) { setStatus(err.message); }
 }
 
 async function saveSettings(event) {

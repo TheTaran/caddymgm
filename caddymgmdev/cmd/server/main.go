@@ -235,6 +235,8 @@ type Settings struct {
 	ExternalBlockedIPCount int                `json:"externalBlockedIpCount,omitempty"`
 	RefreshBlocklists      bool               `json:"refreshExternalBlocklists,omitempty"`
 	RefreshBlocklistURL    string             `json:"refreshExternalBlocklistUrl,omitempty"`
+	MCPTokens              []MCPToken         `json:"mcpTokens,omitempty"`
+	MCPRequests            []MCPRequestRecord `json:"mcpRequests,omitempty"`
 }
 
 // ClientIPSettings controls which address Caddy uses for visitor-aware rules
@@ -252,6 +254,25 @@ type OIDCSettings struct {
 	ClientSecret string `json:"clientSecret,omitempty"`
 	RedirectURL  string `json:"redirectUrl,omitempty"`
 	Scopes       string `json:"scopes,omitempty"`
+}
+
+type MCPToken struct {
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	TokenHash string   `json:"tokenHash"`
+	Scopes    []string `json:"scopes"`
+	CreatedAt string   `json:"createdAt"`
+	ExpiresAt string   `json:"expiresAt,omitempty"`
+	LastUsed  string   `json:"lastUsed,omitempty"`
+	Requests  int      `json:"requests"`
+}
+
+type MCPRequestRecord struct {
+	Time    string `json:"time"`
+	TokenID string `json:"tokenId"`
+	Tool    string `json:"tool"`
+	Success bool   `json:"success"`
+	Bytes   int    `json:"bytes"`
 }
 
 type WebInterface struct {
@@ -490,6 +511,11 @@ func main() {
 	mux.HandleFunc("GET /.caddymgm/auth/start", app.handleAccessStart)
 	mux.HandleFunc("GET /.caddymgm/auth/callback", app.handleAccessCallback)
 	mux.HandleFunc("GET /.caddymgm/auth/complete", app.handleAccessComplete)
+	mux.HandleFunc("POST /mcp", app.handleMCP)
+	mux.HandleFunc("POST /api/mcp/token", app.handleCreateMCPToken)
+	mux.HandleFunc("DELETE /api/mcp/token", app.handleDeleteMCPToken)
+	mux.HandleFunc("DELETE /api/mcp/tokens/", app.handleDeleteMCPToken)
+	mux.HandleFunc("GET /api/mcp/report", app.handleMCPReport)
 
 	listenAddr := app.webListen
 	handler := logRequest(app.securityHeaders(app.ensureCSRFCookie(app.requireCSRF(app.requireAuth(mux)))))
@@ -968,6 +994,8 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	next.CaddyMode = a.caddyMode
 	next.CaddyAPIURL = a.caddyAPIURL
 	next.PasswordHash = a.settings.PasswordHash
+	next.MCPTokens = append([]MCPToken(nil), a.settings.MCPTokens...)
+	next.MCPRequests = append([]MCPRequestRecord(nil), a.settings.MCPRequests...)
 	if strings.TrimSpace(next.Password) != "" {
 		next.PasswordHash = hashPassword(next.Password)
 	}
@@ -1461,6 +1489,10 @@ func (a *App) publicSettingsLocked() Settings {
 	settings.Password = ""
 	settings.PasswordHash = ""
 	settings.OIDC.ClientSecret = ""
+	settings.MCPTokens = append([]MCPToken(nil), settings.MCPTokens...)
+	for index := range settings.MCPTokens {
+		settings.MCPTokens[index].TokenHash = ""
+	}
 	settings.ExternalBlocklists = append(ExternalBlocklists(nil), settings.ExternalBlocklists...)
 	for index := range settings.ExternalBlocklists {
 		settings.ExternalBlocklists[index].Entries = nil
@@ -3923,7 +3955,7 @@ func (a *App) requireAuth(next http.Handler) http.Handler {
 		authenticated := a.hasValidSessionLocked(r)
 		a.mu.Unlock()
 
-		if !authEnabled || authenticated || isPublicPath(r.URL.Path) {
+		if !authEnabled || authenticated || isPublicPath(r.URL.Path) || r.URL.Path == "/mcp" {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -610,6 +610,7 @@
               <button type="button" class="settings-tab active" role="tab" id="settings-tab-web" aria-controls="settings-panel-web" aria-selected="true" data-settings-tab="web">General</button>
               <button type="button" class="settings-tab" role="tab" id="settings-tab-authentication" aria-controls="settings-panel-authentication" aria-selected="false" tabindex="-1" data-settings-tab="authentication">Authentication</button>
               <button type="button" class="settings-tab" role="tab" id="settings-tab-logs" aria-controls="settings-panel-logs" aria-selected="false" tabindex="-1" data-settings-tab="logs">Logs</button>
+              <button type="button" class="settings-tab" role="tab" id="settings-tab-mcp" aria-controls="settings-panel-mcp" aria-selected="false" tabindex="-1" data-settings-tab="mcp">MCP Integration</button>
             </div>
             <div class="settings-tab-content">
             <section id="settings-panel-authentication" class="panel-card editor-card settings-card settings-group settings-panel" role="tabpanel" aria-labelledby="settings-tab-authentication" data-settings-panel="authentication" hidden>
@@ -806,6 +807,42 @@
                 <span class="status-check-state" data-enabled="Hidden" data-disabled="Shown"></span>
               </label>
               <p class="field-hint">Local and private addresses stay in access logs but are excluded from Dashboard statistics, the map, and Top IPs.</p>
+            </section>
+
+            <section id="settings-panel-mcp" class="panel-card editor-card settings-card settings-group settings-panel" role="tabpanel" aria-labelledby="settings-tab-mcp" data-settings-panel="mcp" hidden>
+              <div class="panel-heading">
+                <h2>MCP Integration</h2>
+                <span>Scoped AI agent access</span>
+              </div>
+              <p class="field-note">Create scoped API tokens for AI agents. A token is displayed once only.</p>
+              <p id="settings-mcp-status" class="field-note">Disabled</p>
+              <label>
+                Token name
+                <input id="settings-mcp-name" maxlength="80" placeholder="AI assistant" />
+              </label>
+              <fieldset class="mcp-scopes" id="settings-mcp-scopes">
+                <legend>Permissions</legend>
+                <div class="mcp-scope-grid">
+                  <label><span>Web Hosts</span><input type="checkbox" value="hosts:read" checked /><small>Read</small><input type="checkbox" value="hosts:write" /><small>Write</small></label>
+                  <label><span>Web Protection</span><input type="checkbox" value="protection:read" checked /><small>Read</small><input type="checkbox" value="protection:write" /><small>Write</small></label>
+                  <label><span>Certificates</span><input type="checkbox" value="certificates:read" checked /><small>Read</small><input type="checkbox" value="certificates:write" /><small>Write</small></label>
+                  <label><span>Settings</span><input type="checkbox" value="settings:read" checked /><small>Read</small><input type="checkbox" value="settings:write" /><small>Write</small></label>
+                  <label><span>Logs</span><input type="checkbox" value="logs:read" checked /><small>Read</small></label>
+                  <label><span>Reports</span><input type="checkbox" value="reports:read" checked /><small>Read</small></label>
+                </div>
+              </fieldset>
+              <div class="form-actions"><button id="settings-mcp-generate" type="button" class="secondary">Generate token</button><button id="settings-mcp-disable" type="button" class="secondary">Disable all MCP tokens</button></div>
+              <label>
+                MCP Endpoint
+                <input id="settings-mcp-endpoint" readonly value="/mcp" />
+              </label>
+              <label id="settings-mcp-token-wrap" hidden>
+                New MCP Token
+                <input id="settings-mcp-token" readonly />
+              </label>
+              <div id="settings-mcp-tokens" class="log-list"></div>
+              <h3>MCP Report</h3>
+              <p id="settings-mcp-report" class="field-note">No MCP requests recorded.</p>
             </section>
 
             </div>

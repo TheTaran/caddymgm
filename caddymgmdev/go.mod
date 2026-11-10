@@ -3,7 +3,7 @@ module github.com/TheTaran/caddymgm
 go 1.27.3
 
 require (
-	github.com/coreos/go-oidc/v3 v3.12.0
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/oschwald/maxminddb-golang/v2 v2.1.0
 	golang.org/x/crypto v0.55.0
 	golang.org/x/oauth2 v0.36.0

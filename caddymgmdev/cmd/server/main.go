@@ -488,6 +488,7 @@ func main() {
 	mux.HandleFunc("GET /api/config", app.handleConfig)
 	mux.HandleFunc("GET /api/versions", app.handleVersions)
 	mux.HandleFunc("GET /api/settings", app.handleGetSettings)
+	mux.HandleFunc("GET /api/external-blocklist-stats", app.handleExternalBlocklistStats)
 	mux.HandleFunc("PUT /api/settings", app.handleUpdateSettings)
 	mux.HandleFunc("GET /api/auth-providers", app.handleGetAuthProviders)
 	mux.HandleFunc("PUT /api/auth-providers", app.handleUpdateAuthProviders)

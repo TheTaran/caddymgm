@@ -3,10 +3,22 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestExternalBlocklistMatchesCountsOverlappingFeeds(t *testing.T) {
+	sets := []protectionPrefixSet{
+		newProtectionPrefixSet([]string{"203.0.113.0/24"}),
+		newProtectionPrefixSet([]string{"203.0.113.10/32", "198.51.100.0/24"}),
+	}
+	address := netip.MustParseAddr("203.0.113.10")
+	if got, want := externalBlocklistMatches(sets, address), []int{0, 1}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("externalBlocklistMatches() = %v, want %v", got, want)
+	}
+}
 
 func TestNormalizeExternalBlocklistsAcceptsCustomPublicHTTPSURLs(t *testing.T) {
 	got, err := normalizeExternalBlocklists(context.Background(), ExternalBlocklists{{Name: "Primary", URL: "https://1.1.1.1/list.txt"}})

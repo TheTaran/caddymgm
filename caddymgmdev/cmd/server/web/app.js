@@ -900,6 +900,7 @@ async function persistExternalBlocklists(refreshURL = "", refreshAll = false, tr
   try {
     settings = await request("/api/settings", { method: "PUT", body: JSON.stringify({ ...settings, externalBlocklists: feeds, refreshExternalBlocklists: refreshAll, refreshExternalBlocklistUrl: refreshURL }) });
     renderExternalBlocklists(settings.externalBlocklists || []);
+    await loadExternalBlocklistStats();
     const total = Number(settings.externalBlockedIpCount || 0).toLocaleString();
     const refreshed = (settings.externalBlocklists || []).find((feed) => feed.url === refreshURL);
     const result = refreshURL
@@ -920,10 +921,23 @@ async function persistExternalBlocklists(refreshURL = "", refreshAll = false, tr
 }
 
 function renderExternalBlocklists(feeds) {
-  els.externalBlocklistList.innerHTML = feeds.map((feed, index) => `<div class="blocklist-row" data-blocklist-row="${index}"><input data-blocklist-field="name" maxlength="80" required placeholder="Blocklist name" value="${escapeHTML(feed.name)}" /><input data-blocklist-field="url" type="url" required placeholder="https://example.org/blocklist.txt" value="${escapeHTML(feed.url)}" /><span class="blocklist-meta">${Number(feed.count || 0).toLocaleString()} IPs</span><span class="blocklist-meta">${feed.updatedAt ? new Date(feed.updatedAt).toLocaleString() : "Not recorded"}</span><span class="blocklist-actions"><button type="button" class="secondary" data-update-blocklist>Update</button><button type="button" class="danger" data-remove-blocklist>Remove</button></span></div>`).join("");
+  els.externalBlocklistList.innerHTML = feeds.map((feed, index) => `<div class="blocklist-row" data-blocklist-row="${index}"><input data-blocklist-field="name" maxlength="80" required placeholder="Blocklist name" value="${escapeHTML(feed.name)}" /><input data-blocklist-field="url" type="url" required placeholder="https://example.org/blocklist.txt" value="${escapeHTML(feed.url)}" /><span class="blocklist-meta">${Number(feed.count || 0).toLocaleString()} IPs</span><span class="blocklist-meta" data-blocklist-blocked="${escapeHTML(feed.url)}" title="Blocked requests in retained access logs">${Number(externalBlocklistBlockedCounts.get(feed.url) || 0).toLocaleString()} requests</span><span class="blocklist-meta">${feed.updatedAt ? new Date(feed.updatedAt).toLocaleString() : "Not recorded"}</span><span class="blocklist-actions"><button type="button" class="secondary" data-update-blocklist>Update</button><button type="button" class="danger" data-remove-blocklist>Remove</button></span></div>`).join("");
   els.externalBlocklistEmpty.hidden = feeds.length > 0;
   const total = Number(settings?.externalBlockedIpCount || 0);
   els.externalBlocklistTotal.textContent = `${total.toLocaleString()} blocked IP${total === 1 ? "" : "s"} across all lists`;
+}
+
+let externalBlocklistBlockedCounts = new Map();
+async function loadExternalBlocklistStats() {
+  try {
+    const data = await request("/api/external-blocklist-stats");
+    externalBlocklistBlockedCounts = new Map((data.lists || []).map((list) => [list.url, Number(list.blocked || 0)]));
+    els.externalBlocklistList.querySelectorAll("[data-blocklist-blocked]").forEach((element) => {
+      element.textContent = `${Number(externalBlocklistBlockedCounts.get(element.dataset.blocklistBlocked) || 0).toLocaleString()} requests`;
+    });
+  } catch (_) {
+    externalBlocklistBlockedCounts = new Map();
+  }
 }
 
 function addExternalBlocklist() {
@@ -1098,6 +1112,7 @@ async function loadSettings() {
     settings = loadedSettings;
     const protection = settings.webProtection || {};
     renderExternalBlocklists(settings.externalBlocklists || []);
+    void loadExternalBlocklistStats();
     renderManualIPLists(settings.manualIpLists || []);
     els.webProtectionEnabled.checked = !!protection.enabled;
     els.webProtectionCountryMode.value = protection.countryMode || "block";

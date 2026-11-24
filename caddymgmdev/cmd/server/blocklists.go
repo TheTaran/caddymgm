@@ -36,6 +36,11 @@ type ExternalBlocklist struct {
 
 type ExternalBlocklists []ExternalBlocklist
 
+type externalBlocklistStat struct {
+	URL     string `json:"url"`
+	Blocked int    `json:"blocked"`
+}
+
 type ManualIPList struct {
 	Name            string   `json:"name"`
 	Reference       string   `json:"reference,omitempty"`
@@ -503,6 +508,85 @@ func (a *App) refreshExternalBlocklists(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("caddy rejected the external blocklist refresh; previous config restored: %w", err)
 	}
 	return len(blocked), nil
+}
+
+// handleExternalBlocklistStats counts retained 403 responses that match each
+// configured external blocklist. A request can be shown for more than one list
+// when the same address is intentionally present in multiple feeds.
+func (a *App) handleExternalBlocklistStats(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	feeds := make(ExternalBlocklists, len(a.settings.ExternalBlocklists))
+	for index, feed := range a.settings.ExternalBlocklists {
+		feeds[index] = feed
+		feeds[index].Entries = append([]string(nil), feed.Entries...)
+	}
+	defaults := a.settings.WebProtection
+	retention := a.settings.LogRetention
+	sites, _, _, err := a.load()
+	a.mu.Unlock()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if retention <= 0 {
+		retention = 100
+	}
+	if retention > securityOverviewLogLimit {
+		retention = securityOverviewLogLimit
+	}
+
+	sets := make([]protectionPrefixSet, len(feeds))
+	allEntries := make([]string, 0)
+	for index, feed := range feeds {
+		sets[index] = newProtectionPrefixSet(feed.Entries)
+		allEntries = append(allEntries, feed.Entries...)
+	}
+	aggregate := newProtectionPrefixSet(allEntries)
+	stats := make([]externalBlocklistStat, len(feeds))
+	for index, feed := range feeds {
+		stats[index].URL = feed.URL
+	}
+	for _, site := range sites {
+		if !site.LogsEnabled {
+			continue
+		}
+		policy, usesGlobal := defaults, true
+		if site.ProtectionOverride {
+			policy, usesGlobal = site.WebProtection, false
+		}
+		if !policy.Enabled || !usesGlobal {
+			continue
+		}
+		allowed := newProtectionPrefixSet(policy.AllowedIPs)
+		lines, readErr := readLastLines(accessLogPath(a.accessLogDir, site.ID), retention)
+		if readErr != nil {
+			continue
+		}
+		for _, line := range lines {
+			var record securityLogRecord
+			if json.Unmarshal([]byte(line), &record) != nil || record.Status != http.StatusForbidden {
+				continue
+			}
+			address, ok := securityRecordAddress(record)
+			if !ok || allowed.contains(address) || !aggregate.contains(address) {
+				continue
+			}
+			for _, index := range externalBlocklistMatches(sets, address) {
+				stats[index].Blocked++
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lists": stats})
+}
+
+func externalBlocklistMatches(sets []protectionPrefixSet, address netip.Addr) []int {
+	matches := make([]int, 0, 1)
+	for index, set := range sets {
+		if set.contains(address) {
+			matches = append(matches, index)
+		}
+	}
+	return matches
 }
 
 func validateExternalBlocklistURL(ctx context.Context, value string) (string, error) {

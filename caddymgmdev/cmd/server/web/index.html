@@ -116,6 +116,8 @@
             </div>
           </div>
           <div class="actions">
+            <button id="pending-changes" class="pending-changes" type="button" hidden>Pending changes</button>
+            <button id="apply-changes" class="secondary" type="button" hidden>Apply changes</button>
             <button id="new-site" title="Create website">New Website</button>
           </div>
         </header>
@@ -892,6 +894,19 @@
         <div class="form-actions">
           <button id="confirmation-dialog-cancel" class="secondary" type="button">Cancel</button>
           <button id="confirmation-dialog-confirm" class="danger" type="button">Confirm</button>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="pending-changes-dialog" class="confirmation-dialog pending-changes-dialog" aria-labelledby="pending-changes-dialog-title">
+      <div class="dialog-head">
+        <h2 id="pending-changes-dialog-title">Pending changes</h2>
+        <button id="pending-changes-dialog-close" class="secondary" type="button">Close</button>
+      </div>
+      <div class="confirmation-dialog-body">
+        <p>These changes are saved but will not be active in Caddy until they are applied.</p>
+        <ul id="pending-changes-list" class="pending-changes-list"></ul>
+        <div class="form-actions">
+          <button id="pending-changes-dialog-apply" type="button">Apply changes</button>
         </div>
       </div>
     </dialog>

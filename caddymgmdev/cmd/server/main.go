@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"sort"
@@ -237,6 +238,7 @@ type Settings struct {
 	RefreshBlocklistURL    string             `json:"refreshExternalBlocklistUrl,omitempty"`
 	MCPTokens              []MCPToken         `json:"mcpTokens,omitempty"`
 	MCPRequests            []MCPRequestRecord `json:"mcpRequests,omitempty"`
+	PendingChanges         bool               `json:"pendingChanges,omitempty"`
 }
 
 // ClientIPSettings controls which address Caddy uses for visitor-aware rules
@@ -490,6 +492,8 @@ func main() {
 	mux.HandleFunc("GET /api/settings", app.handleGetSettings)
 	mux.HandleFunc("GET /api/external-blocklist-stats", app.handleExternalBlocklistStats)
 	mux.HandleFunc("PUT /api/settings", app.handleUpdateSettings)
+	mux.HandleFunc("GET /api/config/pending", app.handlePendingConfig)
+	mux.HandleFunc("POST /api/config/apply", app.handleApplyPendingConfig)
 	mux.HandleFunc("GET /api/auth-providers", app.handleGetAuthProviders)
 	mux.HandleFunc("PUT /api/auth-providers", app.handleUpdateAuthProviders)
 	mux.HandleFunc("GET /api/logs", app.handleLogs)
@@ -534,13 +538,16 @@ func main() {
 }
 
 func (a *App) handleListSites(w http.ResponseWriter, r *http.Request) {
-	sites, err := a.readSites()
+	a.mu.Lock()
+	sites, _, _, err := a.load()
+	pendingChanges := a.hasPendingConfigLocked()
+	a.mu.Unlock()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	a.populateCertificateMetadata(sites)
-	writeJSON(w, http.StatusOK, map[string]any{"sites": sites})
+	writeJSON(w, http.StatusOK, map[string]any{"sites": sites, "pendingChanges": pendingChanges})
 }
 
 func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
@@ -577,13 +584,13 @@ func (a *App) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 	}
 	site.ID = uniqueSiteID(site.Address, sites, "")
 	sites = append(sites, site)
-	if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
-		a.addLogLocked(site, "reload failed", err.Error())
-		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy rejected the change; previous config restored: %w", err))
+	if err := a.stageCaddyConfigLocked(head, sites, tail); err != nil {
+		a.addLogLocked(site, "stage failed", err.Error())
+		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	a.populateSiteCertificateMetadata(&site)
-	a.addLogLocked(site, "created", "Proxy host created")
+	a.addLogLocked(site, "created", "Proxy host created; pending apply")
 	writeJSON(w, http.StatusCreated, site)
 }
 
@@ -641,17 +648,13 @@ func (a *App) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 			oldID := sites[i].ID
 			updated.ID = uniqueSiteID(updated.Address, sites, oldID)
 			sites[i] = updated
-			if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
-				a.addLogLocked(updated, "reload failed", err.Error())
-				writeError(w, http.StatusBadGateway, fmt.Errorf("caddy rejected the change; previous config restored: %w", err))
-				return
-			}
-			if err := a.renameAccessLog(oldID, updated.ID); err != nil {
+			if err := a.stageCaddyConfigLocked(head, sites, tail); err != nil {
+				a.addLogLocked(updated, "stage failed", err.Error())
 				writeError(w, http.StatusInternalServerError, err)
 				return
 			}
 			a.populateSiteCertificateMetadata(&updated)
-			a.addLogLocked(updated, "updated", "Proxy host updated")
+			a.addLogLocked(updated, "updated", "Proxy host updated; pending apply")
 			writeJSON(w, http.StatusOK, updated)
 			return
 		}
@@ -690,15 +693,12 @@ func (a *App) handleDeleteSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errors.New("site not found"))
 		return
 	}
-	if err := a.saveAndApplyCaddyConfigLocked(head, next, tail); err != nil {
-		a.addLogLocked(removed, "reload failed", err.Error())
-		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy rejected the change; previous config restored: %w", err))
+	if err := a.stageCaddyConfigLocked(head, next, tail); err != nil {
+		a.addLogLocked(removed, "stage failed", err.Error())
+		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if err := a.deleteSiteArtifacts(removed); err != nil {
-		a.addLogLocked(removed, "cleanup warning", err.Error())
-	}
-	a.addLogLocked(removed, "deleted", "Proxy host deleted")
+	a.addLogLocked(removed, "deleted", "Proxy host deleted; pending apply")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1028,16 +1028,41 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
+	if err := a.stageCaddyConfigLocked(head, sites, tail); err != nil {
 		a.settings = previousSettings
 		if restoreErr := writeFileAtomically(a.settingsPath, previousSettingsFile, 0o600); restoreErr != nil {
 			err = fmt.Errorf("%w; restoring previous settings failed: %v", err, restoreErr)
 		}
-		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy rejected the settings change; previous config restored: %w", err))
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("unable to stage settings change: %w", err))
 		return
 	}
 	a.trimLogsLocked()
 	writeJSON(w, http.StatusOK, a.publicSettingsLocked())
+}
+
+func (a *App) handleApplyPendingConfig(w http.ResponseWriter, _ *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.applyPendingConfigLocked(); err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("caddy rejected the pending changes; active configuration was kept: %w", err))
+		return
+	}
+	writeJSON(w, http.StatusOK, a.publicSettingsLocked())
+}
+
+func (a *App) handlePendingConfig(w http.ResponseWriter, _ *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	changes, err := a.pendingConfigSummaryLocked()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"pending": len(changes) > 0,
+		"changes": changes,
+	})
 }
 
 func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
@@ -1487,6 +1512,7 @@ func (a *App) saveSettingsLocked() error {
 func (a *App) publicSettingsLocked() Settings {
 	settings := a.settings
 	a.applySettingsEnvOverridesLocked(&settings)
+	settings.PendingChanges = a.hasPendingConfigLocked()
 	settings.Password = ""
 	settings.PasswordHash = ""
 	settings.OIDC.ClientSecret = ""
@@ -1590,7 +1616,11 @@ func (a *App) readSites() ([]Site, error) {
 }
 
 func (a *App) load() ([]Site, string, string, error) {
-	content, err := os.ReadFile(a.configPath)
+	return a.loadFromPath(a.managedConfigPathLocked())
+}
+
+func (a *App) loadFromPath(path string) ([]Site, string, string, error) {
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -1606,6 +1636,10 @@ func (a *App) load() ([]Site, string, string, error) {
 }
 
 func (a *App) save(head string, sites []Site, tail string) error {
+	return a.saveToPath(a.configPath, head, sites, tail)
+}
+
+func (a *App) saveToPath(path, head string, sites []Site, tail string) error {
 	sites = deduplicateSitesByAddress(sites)
 	normalizeSiteIDs(sites)
 	var out bytes.Buffer
@@ -1621,7 +1655,126 @@ func (a *App) save(head string, sites []Site, tail string) error {
 		out.WriteString(strings.TrimLeft(tail, "\n"))
 	}
 
-	return writeFileAtomically(a.configPath, out.Bytes(), 0o640)
+	return writeFileAtomically(path, out.Bytes(), 0o640)
+}
+
+func (a *App) pendingConfigPath() string { return a.configPath + ".pending" }
+
+func (a *App) hasPendingConfigLocked() bool {
+	pending, err := os.ReadFile(a.pendingConfigPath())
+	if err != nil {
+		return false
+	}
+	active, err := os.ReadFile(a.configPath)
+	if err != nil {
+		return true
+	}
+	return !bytes.Equal(active, pending)
+}
+
+func (a *App) managedConfigPathLocked() string {
+	if a.hasPendingConfigLocked() {
+		return a.pendingConfigPath()
+	}
+	return a.configPath
+}
+
+func (a *App) stageCaddyConfigLocked(head string, sites []Site, tail string) error {
+	return a.saveToPath(a.pendingConfigPath(), head, sites, tail)
+}
+
+func (a *App) pendingConfigSummaryLocked() ([]string, error) {
+	if !a.hasPendingConfigLocked() {
+		return []string{}, nil
+	}
+	activeSites, _, _, err := a.loadFromPath(a.configPath)
+	if err != nil {
+		return nil, err
+	}
+	pendingSites, _, _, err := a.loadFromPath(a.pendingConfigPath())
+	if err != nil {
+		return nil, err
+	}
+
+	activeByAddress := make(map[string]Site, len(activeSites))
+	for _, site := range activeSites {
+		activeByAddress[strings.ToLower(site.Address)] = site
+	}
+	pendingByAddress := make(map[string]Site, len(pendingSites))
+	for _, site := range pendingSites {
+		pendingByAddress[strings.ToLower(site.Address)] = site
+	}
+
+	changes := make([]string, 0)
+	for _, site := range pendingSites {
+		active, exists := activeByAddress[strings.ToLower(site.Address)]
+		switch {
+		case !exists:
+			changes = append(changes, "Add web host: "+site.Address)
+		case !reflect.DeepEqual(active, site):
+			changes = append(changes, "Update web host: "+site.Address)
+		}
+	}
+	for _, site := range activeSites {
+		if _, exists := pendingByAddress[strings.ToLower(site.Address)]; !exists {
+			changes = append(changes, "Remove web host: "+site.Address)
+		}
+	}
+	if len(changes) == 0 {
+		changes = append(changes, "Update global proxy, protection, or authentication settings")
+	}
+	sort.Strings(changes)
+	return changes, nil
+}
+
+func (a *App) applyPendingConfigLocked() error {
+	pendingPath := a.pendingConfigPath()
+	pending, err := os.ReadFile(pendingPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return errors.New("there are no pending changes")
+	}
+	if err != nil {
+		return err
+	}
+	previous, err := os.ReadFile(a.configPath)
+	if err != nil {
+		return err
+	}
+	previousSites, _, _, err := a.loadFromPath(a.configPath)
+	if err != nil {
+		return err
+	}
+	if err := writeFileAtomically(a.configPath, pending, 0o640); err != nil {
+		return err
+	}
+	if err := a.applyCaddyConfigLocked(); err != nil {
+		if restoreErr := writeFileAtomically(a.configPath, previous, 0o640); restoreErr != nil {
+			return fmt.Errorf("%w; restoring active config failed: %v", err, restoreErr)
+		}
+		return err
+	}
+	nextSites, _, _, err := a.loadFromPath(a.configPath)
+	if err != nil {
+		return err
+	}
+	for _, previousSite := range previousSites {
+		stillPresent := false
+		for _, nextSite := range nextSites {
+			if previousSite.Address == nextSite.Address {
+				stillPresent = true
+				break
+			}
+		}
+		if !stillPresent {
+			if err := a.deleteSiteArtifacts(previousSite); err != nil {
+				a.addLogLocked(previousSite, "cleanup warning", err.Error())
+			}
+		}
+	}
+	if err := os.Remove(pendingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (a *App) saveAndApplyCaddyConfigLocked(head string, sites []Site, tail string) error {
@@ -3886,6 +4039,9 @@ func splitHostPortLoose(value string) (string, string, error) {
 func (a *App) syncManagedConfig() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.hasPendingConfigLocked() {
+		return nil
+	}
 	sites, head, tail, err := a.load()
 	if err != nil {
 		return err

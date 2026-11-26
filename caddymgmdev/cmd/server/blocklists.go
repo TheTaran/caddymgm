@@ -454,7 +454,7 @@ func (a *App) refreshManualAllowlistDNS(ctx context.Context) (bool, error) {
 		a.settings = previousSettings
 		return false, err
 	}
-	if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
+	if err := a.stageCaddyConfigLocked(head, sites, tail); err != nil {
 		a.settings = previousSettings
 		if restoreErr := writeFileAtomically(a.settingsPath, previousSettingsFile, 0o600); restoreErr != nil {
 			return false, fmt.Errorf("%w; restoring DNS allowlist settings failed: %v", err, restoreErr)
@@ -500,7 +500,7 @@ func (a *App) refreshExternalBlocklists(ctx context.Context) (int, error) {
 		a.settings = previousSettings
 		return 0, err
 	}
-	if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
+	if err := a.stageCaddyConfigLocked(head, sites, tail); err != nil {
 		a.settings = previousSettings
 		if restoreErr := writeFileAtomically(a.settingsPath, previousSettingsFile, 0o600); restoreErr != nil {
 			err = fmt.Errorf("%w; restoring previous settings failed: %v", err, restoreErr)

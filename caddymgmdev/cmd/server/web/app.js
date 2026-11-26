@@ -1,5 +1,11 @@
 const els = {
   saveConfirmation: document.querySelector("#save-confirmation"),
+  pendingChanges: document.querySelector("#pending-changes"),
+  applyChanges: document.querySelector("#apply-changes"),
+  pendingChangesDialog: document.querySelector("#pending-changes-dialog"),
+  pendingChangesList: document.querySelector("#pending-changes-list"),
+  pendingChangesDialogClose: document.querySelector("#pending-changes-dialog-close"),
+  pendingChangesDialogApply: document.querySelector("#pending-changes-dialog-apply"),
   confirmationDialog: document.querySelector("#confirmation-dialog"),
   confirmationDialogTitle: document.querySelector("#confirmation-dialog-title"),
   confirmationDialogMessage: document.querySelector("#confirmation-dialog-message"),
@@ -355,6 +361,13 @@ document.querySelector("#logout").addEventListener("click", logout);
 document.querySelector("#new-site").addEventListener("click", () => {
   showView("proxy-hosts");
   editSite();
+});
+els.applyChanges.addEventListener("click", applyPendingChanges);
+els.pendingChanges.addEventListener("click", showPendingChanges);
+els.pendingChangesDialogClose.addEventListener("click", () => els.pendingChangesDialog.close());
+els.pendingChangesDialogApply.addEventListener("click", () => {
+  els.pendingChangesDialog.close();
+  applyPendingChanges();
 });
 document.querySelector("#cancel").addEventListener("click", closeEditor);
 els.form.addEventListener("submit", saveSite);
@@ -1100,6 +1113,10 @@ async function loadSites() {
   try {
     const data = await request("/api/sites");
     sites = data.sites || [];
+    if (typeof data.pendingChanges === "boolean") {
+      settings = { ...(settings || {}), pendingChanges: data.pendingChanges };
+      renderPendingChanges();
+    }
     renderMetrics();
     renderHostLists();
     renderLogFilter();
@@ -1115,6 +1132,7 @@ async function loadSettings() {
   try {
     const [loadedSettings, providers] = await Promise.all([request("/api/settings"), request("/api/auth-providers")]);
     settings = loadedSettings;
+    renderPendingChanges();
     const protection = settings.webProtection || {};
     renderExternalBlocklists(settings.externalBlocklists || []);
     void loadExternalBlocklistStats();
@@ -1166,6 +1184,49 @@ async function loadSettings() {
     syncSettingsWebTLS();
   } catch (err) {
     setStatus(err.message);
+  }
+}
+
+function renderPendingChanges() {
+  const pending = !!settings?.pendingChanges;
+  els.pendingChanges.hidden = !pending;
+  els.applyChanges.hidden = !pending;
+}
+
+async function showPendingChanges() {
+  try {
+    const result = await request("/api/config/pending");
+    if (!result.pending) {
+      settings = { ...(settings || {}), pendingChanges: false };
+      renderPendingChanges();
+      return;
+    }
+    els.pendingChangesList.replaceChildren(...(result.changes || []).map((change) => {
+      const item = document.createElement("li");
+      item.textContent = change;
+      return item;
+    }));
+    els.pendingChangesDialog.showModal();
+  } catch (err) {
+    setStatus(err.message);
+  }
+}
+
+async function applyPendingChanges() {
+  if (!await confirmAction({
+    title: "Apply pending changes",
+    message: "Apply all pending configuration changes to Caddy now? Active connections may be briefly reloaded.",
+    confirmLabel: "Apply changes",
+  })) return;
+  try {
+    els.applyChanges.disabled = true;
+    await request("/api/config/apply", { method: "POST" });
+    await Promise.all([loadSites(), loadSettings(), loadLogs()]);
+    showConfirmation("Pending changes applied");
+  } catch (err) {
+    setStatus(err.message);
+  } finally {
+    els.applyChanges.disabled = false;
   }
 }
 
@@ -1271,12 +1332,15 @@ async function saveSettings(event) {
         },
       }),
     });
+    settings = await request("/api/settings");
     els.settingsAccessClientSecret.value = "";
     els.settingsPassword.value = "";
     els.settingsPasswordConfirm.value = "";
     syncSettingsPasswordConfirmation();
-    setStatus("Settings saved");
-    showConfirmation("Settings saved");
+    renderPendingChanges();
+    const message = settings.pendingChanges ? "Settings saved; pending changes are ready to apply" : "Settings saved";
+    setStatus(message);
+    showConfirmation(message);
     renderCertificatesView();
     renderIssuerOptions();
   } catch (err) {
@@ -1361,10 +1425,11 @@ async function saveIssuers(issuers, message) {
     });
     renderCertificatesView();
     renderIssuerOptions();
-    setStatus(message);
+    renderPendingChanges();
+    const confirmation = settings.pendingChanges ? `${message}; pending changes are ready to apply` : message;
+    setStatus(confirmation);
+    showConfirmation(confirmation);
   } catch (err) {
-    showConfirmation(message);
-
     setStatus(err.message);
   }
 }
@@ -1871,8 +1936,8 @@ async function toggleSiteEnabled(site) {
         enabled: nextEnabled,
       }),
     });
-    setStatus(`Website ${nextEnabled ? "activated" : "deactivated"}`);
-    showConfirmation(nextEnabled ? "Website activated" : "Website deactivated");
+    setStatus(`Website ${nextEnabled ? "activation" : "deactivation"} saved; pending changes are ready to apply`);
+    showConfirmation(`Website ${nextEnabled ? "activation" : "deactivation"} saved; pending changes are ready to apply`);
     await loadSites();
     await loadLogs();
   } catch (err) {
@@ -2433,7 +2498,6 @@ function formatHeaderRules(rules) {
 
 async function saveSite(event) {
   event.preventDefault();
-  const previousSite = editingSite ? { ...editingSite } : null;
   const mode = getMode();
   if (!mode) {
     setStatus("Select a website type first");
@@ -2496,40 +2560,8 @@ async function saveSite(event) {
     els.id.value = refreshedSite.id || savedID || "";
     els.formTitle.textContent = "Edit Website";
     els.delete.hidden = !els.id.value;
-    if (payload.tlsMode !== "acme") {
-      setStatus("Website saved - TLS disabled");
-      showConfirmation("Website saved - TLS disabled", "success");
-      return;
-    }
-    if (!payload.enabled) {
-      setStatus("Website saved - TLS configured, website inactive");
-      showConfirmation("TLS configured - Website inactive", "pending");
-      return;
-    }
-    if (refreshedSite.certificateExpiresAt) {
-      const message = `TLS certificate active until ${formatCertificateExpiry(refreshedSite.certificateExpiresAt)}`;
-      setStatus(message);
-      showConfirmation(message, "success");
-      return;
-    }
-
-    if (shouldOpenACMEStatus(previousSite, payload, refreshedSite)) showACMEStatus(refreshedSite);
-    setStatus(`Checking TLS certificate for ${refreshedSite.address}...`);
-    showConfirmation("Website saved - Checking TLS certificate…", "pending");
-    const verifiedSite = await waitForCertificate(refreshedSite.id, refreshedSite.address);
-    if (verifiedSite) {
-      editingSite = { ...verifiedSite };
-      setACMEResult("success", `Certificate issued - Valid until ${formatCertificateExpiry(verifiedSite.certificateExpiresAt)}`);
-      await loadSites();
-      const message = `TLS certificate issued successfully for ${verifiedSite.address}`;
-      setStatus(message);
-      showConfirmation(message, "success");
-    } else {
-      setACMEResult("error", "Certificate not issued within 30 seconds. Review the Caddy activity below.");
-      const message = `TLS certificate was not issued for ${refreshedSite.address}`;
-      setStatus(message);
-      showConfirmation(message, "error");
-    }
+    setStatus("Website saved; pending changes are ready to apply");
+    showConfirmation("Website saved; pending changes are ready to apply");
   } catch (err) {
     setStatus(err.message);
     setACMEResult("error", err.message);

@@ -55,6 +55,57 @@ func TestSaveAndApplyRestoresPreviousConfigWhenCaddyRejectsChange(t *testing.T) 
 	}
 }
 
+func TestStagedConfigIsNotLoadedUntilApplied(t *testing.T) {
+	loads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		loads++
+		if r.URL.Path != "/load" {
+			t.Fatalf("request path = %q, want /load", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	configPath := filepath.Join(t.TempDir(), "Caddyfile")
+	active := []byte("# active config\n")
+	if err := os.WriteFile(configPath, active, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{configPath: configPath, caddyMode: "api", caddyAPIURL: server.URL, httpClient: server.Client(), webPort: "8080"}
+	site := Site{ID: "pending.example.test", Address: "pending.example.test", Mode: "proxy", Upstream: "http://app:3000", TLSMode: "off", Enabled: true}
+	if err := app.stageCaddyConfigLocked("", []Site{site}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if loads != 0 {
+		t.Fatalf("Caddy was loaded while staging: %d loads", loads)
+	}
+	if got, err := os.ReadFile(configPath); err != nil || string(got) != string(active) {
+		t.Fatalf("active config changed while staging: %q, %v", got, err)
+	}
+	if !app.hasPendingConfigLocked() {
+		t.Fatal("pending config was not recorded")
+	}
+	changes, err := app.pendingConfigSummaryLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(changes, []string{"Add web host: pending.example.test"}) {
+		t.Fatalf("pending changes = %#v", changes)
+	}
+	if err := app.applyPendingConfigLocked(); err != nil {
+		t.Fatal(err)
+	}
+	if loads != 1 {
+		t.Fatalf("Caddy loads = %d, want 1", loads)
+	}
+	if app.hasPendingConfigLocked() {
+		t.Fatal("pending config was not cleared after apply")
+	}
+	if got, err := os.ReadFile(configPath); err != nil || !strings.Contains(string(got), "pending.example.test") {
+		t.Fatalf("applied config = %q, %v", got, err)
+	}
+}
+
 func TestNormalizeSiteRejectsTLSVerificationSkipForHTTPUpstream(t *testing.T) {
 	site := Site{Address: "app.example.test", Mode: "proxy", Upstream: "http://app:3000", SkipTLSVerify: true}
 	if err := normalizeSite(&site); err == nil || !strings.Contains(err.Error(), "requires an HTTPS upstream") {

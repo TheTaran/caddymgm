@@ -680,6 +680,25 @@ button.danger {
   min-height: 50px;
 }
 
+.pending-changes {
+  min-height: 30px;
+  padding: 0 9px;
+  color: #ffd36e;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  background: rgba(255, 193, 77, 0.1);
+  border: 1px solid rgba(255, 193, 77, 0.35);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.pending-changes:hover,
+.pending-changes:focus-visible {
+  color: #ffe2a2;
+  border-color: #ffd36e;
+}
+
 .page-title-block {
   display: grid;
   gap: 4px;
@@ -2067,6 +2086,19 @@ dialog {
 
 .confirmation-dialog .form-actions {
   justify-content: flex-end;
+}
+
+.pending-changes-dialog {
+  width: min(540px, calc(100vw - 32px));
+}
+
+.pending-changes-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text);
+  line-height: 1.4;
 }
 
 .country-picker-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; max-height: 56vh; overflow: auto; }

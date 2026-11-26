@@ -199,13 +199,13 @@ func (a *App) handleUpdateAuthProviders(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if err := a.saveAndApplyCaddyConfigLocked(head, sites, tail); err != nil {
+	if err := a.stageCaddyConfigLocked(head, sites, tail); err != nil {
 		authErr := err
 		a.authProviders = previous
 		if restoreErr := a.saveAuthProvidersLocked(); restoreErr != nil {
 			authErr = fmt.Errorf("%w; restoring auth provider failed: %v", authErr, restoreErr)
 		}
-		writeError(w, http.StatusBadGateway, authErr)
+		writeError(w, http.StatusInternalServerError, authErr)
 		return
 	}
 	a.oidcCache = make(map[string]*oidcRuntime)

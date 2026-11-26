@@ -53,3 +53,28 @@ func TestMCPInitializeAndToolsList(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPToolsListHonorsTokenScopes(t *testing.T) {
+	readOnly := MCPToken{Scopes: []string{"hosts:read", "reports:read"}}
+	tools := mcpToolsForToken(readOnly)
+	seen := map[string]bool{}
+	for _, tool := range tools {
+		seen[tool.Name] = true
+	}
+	if !seen["list_web_hosts"] || !seen["get_component_versions"] {
+		t.Fatalf("expected permitted tools, got %#v", seen)
+	}
+	for _, name := range []string{"create_web_host", "get_settings", "get_access_logs", "list_certificates"} {
+		if seen[name] {
+			t.Fatalf("unexpected tool %q for a read-only token", name)
+		}
+	}
+}
+
+func TestMCPWriteToolRequiresWriteScope(t *testing.T) {
+	app := &App{}
+	_, err := app.callMCPTool(httptest.NewRequest(http.MethodPost, "/mcp", nil), MCPToken{Scopes: []string{"hosts:read"}}, "delete_web_host", map[string]any{"id": "example"})
+	if err == nil || !strings.Contains(err.Error(), "hosts:write") {
+		t.Fatalf("error = %v, want missing hosts:write", err)
+	}
+}

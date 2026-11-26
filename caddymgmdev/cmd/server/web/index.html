@@ -883,6 +883,18 @@
         <div id="acme-log-list" class="log-list"></div>
       </div>
     </dialog>
+    <dialog id="confirmation-dialog" class="confirmation-dialog" aria-labelledby="confirmation-dialog-title">
+      <div class="dialog-head">
+        <h2 id="confirmation-dialog-title">Confirm action</h2>
+      </div>
+      <div class="confirmation-dialog-body">
+        <p id="confirmation-dialog-message"></p>
+        <div class="form-actions">
+          <button id="confirmation-dialog-cancel" class="secondary" type="button">Cancel</button>
+          <button id="confirmation-dialog-confirm" class="danger" type="button">Confirm</button>
+        </div>
+      </div>
+    </dialog>
     <div id="save-confirmation" class="save-confirmation" role="status" aria-live="polite" hidden></div>
 
     <script src="https://unpkg.com/maplibre-gl@5.14.0/dist/maplibre-gl.js"></script>

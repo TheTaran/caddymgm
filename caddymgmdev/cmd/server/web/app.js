@@ -1,5 +1,10 @@
 const els = {
   saveConfirmation: document.querySelector("#save-confirmation"),
+  confirmationDialog: document.querySelector("#confirmation-dialog"),
+  confirmationDialogTitle: document.querySelector("#confirmation-dialog-title"),
+  confirmationDialogMessage: document.querySelector("#confirmation-dialog-message"),
+  confirmationDialogCancel: document.querySelector("#confirmation-dialog-cancel"),
+  confirmationDialogConfirm: document.querySelector("#confirmation-dialog-confirm"),
   pageTitle: document.querySelector("#page-title"),
   pageTitleIcon: document.querySelector("#page-title-icon"),
   sectionTitle: document.querySelector("#section-title"),
@@ -1306,7 +1311,12 @@ async function deleteIssuer() {
     setStatus("Built-in authorities cannot be deleted");
     return;
   }
-  if (!id || !confirm("Delete this ACME authority?")) return;
+  if (!id || !await confirmAction({
+    title: "Delete ACME authority",
+    message: "This permanently removes the custom ACME authority. Web hosts using it will need another authority.",
+    confirmLabel: "Delete",
+    destructive: true,
+  })) return;
   const issuers = (settings?.acmeIssuers || []).filter((issuer) => issuer.id !== id);
   await saveIssuers(issuers, "Authority deleted");
   closeIssuerForm();
@@ -2670,7 +2680,12 @@ async function deleteSite() {
 async function deleteSiteByID(id, address) {
   if (!id) return;
   const name = address || "this website";
-  if (!confirm(`Delete ${name}? Associated access logs and locally managed certificate files will also be removed.`)) return;
+  if (!await confirmAction({
+    title: "Delete web host",
+    message: `Delete ${name}? Associated access logs and locally managed certificate files will also be removed.`,
+    confirmLabel: "Delete",
+    destructive: true,
+  })) return;
   try {
     await request(`/api/sites/${id}`, { method: "DELETE" });
     if (editingSite?.id === id || els.id.value === id) closeEditor();
@@ -2683,7 +2698,11 @@ async function deleteSiteByID(id, address) {
 }
 
 async function renewCertificate(site) {
-  if (!site?.id || !confirm(`Force renew certificate for ${site.address}?`)) return;
+  if (!site?.id || !await confirmAction({
+    title: "Renew certificate",
+    message: `Request a new certificate for ${site.address} now?`,
+    confirmLabel: "Renew",
+  })) return;
   try {
     showACMEStatus(site);
     await request(`/api/certificates/renew/${site.id}`, { method: "POST" });
@@ -2693,6 +2712,23 @@ async function renewCertificate(site) {
     closeACMEStatus();
     setStatus(err.message);
   }
+}
+
+function confirmAction({ title = "Confirm action", message = "", confirmLabel = "Confirm", destructive = false } = {}) {
+  const dialog = els.confirmationDialog;
+  els.confirmationDialogTitle.textContent = title;
+  els.confirmationDialogMessage.textContent = message;
+  els.confirmationDialogConfirm.textContent = confirmLabel;
+  els.confirmationDialogConfirm.classList.toggle("danger", destructive);
+  els.confirmationDialogCancel.onclick = () => dialog.close("cancel");
+  els.confirmationDialogConfirm.onclick = () => dialog.close("confirm");
+  dialog.returnValue = "";
+
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
+    dialog.showModal();
+    els.confirmationDialogConfirm.focus();
+  });
 }
 
 async function request(url, options = {}) {

@@ -2049,6 +2049,26 @@ dialog {
   color: var(--text);
 }
 
+.confirmation-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.confirmation-dialog-body {
+  display: grid;
+  gap: 18px;
+  padding: 18px 16px 16px;
+}
+
+.confirmation-dialog-body p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.confirmation-dialog .form-actions {
+  justify-content: flex-end;
+}
+
 .country-picker-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; max-height: 56vh; overflow: auto; }
 .country-picker-row { display: grid; grid-template-columns: 16px 20px minmax(0, 1fr) auto; align-items: center; min-width: 0; gap: 7px; margin: 0; padding: 6px 7px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; line-height: 1.2; }
 .country-picker-row input { width: 16px; height: 16px; margin: 0; }

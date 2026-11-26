@@ -106,6 +106,90 @@ func TestStagedConfigIsNotLoadedUntilApplied(t *testing.T) {
 	}
 }
 
+func TestBackgroundListRefreshHotAppliesWithoutCreatingPendingChange(t *testing.T) {
+	loads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		loads++
+		if r.URL.Path != "/load" {
+			t.Fatalf("request path = %q, want /load", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	directory := t.TempDir()
+	app := &App{
+		configPath:   filepath.Join(directory, "Caddyfile"),
+		settingsPath: filepath.Join(directory, "settings.json"),
+		caddyMode:    "api",
+		caddyAPIURL:  server.URL,
+		httpClient:   server.Client(),
+		webPort:      "8080",
+	}
+	if err := app.save("", []Site{{
+		ID: "app.example.test", Address: "app.example.test", Mode: "proxy",
+		Upstream: "http://app:3000", TLSMode: "off", Enabled: true,
+	}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.saveSettingsLocked(); err != nil {
+		t.Fatal(err)
+	}
+
+	previous := app.settings
+	app.settings.ExternalBlockedIPs = []string{"203.0.113.8"}
+	if err := app.persistBackgroundSettingsAndApplyLocked(previous, true); err != nil {
+		t.Fatal(err)
+	}
+	if loads != 1 {
+		t.Fatalf("Caddy loads = %d, want 1", loads)
+	}
+	if app.hasPendingConfigLocked() {
+		t.Fatal("background refresh created a pending configuration")
+	}
+}
+
+func TestBackgroundListRefreshDefersToExistingPendingChange(t *testing.T) {
+	loads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		loads++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	directory := t.TempDir()
+	app := &App{
+		configPath:   filepath.Join(directory, "Caddyfile"),
+		settingsPath: filepath.Join(directory, "settings.json"),
+		caddyMode:    "api",
+		caddyAPIURL:  server.URL,
+		httpClient:   server.Client(),
+		webPort:      "8080",
+	}
+	active := []Site{{ID: "active.example.test", Address: "active.example.test", Mode: "proxy", Upstream: "http://app:3000", TLSMode: "off", Enabled: true}}
+	if err := app.save("", active, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.saveSettingsLocked(); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.stageCaddyConfigLocked("", append(active, Site{ID: "pending.example.test", Address: "pending.example.test", Mode: "proxy", Upstream: "http://pending:3000", TLSMode: "off", Enabled: true}), ""); err != nil {
+		t.Fatal(err)
+	}
+
+	previous := app.settings
+	app.settings.ExternalBlockedIPs = []string{"203.0.113.8"}
+	if err := app.persistBackgroundSettingsAndApplyLocked(previous, true); err != nil {
+		t.Fatal(err)
+	}
+	if loads != 0 {
+		t.Fatalf("Caddy loads = %d, want 0 while an operator change is pending", loads)
+	}
+	if !app.hasPendingConfigLocked() {
+		t.Fatal("operator pending configuration was removed")
+	}
+}
+
 func TestNormalizeSiteRejectsTLSVerificationSkipForHTTPUpstream(t *testing.T) {
 	site := Site{Address: "app.example.test", Mode: "proxy", Upstream: "http://app:3000", SkipTLSVerify: true}
 	if err := normalizeSite(&site); err == nil || !strings.Contains(err.Error(), "requires an HTTPS upstream") {

@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -394,9 +393,9 @@ func (a *App) prepareExternalBlocklists(ctx context.Context, feeds, previous Ext
 }
 
 // startExternalBlocklistUpdater refreshes every configured public list on
-// startup and then every 24 hours. The refresh uses the same settings and
-// Caddy configuration transaction as a manual update, so a failed Caddy load
-// leaves the active configuration untouched.
+// startup and then every 24 hours. Changed addresses are hot-loaded through
+// Caddy's Admin API, without restarting the Caddy process. A real operator
+// change already waiting for Apply is never replaced by a background refresh.
 func (a *App) startExternalBlocklistUpdater() {
 	go func() {
 		for {
@@ -439,26 +438,10 @@ func (a *App) refreshManualAllowlistDNS(ctx context.Context) (bool, error) {
 	if err != nil || !changed {
 		return changed, err
 	}
-	sites, head, tail, err := a.load()
-	if err != nil {
-		return false, err
-	}
 	previousSettings := a.settings
-	previousSettingsFile, err := os.ReadFile(a.settingsPath)
-	if err != nil {
-		return false, err
-	}
 	a.settings.ManualIPLists = nextLists
 	a.settings.WebProtection.AllowedIPs = manualIPListEntries(nextLists, "allow")
-	if err := a.saveSettingsLocked(); err != nil {
-		a.settings = previousSettings
-		return false, err
-	}
-	if err := a.stageCaddyConfigLocked(head, sites, tail); err != nil {
-		a.settings = previousSettings
-		if restoreErr := writeFileAtomically(a.settingsPath, previousSettingsFile, 0o600); restoreErr != nil {
-			return false, fmt.Errorf("%w; restoring DNS allowlist settings failed: %v", err, restoreErr)
-		}
+	if err := a.persistBackgroundSettingsAndApplyLocked(previousSettings, true); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -479,20 +462,7 @@ func (a *App) refreshExternalBlocklists(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	caddyConfigChanged := !sameStringEntries(a.settings.ExternalBlockedIPs, blocked)
-	var sites []Site
-	var head, tail string
-	if caddyConfigChanged {
-		sites, head, tail, err = a.load()
-		if err != nil {
-			return 0, err
-		}
-	}
 	previousSettings := a.settings
-	previousSettingsFile, err := os.ReadFile(a.settingsPath)
-	if err != nil {
-		return 0, err
-	}
 	next := a.settings
 	next.ExternalBlocklists = feeds
 	next.ExternalBlockedIPs = blocked
@@ -500,21 +470,43 @@ func (a *App) refreshExternalBlocklists(ctx context.Context) (int, error) {
 	next.RefreshBlocklists = false
 	next.RefreshBlocklistURL = ""
 	a.settings = next
-	if err := a.saveSettingsLocked(); err != nil {
-		a.settings = previousSettings
+	changed := !sameStringEntries(previousSettings.ExternalBlockedIPs, blocked)
+	if err := a.persistBackgroundSettingsAndApplyLocked(previousSettings, changed); err != nil {
 		return 0, err
 	}
-	if !caddyConfigChanged {
-		return len(blocked), nil
-	}
-	if err := a.stageCaddyConfigLocked(head, sites, tail); err != nil {
-		a.settings = previousSettings
-		if restoreErr := writeFileAtomically(a.settingsPath, previousSettingsFile, 0o600); restoreErr != nil {
-			err = fmt.Errorf("%w; restoring previous settings failed: %v", err, restoreErr)
-		}
-		return 0, fmt.Errorf("caddy rejected the external blocklist refresh; previous config restored: %w", err)
-	}
 	return len(blocked), nil
+}
+
+// persistBackgroundSettingsAndApplyLocked records refresh metadata and, when
+// addresses changed, activates the regenerated Caddyfile immediately. It is
+// deliberately separate from user-initiated staging: automated feed and DNS
+// updates must not create a Pending changes notice or overwrite one that is
+// already waiting for an operator.
+func (a *App) persistBackgroundSettingsAndApplyLocked(previous Settings, apply bool) error {
+	if err := a.saveSettingsLocked(); err != nil {
+		a.settings = previous
+		return err
+	}
+	if !apply || a.hasPendingConfigLocked() {
+		return nil
+	}
+
+	// Always render from the active Caddyfile. load() would select a pending
+	// file, which is precisely the configuration a background task must not
+	// apply on an operator's behalf.
+	sites, head, tail, err := a.loadFromPath(a.configPath)
+	if err == nil {
+		err = a.saveAndApplyCaddyConfigLocked(head, sites, tail)
+	}
+	if err == nil {
+		return nil
+	}
+
+	a.settings = previous
+	if restoreErr := a.saveSettingsLocked(); restoreErr != nil {
+		return fmt.Errorf("%w; restoring previous list settings failed: %v", err, restoreErr)
+	}
+	return fmt.Errorf("hot-applying refreshed list settings: %w", err)
 }
 
 func sameStringEntries(left, right []string) bool {

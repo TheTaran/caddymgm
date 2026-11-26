@@ -9,6 +9,18 @@ import (
 	"testing"
 )
 
+func TestSameStringEntries(t *testing.T) {
+	if !sameStringEntries([]string{"192.0.2.1", "198.51.100.0/24"}, []string{"192.0.2.1", "198.51.100.0/24"}) {
+		t.Fatal("equal entries were reported as different")
+	}
+	if sameStringEntries([]string{"192.0.2.1"}, []string{"198.51.100.2"}) {
+		t.Fatal("different entries were reported as equal")
+	}
+	if sameStringEntries([]string{"192.0.2.1"}, []string{"192.0.2.1", "198.51.100.2"}) {
+		t.Fatal("different entry counts were reported as equal")
+	}
+}
+
 func TestExternalBlocklistMatchesCountsOverlappingFeeds(t *testing.T) {
 	sets := []protectionPrefixSet{
 		newProtectionPrefixSet([]string{"203.0.113.0/24"}),

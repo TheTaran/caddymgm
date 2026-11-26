@@ -842,7 +842,13 @@
                 New MCP Token
                 <input id="settings-mcp-token" readonly />
               </label>
-              <div id="settings-mcp-tokens" class="log-list"></div>
+              <section class="mcp-token-section" aria-labelledby="settings-mcp-tokens-title">
+                <div class="mcp-token-section-heading">
+                  <h3 id="settings-mcp-tokens-title">Active MCP Tokens</h3>
+                  <span id="settings-mcp-token-count" class="table-count"></span>
+                </div>
+                <div id="settings-mcp-tokens" class="mcp-token-list"></div>
+              </section>
               <h3>MCP Report</h3>
               <p id="settings-mcp-report" class="field-note">No MCP requests recorded.</p>
             </section>

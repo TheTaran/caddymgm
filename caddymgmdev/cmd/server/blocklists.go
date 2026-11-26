@@ -479,10 +479,14 @@ func (a *App) refreshExternalBlocklists(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	sites, head, tail, err := a.load()
-	if err != nil {
-		return 0, err
+	caddyConfigChanged := !sameStringEntries(a.settings.ExternalBlockedIPs, blocked)
+	var sites []Site
+	var head, tail string
+	if caddyConfigChanged {
+		sites, head, tail, err = a.load()
+		if err != nil {
+			return 0, err
+		}
 	}
 	previousSettings := a.settings
 	previousSettingsFile, err := os.ReadFile(a.settingsPath)
@@ -500,6 +504,9 @@ func (a *App) refreshExternalBlocklists(ctx context.Context) (int, error) {
 		a.settings = previousSettings
 		return 0, err
 	}
+	if !caddyConfigChanged {
+		return len(blocked), nil
+	}
 	if err := a.stageCaddyConfigLocked(head, sites, tail); err != nil {
 		a.settings = previousSettings
 		if restoreErr := writeFileAtomically(a.settingsPath, previousSettingsFile, 0o600); restoreErr != nil {
@@ -508,6 +515,18 @@ func (a *App) refreshExternalBlocklists(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("caddy rejected the external blocklist refresh; previous config restored: %w", err)
 	}
 	return len(blocked), nil
+}
+
+func sameStringEntries(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 // handleExternalBlocklistStats counts retained 403 responses that match each

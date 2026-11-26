@@ -216,6 +216,7 @@ const els = {
   settingsMCPName: document.querySelector("#settings-mcp-name"),
   settingsMCPScopes: document.querySelector("#settings-mcp-scopes"),
   settingsMCPTokens: document.querySelector("#settings-mcp-tokens"),
+  settingsMCPTokenCount: document.querySelector("#settings-mcp-token-count"),
   settingsMCPReport: document.querySelector("#settings-mcp-report"),
   settingsAccessEnabled: document.querySelector("#settings-access-enabled"),
   settingsAccessName: document.querySelector("#settings-access-name"),
@@ -1247,15 +1248,99 @@ async function generateMCPToken() {
 }
 
 function renderMCPTokens(tokens) {
-  els.settingsMCPTokens.innerHTML = "";
-  if (!tokens.length) { els.settingsMCPTokens.textContent = "No active MCP tokens."; return; }
-  for (const token of tokens) {
-    const row = document.createElement("div"); row.className = "log-row";
-    row.textContent = `${token.name} · ${token.scopes.join(", ")} · ${token.requests || 0} requests · last used ${token.lastUsed || "never"}`;
-    const remove = document.createElement("button"); remove.type = "button"; remove.className = "secondary"; remove.textContent = "Revoke";
-    remove.addEventListener("click", async () => { await request(`/api/mcp/tokens/${encodeURIComponent(token.id)}`, { method: "DELETE" }); await loadSettings(); setStatus("MCP token revoked"); });
-    row.append(" ", remove); els.settingsMCPTokens.append(row);
+  els.settingsMCPTokens.replaceChildren();
+  els.settingsMCPTokenCount.textContent = tokens.length ? `${tokens.length} active` : "";
+  if (!tokens.length) {
+    const empty = document.createElement("p");
+    empty.className = "field-note";
+    empty.textContent = "No active MCP tokens.";
+    els.settingsMCPTokens.append(empty);
+    return;
   }
+  for (const token of tokens) {
+    const row = document.createElement("article");
+    row.className = "mcp-token-row";
+
+    const header = document.createElement("div");
+    header.className = "mcp-token-header";
+    const title = document.createElement("strong");
+    title.textContent = token.name;
+    const state = document.createElement("span");
+    state.className = "tag success";
+    state.textContent = "Active";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary danger-button";
+    remove.textContent = "Revoke";
+    remove.addEventListener("click", async () => {
+      if (!await confirmAction({
+        title: "Revoke MCP token",
+        message: `Revoke the MCP token “${token.name}”? Connected AI agents will no longer be able to use it.`,
+        confirmLabel: "Revoke",
+        destructive: true,
+      })) return;
+      try {
+        await request(`/api/mcp/tokens/${encodeURIComponent(token.id)}`, { method: "DELETE" });
+        await loadSettings();
+        setStatus("MCP token revoked");
+        showConfirmation("MCP token revoked");
+      } catch (err) {
+        setStatus(err.message);
+      }
+    });
+    header.append(title, state, remove);
+
+    const details = document.createElement("div");
+    details.className = "mcp-token-details";
+    details.append(
+      mcpTokenDetail("Permissions", token.scopes.map(formatMCPScope), "mcp-token-scopes"),
+      mcpTokenDetail("Requests", String(token.requests || 0)),
+      mcpTokenDetail("Last used", formatMCPDate(token.lastUsed)),
+      mcpTokenDetail("Created", formatMCPDate(token.createdAt)),
+    );
+    row.append(header, details);
+    els.settingsMCPTokens.append(row);
+  }
+}
+
+function mcpTokenDetail(label, value, className = "") {
+  const detail = document.createElement("div");
+  detail.className = "mcp-token-detail";
+  const heading = document.createElement("span");
+  heading.textContent = label;
+  const content = document.createElement("div");
+  if (className) content.className = className;
+  if (Array.isArray(value)) {
+    value.forEach((item) => {
+      const chip = document.createElement("span");
+      chip.className = "mcp-scope-chip";
+      chip.textContent = item;
+      content.append(chip);
+    });
+  } else {
+    content.textContent = value;
+  }
+  detail.append(heading, content);
+  return detail;
+}
+
+function formatMCPScope(scope) {
+  const labels = {
+    hosts: "Web Hosts",
+    protection: "Web Protection",
+    certificates: "Certificates",
+    settings: "Settings",
+    logs: "Logs",
+    reports: "Reports",
+  };
+  const [area, access] = String(scope).split(":");
+  return `${labels[area] || area} · ${access === "write" ? "Write" : "Read"}`;
+}
+
+function formatMCPDate(value) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
 async function loadMCPReport() {

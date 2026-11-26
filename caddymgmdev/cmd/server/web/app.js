@@ -1168,13 +1168,13 @@ async function generateMCPToken() {
   try {
     const scopes = [...els.settingsMCPScopes.querySelectorAll("input:checked")].map((input) => input.value);
     const result = await request("/api/mcp/token", { method: "POST", body: JSON.stringify({ name: els.settingsMCPName.value, scopes }) });
+    await loadSettings();
     settings.mcpEnabled = true;
     els.settingsMCPStatus.textContent = "MCP token created · POST /mcp";
     els.settingsMCPDisable.disabled = false;
     els.settingsMCPEndpoint.value = new URL(result.endpoint || "/mcp", window.location.origin).toString();
     els.settingsMCPToken.value = result.token;
     els.settingsMCPTokenWrap.hidden = false;
-    await loadSettings();
     setStatus("MCP token generated. Copy it now; it will not be shown again.");
     showConfirmation("MCP token generated");
   } catch (err) { setStatus(err.message); }
@@ -1410,16 +1410,19 @@ function renderIssuedCertificates() {
       <span></span>
       <span></span>
       <span class="badge"></span>
-      <button class="secondary" type="button">Renew</button>
+      <div class="certificate-actions"><button class="secondary" type="button">Renew</button><button class="danger" type="button" title="Delete web host and its certificate">Delete</button></div>
     `;
     row.children[0].textContent = site.address;
     row.children[1].textContent = certificateIssuerName(site);
     row.children[2].textContent = formatCertificateExpiry(site.certificateExpiresAt);
     row.children[3].textContent = site.enabled ? "Active" : "Disabled";
     row.children[3].classList.toggle("off", !site.enabled);
-    row.children[4].disabled = !site.enabled;
-    row.children[4].title = site.enabled ? `Force renew for ${site.address}` : "Enable the web host before forcing renewal";
-    row.children[4].addEventListener("click", () => renewCertificate(site));
+    const [renew, remove] = row.children[4].querySelectorAll("button");
+    renew.disabled = !site.enabled;
+    renew.title = site.enabled ? `Force renew for ${site.address}` : "Enable the web host before forcing renewal";
+    renew.addEventListener("click", () => renewCertificate(site));
+    remove.setAttribute("aria-label", `Delete web host ${site.address} and its certificate`);
+    remove.addEventListener("click", () => deleteSiteByID(site.id, site.address));
     els.certificateList.append(row);
   }
 }
@@ -1807,6 +1810,9 @@ function renderSiteList(container, editable, table) {
       }));
       actions.append(
         createSiteActionButton(site.enabled ? "Disable" : "Enable", "secondary", () => toggleSiteEnabled(site)),
+      );
+      actions.append(
+        createSiteActionButton("Delete", "danger", () => deleteSiteByID(site.id, site.address)),
       );
       row.prepend(actions);
     }
@@ -2658,13 +2664,19 @@ function filterACMELogs(logs) {
 }
 
 async function deleteSite() {
-  const id = els.id.value;
-  if (!id || !confirm("Delete this website?")) return;
+  await deleteSiteByID(els.id.value, els.address.value);
+}
+
+async function deleteSiteByID(id, address) {
+  if (!id) return;
+  const name = address || "this website";
+  if (!confirm(`Delete ${name}? Associated access logs and locally managed certificate files will also be removed.`)) return;
   try {
     await request(`/api/sites/${id}`, { method: "DELETE" });
-    closeEditor();
-    await loadSites();    await loadLogs();
-    showConfirmation("Website deleted");
+    if (editingSite?.id === id || els.id.value === id) closeEditor();
+    await loadSites();
+    await loadLogs();
+    showConfirmation(`${name} deleted`);
   } catch (err) {
     setStatus(err.message);
   }

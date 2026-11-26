@@ -971,7 +971,7 @@ h2 {
 }
 
 #view-proxy-hosts .site-table-scroll {
-  --web-host-columns: 132px minmax(72px, .55fr) minmax(170px, 1.2fr) minmax(78px, .65fr) minmax(58px, .48fr) minmax(185px, 1.45fr) minmax(92px, .72fr) minmax(72px, .62fr) minmax(94px, .78fr) minmax(120px, 1fr);
+  --web-host-columns: 178px minmax(72px, .55fr) minmax(170px, 1.2fr) minmax(78px, .65fr) minmax(58px, .48fr) minmax(185px, 1.45fr) minmax(92px, .72fr) minmax(72px, .62fr) minmax(94px, .78fr) minmax(120px, 1fr);
 }
 
 #view-proxy-hosts .table-head,
@@ -1970,7 +1970,7 @@ legend {
 
 .certificate-head,
 .certificate-list {
-  min-width: 820px;
+  min-width: 840px;
 }
 
 .certificate-list {
@@ -1982,7 +1982,7 @@ legend {
 .certificate-head,
 .certificate-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) 120px 100px 96px;
+  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) 120px 100px 102px;
   gap: 12px;
   align-items: center;
   margin: 0 14px;
@@ -2026,6 +2026,18 @@ legend {
 
 .certificate-row button {
   width: auto;
+}
+
+.certificate-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.certificate-actions button {
+  flex: 0 0 auto;
+  padding-right: 5px;
+  padding-left: 5px;
+  white-space: nowrap;
 }
 
 dialog {
@@ -3082,7 +3094,7 @@ fieldset { gap: 10px; padding: 8px; }
 
 /* Dashboard controls retain their current size; administration views are denser. */
 .view:not(#view-dashboard) button { min-height: 24px; padding: 0 8px; font-size: 12px; }
-#view-proxy-hosts .site-actions { grid-template-columns: 46px 80px; gap: 6px; width: 132px; }
+#view-proxy-hosts .site-actions { grid-template-columns: 46px 66px 54px; gap: 6px; width: 178px; }
 #view-proxy-hosts .site-actions button { padding-right: 6px; padding-left: 6px; }
 
 .security-event { align-items: center; justify-content: flex-start; gap: 6px; min-width: max-content; padding: 4px 0; white-space: nowrap; }

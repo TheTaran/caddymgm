@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -23,6 +24,37 @@ func TestMCPTokenHashPersistsInSettings(t *testing.T) {
 	}
 	if len(restored.MCPTokens) != 1 || restored.MCPTokens[0].TokenHash != "persisted-hash" {
 		t.Fatalf("MCP token hash was not persisted: %#v", restored.MCPTokens)
+	}
+}
+
+func TestUpdateMCPTokenChangesPermissionsWithoutRotatingSecret(t *testing.T) {
+	app := &App{
+		settingsPath: filepath.Join(t.TempDir(), "settings.json"),
+		settings: Settings{MCPTokens: []MCPToken{{
+			ID:        "token-1",
+			Name:      "Read-only agent",
+			TokenHash: "unchanged-secret-hash",
+			Scopes:    []string{"hosts:read"},
+			CreatedAt: "2026-11-27T10:00:00Z",
+			LastUsed:  "2026-11-27T11:00:00Z",
+			Requests:  7,
+		}}},
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/mcp/tokens/token-1", strings.NewReader(`{"name":"Deployment agent","scopes":["hosts:read","hosts:write"]}`))
+	res := httptest.NewRecorder()
+	app.handleUpdateMCPToken(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", res.Code, http.StatusOK, res.Body.String())
+	}
+	token := app.settings.MCPTokens[0]
+	if token.Name != "Deployment agent" || strings.Join(token.Scopes, ",") != "hosts:read,hosts:write" {
+		t.Fatalf("updated token = %#v", token)
+	}
+	if token.TokenHash != "unchanged-secret-hash" || token.CreatedAt != "2026-11-27T10:00:00Z" || token.LastUsed != "2026-11-27T11:00:00Z" || token.Requests != 7 {
+		t.Fatalf("token metadata was changed: %#v", token)
+	}
+	if strings.Contains(res.Body.String(), "unchanged-secret-hash") {
+		t.Fatal("token hash was returned by update endpoint")
 	}
 }
 

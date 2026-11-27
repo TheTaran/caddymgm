@@ -518,6 +518,7 @@ func main() {
 	mux.HandleFunc("GET /.caddymgm/auth/complete", app.handleAccessComplete)
 	mux.HandleFunc("POST /mcp", app.handleMCP)
 	mux.HandleFunc("POST /api/mcp/token", app.handleCreateMCPToken)
+	mux.HandleFunc("PUT /api/mcp/tokens/", app.handleUpdateMCPToken)
 	mux.HandleFunc("DELETE /api/mcp/token", app.handleDeleteMCPToken)
 	mux.HandleFunc("DELETE /api/mcp/tokens/", app.handleDeleteMCPToken)
 	mux.HandleFunc("GET /api/mcp/report", app.handleMCPReport)

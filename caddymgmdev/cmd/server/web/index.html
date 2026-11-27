@@ -863,6 +863,32 @@
       </main>
     </div>
 
+    <dialog id="mcp-token-dialog" class="mcp-token-dialog">
+      <form id="mcp-token-edit-form" method="dialog">
+        <div class="dialog-head">
+          <h2>Edit MCP token</h2>
+          <button id="mcp-token-edit-close" class="secondary" type="button">Close</button>
+        </div>
+        <p class="field-note">The token value stays the same. Permission changes take effect for the next MCP request.</p>
+        <label>
+          Token name
+          <input id="mcp-token-edit-name" maxlength="80" required autocomplete="off" />
+        </label>
+        <fieldset class="mcp-scopes" id="mcp-token-edit-scopes">
+          <legend>Permissions</legend>
+          <div class="mcp-scope-grid">
+            <label><span>Web Hosts</span><input type="checkbox" value="hosts:read" /><small>Read</small><input type="checkbox" value="hosts:write" /><small>Write</small></label>
+            <label><span>Web Protection</span><input type="checkbox" value="protection:read" /><small>Read</small><input type="checkbox" value="protection:write" /><small>Write</small></label>
+            <label><span>Certificates</span><input type="checkbox" value="certificates:read" /><small>Read</small><input type="checkbox" value="certificates:write" /><small>Write</small></label>
+            <label><span>Settings</span><input type="checkbox" value="settings:read" /><small>Read</small><input type="checkbox" value="settings:write" /><small>Write</small></label>
+            <label><span>Logs</span><input type="checkbox" value="logs:read" /><small>Read</small></label>
+            <label><span>Reports</span><input type="checkbox" value="reports:read" /><small>Read</small></label>
+          </div>
+        </fieldset>
+        <div class="form-actions"><button type="submit">Save access</button><button id="mcp-token-edit-cancel" class="secondary" type="button">Cancel</button></div>
+      </form>
+    </dialog>
+
     <dialog id="acme-dialog">
       <div class="dialog-head">
         <h2>

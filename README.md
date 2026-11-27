@@ -17,9 +17,52 @@ CaddyMGM gives you a web UI to:
 - map website accesses by GeoLite2 location and client IP
 - manage CaddyMGM authentication and web interface settings
 - protect individual web hosts through one central OIDC provider
+- provide scoped MCP access for AI agents, including reports and controlled configuration changes
 
 The Caddy configuration stays outside the container.
 Caddy can run separately and can be updated independently from CaddyMGM.
+
+## Current Capabilities
+
+### Web hosts and certificates
+
+- Create, edit, enable, disable, and delete reverse-proxy and static-file web hosts.
+- Manage each host's visibility, upstream transport TLS, authentication, request-body limit, allowed methods, blocked paths, managed request/response headers, response compression, security-header profile, and TLS protocol range.
+- Keep TLS disabled for newly created hosts until it is explicitly enabled and an ACME authority is selected.
+- Manage built-in and custom ACME authorities, private Root CAs, issued-certificate expiry information, and locally managed certificate files.
+- Deleting a web host also removes its managed access log and locally managed certificate files.
+
+### Web protection and client IP handling
+
+- Apply global country allow/block policies, manual allow/deny IP or CIDR lists, and external HTTPS blocklists.
+- Preserve comments in manual IP lists and accept DNS names in both manual allow and deny lists. A and AAAA addresses are resolved when saved and refreshed every 12 hours.
+- Refresh external blocklists every 24 hours without replacing a configuration that is already waiting to be applied. Duplicate public IP/CIDR entries are deduplicated.
+- Select the visitor-IP source: direct remote IP, `X-Forwarded-For`, or `X-Real-IP`. Header-based sources require trusted proxy CIDRs to prevent spoofed client addresses.
+- Control how `X-Forwarded-For` is passed upstream: append, replace with the visitor IP, or remove it.
+
+### Dashboard, logs, and staged Caddy changes
+
+- Inspect web-host status, access-log activity, security statistics, blocked IPs, current protection rules, and GeoLite2-backed access locations.
+- Filter Dashboard security statistics by web host and time period. Trend charts include an interactive crosshair and the timestamp for the hovered point.
+- View realtime Caddy service logs, per-host access logs, and OIDC authentication events.
+- Save Caddy-affecting changes as pending changes, review their summary from the top-right action, and apply all of them together when ready. CaddyMGM-only settings such as log retention and MCP token administration take effect immediately and do not reload Caddy.
+
+## MCP Integration
+
+CaddyMGM includes a token-protected Model Context Protocol endpoint at `POST /mcp`. Configure it under **Settings -> MCP Integration**. Generate a separate token for every agent or integration and copy the token when it is shown: token values are displayed only once and are stored only as hashes.
+
+Each token can be granted only the scopes it needs. Existing tokens can be renamed and their permissions edited at any time without changing the token value, ID, usage history, or creation date. Changes take effect on the next MCP request. Tokens can also be revoked individually or disabled together.
+
+| Scope | MCP access |
+| --- | --- |
+| `hosts:read` / `hosts:write` | List and inspect web hosts; create, update, enable, disable, or delete hosts. Write actions are staged for Apply. |
+| `protection:read` / `protection:write` | Read or update global web protection and manual IP/DNS lists. Write actions are staged for Apply. |
+| `certificates:read` / `certificates:write` | Read certificate and ACME-authority information or replace ACME authorities. Write actions are staged for Apply. |
+| `settings:read` / `settings:write` | Read non-secret settings, update log retention immediately, or stage client-IP and forwarding changes. |
+| `logs:read` | Read recent access logs for a selected web host; sensitive request headers are excluded. |
+| `reports:read` | Read component versions and pending changes; create security, geographic access, and MCP-usage reports. |
+
+MCP request totals, successes, failures, response bytes, recent calls, and per-tool usage are retained in the MCP report. MCP callers receive only the tools allowed by their token scopes.
 
 ## Screenshots
 

@@ -218,6 +218,12 @@ const els = {
   settingsMCPTokens: document.querySelector("#settings-mcp-tokens"),
   settingsMCPTokenCount: document.querySelector("#settings-mcp-token-count"),
   settingsMCPReport: document.querySelector("#settings-mcp-report"),
+  mcpTokenDialog: document.querySelector("#mcp-token-dialog"),
+  mcpTokenEditForm: document.querySelector("#mcp-token-edit-form"),
+  mcpTokenEditName: document.querySelector("#mcp-token-edit-name"),
+  mcpTokenEditScopes: document.querySelector("#mcp-token-edit-scopes"),
+  mcpTokenEditClose: document.querySelector("#mcp-token-edit-close"),
+  mcpTokenEditCancel: document.querySelector("#mcp-token-edit-cancel"),
   settingsAccessEnabled: document.querySelector("#settings-access-enabled"),
   settingsAccessName: document.querySelector("#settings-access-name"),
   settingsAccessIssuer: document.querySelector("#settings-access-issuer"),
@@ -348,6 +354,7 @@ let siteLogVisibleLimit = 10;
 let oidcLogVisibleLimit = 10;
 let protectionEventVisibleLimit = 10;
 let editingSite = null;
+let editingMCPTokenID = "";
 let latestSiteLogs = [];
 let latestServiceLogs = [];
 let latestOIDCLogs = [];
@@ -388,6 +395,9 @@ els.siteLogToggle.addEventListener("click", toggleSiteLogsExpanded);
 els.oidcLogToggle.addEventListener("click", toggleOIDCLogsExpanded);
 els.settingsMCPGenerate.addEventListener("click", generateMCPToken);
 els.settingsMCPDisable.addEventListener("click", disableMCP);
+els.mcpTokenEditForm.addEventListener("submit", saveMCPTokenEdit);
+els.mcpTokenEditClose.addEventListener("click", closeMCPTokenEditor);
+els.mcpTokenEditCancel.addEventListener("click", closeMCPTokenEditor);
 els.protectionEventToggle.addEventListener("click", toggleProtectionEventsExpanded);
 els.securityOverviewPeriod.addEventListener("change", loadSecurityOverview);
 els.securityStatisticsHost.addEventListener("change", loadSecurityStatistics);
@@ -1268,6 +1278,11 @@ function renderMCPTokens(tokens) {
     const state = document.createElement("span");
     state.className = "tag success";
     state.textContent = "Active";
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "secondary";
+    edit.textContent = "Edit access";
+    edit.addEventListener("click", () => openMCPTokenEditor(token));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "secondary danger-button";
@@ -1288,7 +1303,7 @@ function renderMCPTokens(tokens) {
         setStatus(err.message);
       }
     });
-    header.append(title, state, remove);
+    header.append(title, state, edit, remove);
 
     const details = document.createElement("div");
     details.className = "mcp-token-details";
@@ -1300,6 +1315,40 @@ function renderMCPTokens(tokens) {
     );
     row.append(header, details);
     els.settingsMCPTokens.append(row);
+  }
+}
+
+function openMCPTokenEditor(token) {
+  editingMCPTokenID = token.id;
+  els.mcpTokenEditName.value = token.name || "";
+  const scopes = new Set(token.scopes || []);
+  els.mcpTokenEditScopes.querySelectorAll("input[type=checkbox]").forEach((input) => {
+    input.checked = scopes.has(input.value);
+  });
+  els.mcpTokenDialog.showModal();
+}
+
+function closeMCPTokenEditor() {
+  editingMCPTokenID = "";
+  els.mcpTokenEditForm.reset();
+  if (els.mcpTokenDialog.open) els.mcpTokenDialog.close();
+}
+
+async function saveMCPTokenEdit(event) {
+  event.preventDefault();
+  if (!editingMCPTokenID) return;
+  const scopes = [...els.mcpTokenEditScopes.querySelectorAll("input:checked")].map((input) => input.value);
+  try {
+    await request(`/api/mcp/tokens/${encodeURIComponent(editingMCPTokenID)}`, {
+      method: "PUT",
+      body: JSON.stringify({ name: els.mcpTokenEditName.value, scopes }),
+    });
+    closeMCPTokenEditor();
+    await loadSettings();
+    setStatus("MCP token access updated");
+    showConfirmation("MCP token access updated");
+  } catch (err) {
+    setStatus(err.message);
   }
 }
 

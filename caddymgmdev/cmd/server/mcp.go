@@ -126,6 +126,55 @@ func (a *App) handleDeleteMCPToken(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleUpdateMCPToken changes only the metadata and permissions of an
+// existing token. Its ID and secret hash intentionally remain untouched, so
+// connected agents can continue using the same bearer token immediately.
+func (a *App) handleUpdateMCPToken(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/mcp/tokens/"))
+	if id == "" || strings.Contains(id, "/") {
+		writeError(w, http.StatusBadRequest, errors.New("MCP token ID is required"))
+		return
+	}
+	var payload struct {
+		Name   string   `json:"name"`
+		Scopes []string `json:"scopes"`
+	}
+	if err := decodeJSONBody(w, r, &payload, 64<<10); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid MCP token request"))
+		return
+	}
+	name := strings.TrimSpace(payload.Name)
+	if name == "" || len(name) > 80 {
+		writeError(w, http.StatusBadRequest, errors.New("MCP token name must be between 1 and 80 characters"))
+		return
+	}
+	scopes, err := normalizeMCPScopes(payload.Scopes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for index := range a.settings.MCPTokens {
+		token := &a.settings.MCPTokens[index]
+		if token.ID != id {
+			continue
+		}
+		token.Name = name
+		token.Scopes = scopes
+		if err := a.saveSettingsLocked(); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		updated := *token
+		updated.TokenHash = ""
+		writeJSON(w, http.StatusOK, updated)
+		return
+	}
+	writeError(w, http.StatusNotFound, errors.New("MCP token not found"))
+}
+
 func (a *App) handleMCPReport(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

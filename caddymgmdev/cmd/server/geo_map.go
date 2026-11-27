@@ -196,9 +196,20 @@ type geoLocationAggregate struct {
 }
 
 func (a *App) handleGeoMap(w http.ResponseWriter, _ *http.Request) {
-	if a.demoData {
-		writeJSON(w, http.StatusOK, demoGeoMapResponse())
+	response, err := a.geoMapReport()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+// geoMapReport builds the geographic access report used by both the dashboard
+// and MCP. It returns retained access-log aggregates only; it does not contact
+// an external map service.
+func (a *App) geoMapReport() (geoMapResponse, error) {
+	if a.demoData {
+		return demoGeoMapResponse(), nil
 	}
 	database, databaseErr := maxminddb.Open(a.geoIPDBPath)
 	if databaseErr == nil {
@@ -211,8 +222,7 @@ func (a *App) handleGeoMap(w http.ResponseWriter, _ *http.Request) {
 	hideLocalIPs := a.settings.HideLocalDashboardIPs
 	a.mu.Unlock()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		return geoMapResponse{}, err
 	}
 	if retention <= 0 {
 		retention = 100
@@ -290,7 +300,7 @@ func (a *App) handleGeoMap(w http.ResponseWriter, _ *http.Request) {
 			response.Message = "GeoLite2 City database is unavailable"
 		}
 	}
-	writeJSON(w, http.StatusOK, response)
+	return response, nil
 }
 
 func addGeoIPAggregate(aggregates map[string]*geoIPAggregate, address, site string) *geoIPAggregate {

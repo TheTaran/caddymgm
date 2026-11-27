@@ -214,6 +214,9 @@ func mcpToolsForToken(token MCPToken) []mcpTool {
 		{"update_client_ip_settings", "Update visitor IP source and forwarding settings. The change is staged.", object(map[string]any{"clientIp": map[string]any{"type": "object"}}), "settings:write"},
 		{"get_component_versions", "Read current CaddyMGM component versions.", object(map[string]any{}), "reports:read"},
 		{"get_pending_changes", "Read all changes that still need applying to Caddy.", object(map[string]any{}), "reports:read"},
+		{"get_security_report", "Create a security report from retained access logs, including request and protection-block trends.", object(map[string]any{"period": map[string]any{"type": "string", "enum": []string{"1h", "6h", "1d", "7d", "30d"}, "description": "Report period; defaults to 1d."}, "siteId": stringField("Optional web host ID."), "eventLimit": map[string]any{"type": "integer", "minimum": 0, "maximum": 100, "description": "Maximum managed protection events; defaults to 20."}}), "reports:read"},
+		{"get_geo_access_report", "Create a geographic access report with the most active source IPs and locations from retained logs.", object(map[string]any{"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "description": "Maximum locations and source IPs; defaults to 25."}}), "reports:read"},
+		{"get_mcp_usage_report", "Read MCP request totals, success/failure counts, response bytes, and recent tool usage.", object(map[string]any{}), "reports:read"},
 	}
 	result := make([]mcpTool, 0, len(tools))
 	for _, tool := range tools {
@@ -441,9 +444,113 @@ func (a *App) callMCPTool(r *http.Request, token MCPToken, name string, argument
 			return nil, err
 		}
 		return mcpTextResult(map[string]any{"pending": len(changes) > 0, "changes": changes}), nil
+	case "get_security_report":
+		if err := mcpRequire(token, "reports:read"); err != nil {
+			return nil, err
+		}
+		return a.mcpSecurityReport(arguments)
+	case "get_geo_access_report":
+		if err := mcpRequire(token, "reports:read"); err != nil {
+			return nil, err
+		}
+		return a.mcpGeoAccessReport(arguments)
+	case "get_mcp_usage_report":
+		if err := mcpRequire(token, "reports:read"); err != nil {
+			return nil, err
+		}
+		return mcpTextResult(a.mcpUsageReport()), nil
 	default:
 		return nil, errors.New("unknown MCP tool")
 	}
+}
+
+func (a *App) mcpSecurityReport(arguments map[string]any) (any, error) {
+	period, _ := arguments["period"].(string)
+	siteID, _ := arguments["siteId"].(string)
+	eventLimit, err := mcpReportLimit(arguments, "eventLimit", 20, 100, true)
+	if err != nil {
+		return nil, err
+	}
+	overview, err := a.securityOverview(period, strings.TrimSpace(siteID), true)
+	if err != nil {
+		return nil, err
+	}
+	if eventLimit < len(overview.Events) {
+		overview.Events = overview.Events[:eventLimit]
+	}
+	return mcpTextResult(map[string]any{
+		"report":           "security",
+		"period":           normalizedSecurityPeriod(period),
+		"siteId":           strings.TrimSpace(siteID),
+		"generatedAt":      time.Now().UTC().Format(time.RFC3339),
+		"securityOverview": overview,
+	}), nil
+}
+
+func (a *App) mcpGeoAccessReport(arguments map[string]any) (any, error) {
+	limit, err := mcpReportLimit(arguments, "limit", 25, 200, false)
+	if err != nil {
+		return nil, err
+	}
+	report, err := a.geoMapReport()
+	if err != nil {
+		return nil, err
+	}
+	if len(report.TopIPs) > limit {
+		report.TopIPs = report.TopIPs[:limit]
+	}
+	if len(report.Locations) > limit {
+		report.Locations = report.Locations[:limit]
+	}
+	for index := range report.Locations {
+		if len(report.Locations[index].IPs) > 10 {
+			report.Locations[index].IPs = report.Locations[index].IPs[:10]
+		}
+	}
+	return mcpTextResult(map[string]any{"report": "geo_access", "generatedAt": time.Now().UTC().Format(time.RFC3339), "geoAccess": report}), nil
+}
+
+func mcpReportLimit(arguments map[string]any, name string, fallback, maximum int, allowZero bool) (int, error) {
+	raw, found := arguments[name]
+	if !found {
+		return fallback, nil
+	}
+	value, ok := raw.(float64)
+	if !ok || value != float64(int(value)) {
+		return 0, fmt.Errorf("%s must be an integer", name)
+	}
+	limit := int(value)
+	minimum := 1
+	if allowZero {
+		minimum = 0
+	}
+	if limit < minimum || limit > maximum {
+		return 0, fmt.Errorf("%s must be between %d and %d", name, minimum, maximum)
+	}
+	return limit, nil
+}
+
+func normalizedSecurityPeriod(period string) string {
+	if strings.TrimSpace(period) == "" {
+		return "1d"
+	}
+	return period
+}
+
+func (a *App) mcpUsageReport() map[string]any {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	requests, successful, bytes := len(a.settings.MCPRequests), 0, 0
+	byTool := map[string]int{}
+	for _, request := range a.settings.MCPRequests {
+		if request.Success {
+			successful++
+		}
+		bytes += request.Bytes
+		byTool[request.Tool]++
+	}
+	recent := append([]MCPRequestRecord(nil), a.settings.MCPRequests...)
+	return map[string]any{"requests": requests, "successful": successful, "failed": requests - successful, "responseBytes": bytes, "byTool": byTool, "recent": recent}
 }
 
 func mcpRequiredID(arguments map[string]any) (string, error) {

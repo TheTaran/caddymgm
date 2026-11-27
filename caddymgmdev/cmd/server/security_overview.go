@@ -131,18 +131,32 @@ func (set protectionPrefixSet) contains(address netip.Addr) bool {
 
 func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 	includeAllEvents := r.URL.Query().Get("events") == "all"
-	_, trendSpec, periodErr := securityTrendSpecForPeriod(r.URL.Query().Get("period"))
-	if periodErr != nil {
-		writeError(w, http.StatusBadRequest, periodErr)
+	period := r.URL.Query().Get("period")
+	if _, _, err := securityTrendSpecForPeriod(period); err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	overview, err := a.securityOverview(period, strings.TrimSpace(r.URL.Query().Get("site")), includeAllEvents)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, overview)
+}
+
+// securityOverview returns the same structured data used by the dashboard and
+// MCP reports. Keeping this calculation in one place ensures agents and the
+// web interface describe the same retained access logs.
+func (a *App) securityOverview(period, selectedSiteID string, includeAllEvents bool) (securityOverview, error) {
+	_, trendSpec, err := securityTrendSpecForPeriod(period)
+	if err != nil {
+		return securityOverview{}, err
 	}
 	now := time.Now()
 	if a.demoData {
-		writeJSON(w, http.StatusOK, demoSecurityOverview(now, trendSpec, includeAllEvents))
-		return
+		return demoSecurityOverview(now, trendSpec, includeAllEvents), nil
 	}
 	cutoff := now.Add(-trendSpec.window).Unix()
-	selectedSiteID := strings.TrimSpace(r.URL.Query().Get("site"))
 	a.mu.Lock()
 	sites, _, _, err := a.load()
 	defaults := a.settings.WebProtection
@@ -151,8 +165,7 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 	hideLocalIPs := a.settings.HideLocalDashboardIPs
 	a.mu.Unlock()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		return securityOverview{}, err
 	}
 	if retention <= 0 {
 		retention = 100
@@ -265,7 +278,7 @@ func (a *App) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 	if !includeAllEvents && len(overview.Events) > 20 {
 		overview.Events = overview.Events[:20]
 	}
-	writeJSON(w, http.StatusOK, overview)
+	return overview, nil
 }
 
 func securityRecordAddress(record securityLogRecord) (netip.Addr, bool) {

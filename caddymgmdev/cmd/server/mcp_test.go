@@ -61,12 +61,33 @@ func TestMCPToolsListHonorsTokenScopes(t *testing.T) {
 	for _, tool := range tools {
 		seen[tool.Name] = true
 	}
-	if !seen["list_web_hosts"] || !seen["get_component_versions"] {
+	if !seen["list_web_hosts"] || !seen["get_component_versions"] || !seen["get_security_report"] || !seen["get_geo_access_report"] || !seen["get_mcp_usage_report"] {
 		t.Fatalf("expected permitted tools, got %#v", seen)
 	}
 	for _, name := range []string{"create_web_host", "get_settings", "get_access_logs", "list_certificates"} {
 		if seen[name] {
 			t.Fatalf("unexpected tool %q for a read-only token", name)
+		}
+	}
+}
+
+func TestMCPReportToolsReturnDashboardData(t *testing.T) {
+	app := &App{demoData: true}
+	token := MCPToken{Scopes: []string{"reports:read"}}
+	request := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+
+	for name, arguments := range map[string]map[string]any{
+		"get_security_report":   {"period": "1h", "eventLimit": float64(3)},
+		"get_geo_access_report": {"limit": float64(2)},
+		"get_mcp_usage_report":  {},
+	} {
+		result, err := app.callMCPTool(request, token, name, arguments)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		content, ok := result.(map[string]any)["content"].([]map[string]string)
+		if !ok || len(content) != 1 || !json.Valid([]byte(content[0]["text"])) {
+			t.Fatalf("%s returned invalid MCP content: %#v", name, result)
 		}
 	}
 }
